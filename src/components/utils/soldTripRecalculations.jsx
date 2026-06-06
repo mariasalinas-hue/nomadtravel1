@@ -88,7 +88,7 @@ export async function updateSoldTripAndTripServiceTotals(soldTripId, queryClient
       supabaseAPI.entities.SupplierPayment.filter({ sold_trip_id: soldTripId })
     ]);
 
-    const totalPrice = newServices.reduce((sum, s) => sum + (s.total_price || 0), 0);
+    const totalPrice = newServices.reduce((sum, s) => sum + (s.price || s.total_price || 0), 0);
     const totalCommission = newServices.reduce((sum, s) => sum + (s.commission || 0), 0);
     const totalPaidToSuppliers = newSupplierPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
 
@@ -134,7 +134,7 @@ export async function updateSoldTripTotalsFromServices(soldTripId, queryClient) 
 
   try {
     const services = await supabaseAPI.entities.TripService.filter({ sold_trip_id: soldTripId });
-    const totalPrice = services.reduce((sum, s) => sum + (s.total_price || 0), 0);
+    const totalPrice = services.reduce((sum, s) => sum + (s.price || s.total_price || 0), 0);
     const totalCommission = services.reduce((sum, s) => sum + (s.commission || 0), 0);
 
     await supabaseAPI.entities.SoldTrip.update(soldTripId, {
