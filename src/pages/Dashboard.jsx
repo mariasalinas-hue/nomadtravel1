@@ -3,9 +3,9 @@ import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { supabaseAPI } from '@/api/supabaseClient';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { format, startOfMonth, endOfMonth, isWithinInterval, isPast } from 'date-fns';
+import { isPast } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { DollarSign, Plane, Users, TrendingUp, Loader2, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import { DollarSign, Plane, Users, TrendingUp, Loader2, AlertCircle, ChevronDown, ChevronUp, ArrowRight } from 'lucide-react';
 import { ViewModeContext } from '@/Layout';
 import StatsCard from '@/components/ui/StatsCard';
 import FunnelChart from '@/components/dashboard/FunnelChart';
@@ -33,6 +33,11 @@ export default function Dashboard() {
   const [selectedTrip, setSelectedTrip] = useState('all');
   const [showPendingCollection, setShowPendingCollection] = useState(false);
   const queryClient = useQueryClient();
+
+  // Time filter for the stat cards (defaults to the current month)
+  const now = new Date();
+  const [selectedYear, setSelectedYear] = useState(now.getFullYear());
+  const [selectedMonth, setSelectedMonth] = useState(now.getMonth()); // 0-11, or 'all' for the whole year
 
   const isAdmin = user?.role === 'admin' && viewMode === 'admin';
 
@@ -123,29 +128,38 @@ export default function Dashboard() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['tasks'] })
   });
 
-  // Calculate monthly sales
-  const thisMonth = {
-    start: startOfMonth(new Date()),
-    end: endOfMonth(new Date())
+  // --- Time filter (year + month) applied to the 4 stat cards ---
+  const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+
+  // Selectable years come from the data itself (plus the current year)
+  const availableYears = (() => {
+    const years = new Set([now.getFullYear()]);
+    [...soldTrips, ...trips, ...clients].forEach(r => {
+      if (!r.created_date) return;
+      const y = new Date(r.created_date).getFullYear();
+      if (!isNaN(y)) years.add(y);
+    });
+    return Array.from(years).sort((a, b) => b - a);
+  })();
+
+  const isInSelectedPeriod = (dateValue) => {
+    if (!dateValue) return false;
+    const d = new Date(dateValue);
+    if (isNaN(d.getTime())) return false;
+    if (d.getFullYear() !== selectedYear) return false;
+    if (selectedMonth !== 'all' && d.getMonth() !== selectedMonth) return false;
+    return true;
   };
 
-  const monthlySales = soldTrips
-    .filter(trip => {
-      if (!trip.created_date) return false;
-      const created = new Date(trip.created_date);
-      if (isNaN(created.getTime())) return false;
-      return isWithinInterval(created, thisMonth);
-    })
-    .reduce((sum, trip) => sum + (trip.total_price || 0), 0);
+  const periodLabel = selectedMonth === 'all'
+    ? `Todo ${selectedYear}`
+    : `${monthNames[selectedMonth]} ${selectedYear}`;
 
-  const monthlyCommission = soldTrips
-    .filter(trip => {
-      if (!trip.created_date) return false;
-      const created = new Date(trip.created_date);
-      if (isNaN(created.getTime())) return false;
-      return isWithinInterval(created, thisMonth);
-    })
-    .reduce((sum, trip) => sum + (trip.total_commission || 0), 0);
+  const periodSoldTrips = soldTrips.filter(t => isInSelectedPeriod(t.created_date));
+  const periodSales = periodSoldTrips.reduce((sum, trip) => sum + (trip.total_price || 0), 0);
+  const periodCommission = periodSoldTrips.reduce((sum, trip) => sum + (trip.total_commission || 0), 0);
+  const periodTripsCount = trips.filter(t => isInSelectedPeriod(t.created_date)).length;
+  const periodClientsCount = clients.filter(c => isInSelectedPeriod(c.created_date)).length;
 
   // Clients with negative balance
   const myClientsWithNegativeBalance = soldTrips.map(trip => {
@@ -271,19 +285,46 @@ export default function Dashboard() {
     <div className="space-y-5">
 
       {/* Header */}
-      <div>
-        <h1 style={{ fontFamily: 'Playfair Display, Georgia, serif', fontSize: 26, fontWeight: 700, color: '#1C1C1E', letterSpacing: '-0.02em', lineHeight: 1.2 }}>
-          Dashboard
-        </h1>
-        <p className="text-sm mt-1" style={{ color: '#AEAEB2' }}>Vista general de tu actividad</p>
+      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
+        <div>
+          <h1 style={{ fontFamily: 'Playfair Display, Georgia, serif', fontSize: 26, fontWeight: 700, color: '#1C1C1E', letterSpacing: '-0.02em', lineHeight: 1.2 }}>
+            Dashboard
+          </h1>
+          <p className="text-sm mt-1" style={{ color: '#AEAEB2' }}>Vista general de tu actividad</p>
+        </div>
+
+        {/* Period filter (year + month) */}
+        <div className="flex items-center gap-2">
+          <Select value={String(selectedMonth)} onValueChange={(v) => setSelectedMonth(v === 'all' ? 'all' : Number(v))}>
+            <SelectTrigger className="w-36 h-9 text-xs rounded-xl" style={{ borderColor: 'rgba(0,0,0,0.1)' }}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todo el año</SelectItem>
+              {monthNames.map((m, i) => (
+                <SelectItem key={i} value={String(i)}>{m}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={String(selectedYear)} onValueChange={(v) => setSelectedYear(Number(v))}>
+            <SelectTrigger className="w-24 h-9 text-xs rounded-xl" style={{ borderColor: 'rgba(0,0,0,0.1)' }}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {availableYears.map(y => (
+                <SelectItem key={y} value={String(y)}>{y}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       {/* Stats Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <StatsCard title="Ventas del Mes" value={`$${monthlySales.toLocaleString()}`} subtitle="USD" icon={DollarSign} />
-        <StatsCard title="Comisiones" value={`$${monthlyCommission.toLocaleString()}`} subtitle="Este mes" icon={TrendingUp} />
-        <StatsCard title="Viajes" value={trips.length} subtitle="En proceso" icon={Plane} />
-        <StatsCard title="Clientes" value={clients.length} subtitle="Totales" icon={Users} />
+        <StatsCard title="Ventas" value={`$${periodSales.toLocaleString()}`} subtitle={periodLabel} icon={DollarSign} />
+        <StatsCard title="Comisiones" value={`$${periodCommission.toLocaleString()}`} subtitle={periodLabel} icon={TrendingUp} />
+        <StatsCard title="Viajes" value={periodTripsCount} subtitle={periodLabel} icon={Plane} />
+        <StatsCard title="Clientes" value={periodClientsCount} subtitle={periodLabel} icon={Users} />
       </div>
 
       {/* Account Balance Panel */}
@@ -339,7 +380,17 @@ export default function Dashboard() {
                 </SelectContent>
               </Select>
               {selectedTrip !== 'all' && (
-                <p className="text-xs mt-1.5" style={{ color: '#AEAEB2' }}>Solo pagos confirmados de este viaje</p>
+                <>
+                  <p className="text-xs mt-1.5" style={{ color: '#AEAEB2' }}>Solo pagos confirmados de este viaje</p>
+                  <Link
+                    to={createPageUrl(`SoldTripDetail?id=${selectedTrip}`)}
+                    className="mt-2 inline-flex items-center justify-center gap-1.5 w-full h-9 rounded-xl text-xs font-semibold text-white transition-opacity hover:opacity-90"
+                    style={{ background: '#2D4629' }}
+                  >
+                    Ir al viaje
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </Link>
+                </>
               )}
             </div>
           </div>
