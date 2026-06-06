@@ -5,71 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { CheckCircle, Clock, AlertCircle } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { parseLocalDate } from '@/components/utils/dateHelpers';
-
-const TIMELINE_REMINDERS = {
-  '6_months': {
-    label: '6 meses antes',
-    tasks: [
-      'Pasaportes con mínimo 6 meses de vigencia al regresar',
-      'Enviar foto de pasaportes para validar nombres',
-      'Recomendar contratar seguro de viaje'
-    ]
-  },
-  '3_months': {
-    label: '3 meses antes',
-    tasks: [
-      'Revisar si necesitan visas / eVisa / ESTA',
-      'Iniciar trámite de visa mínimo 3 meses antes',
-      'Preparar documentos necesarios (fotos, estados de cuenta, etc.)'
-    ]
-  },
-  '1.5_months': {
-    label: '1.5 meses antes',
-    tasks: [
-      'Ver vacunas / certificados médicos según destino',
-      'Preparar medicamentos y recetas',
-      'Revisar opciones de SIM / eSIM internacional'
-    ]
-  },
-  '1_month': {
-    label: '1 mes antes',
-    tasks: [
-      'Revisar y confirmar itinerario final (fechas, horarios, nombres)',
-      'Confirmar preferencias: camas, alergias, aniversarios, etc.'
-    ]
-  },
-  '3_weeks': {
-    label: '3 semanas antes',
-    tasks: [
-      'Checklist de maleta según clima',
-      'Confirmar peso permitido de equipaje',
-      'Descargar apps útiles: aerolíneas, mapas offline, traductor, seguro'
-    ]
-  },
-  '1-2_weeks': {
-    label: '1-2 semanas antes',
-    tasks: [
-      'Recibir documentos finales: vouchers, contactos, itinerario',
-      'Revisar si queda saldo por liquidar',
-      'Cambiar algo de divisa si aplica'
-    ]
-  },
-  '72-48_hours': {
-    label: '72-48 horas antes',
-    tasks: [
-      'Hacer check-in online',
-      'Confirmar transfers y horarios',
-      'Revisar clima del destino'
-    ]
-  },
-  '24_hours': {
-    label: '24 horas antes',
-    tasks: [
-      'Verificar: pasaportes, visas, boarding pass, tarjetas, efectivo, cargadores',
-      'Preparar salida al aeropuerto con tiempo'
-    ]
-  }
-};
+import { TIMELINE_REMINDERS } from '@/components/utils/reminderTemplate';
 
 export default function TripRemindersList({ startDate, reminders = [], onCreate, onUpdate }) {
   const tripDate = parseLocalDate(startDate);
