@@ -8,7 +8,6 @@ import { es } from 'date-fns/locale';
 import { DollarSign, Plane, Users, TrendingUp, Loader2, AlertCircle, ChevronDown, ChevronUp, ArrowRight } from 'lucide-react';
 import { ViewModeContext } from '@/Layout';
 import StatsCard from '@/components/ui/StatsCard';
-import FunnelChart from '@/components/dashboard/FunnelChart';
 import UpcomingTrips from '@/components/dashboard/UpcomingTrips';
 import TasksList from '@/components/dashboard/TasksList';
 import UpcomingPayments from '@/components/dashboard/UpcomingPayments';
@@ -504,24 +503,17 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Main Content Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-        <div className="lg:col-span-2 space-y-3">
-          <ActiveReminders userEmail={user?.email} isAdmin={isAdmin} />
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <UpcomingTrips soldTrips={soldTrips} />
-            <FunnelChart trips={trips} />
-          </div>
-          <UpcomingPayments services={services} soldTrips={soldTrips} />
-        </div>
-        <div className="lg:col-span-1">
-          <TasksList
-            tasks={tasks}
-            onToggle={(task) => updateTaskMutation.mutate({ id: task.id, data: { completed: !task.completed } })}
-            onDelete={(task) => deleteTaskMutation.mutate(task.id)}
-            onCreate={(data) => createTaskMutation.mutate(data)}
-          />
-        </div>
+      {/* Main Content Grid — even 2x2 layout */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-stretch">
+        <ActiveReminders userEmail={user?.email} isAdmin={isAdmin} />
+        <TasksList
+          tasks={tasks}
+          onToggle={(task) => updateTaskMutation.mutate({ id: task.id, data: { completed: !task.completed } })}
+          onDelete={(task) => deleteTaskMutation.mutate(task.id)}
+          onCreate={(data) => createTaskMutation.mutate(data)}
+        />
+        <UpcomingTrips soldTrips={soldTrips} />
+        <UpcomingPayments services={services} soldTrips={soldTrips} />
       </div>
     </div>
   );
