@@ -5,7 +5,7 @@ import { supabaseAPI } from '@/api/supabaseClient';
 import { useQuery } from '@tanstack/react-query';
 import { isPast } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { DollarSign, Plane, Users, TrendingUp, Loader2, AlertCircle, ChevronDown, ChevronUp, ArrowRight } from 'lucide-react';
+import { DollarSign, Plane, Users, TrendingUp, Loader2, AlertCircle, ChevronDown, ChevronUp, ArrowRight, Wallet } from 'lucide-react';
 import { ViewModeContext } from '@/Layout';
 import StatsCard from '@/components/ui/StatsCard';
 import UpcomingTrips from '@/components/dashboard/UpcomingTrips';
@@ -30,6 +30,7 @@ export default function Dashboard() {
 
   const [selectedTrip, setSelectedTrip] = useState('all');
   const [showPendingCollection, setShowPendingCollection] = useState(false);
+  const [showCommissionsToCollect, setShowCommissionsToCollect] = useState(false);
 
   // Time filter for the stat cards (defaults to the current month)
   const now = new Date();
@@ -162,8 +163,7 @@ export default function Dashboard() {
     return null;
   }).filter(Boolean);
 
-  // Net Commissions Post-Trip Control
-  const today = new Date();
+  // Finished trips with net commission still pending to collect
   const myFinishedTripsWithNetCommissions = soldTrips
     .filter(trip => {
       if (!trip.end_date) return false;
@@ -209,6 +209,7 @@ export default function Dashboard() {
 
   const readyCount = myFinishedTripsWithNetCommissions.filter(t => t.status === 'ready').length;
   const reviewCount = myFinishedTripsWithNetCommissions.filter(t => t.status === 'review').length;
+  const totalNetCommissionsPending = myFinishedTripsWithNetCommissions.reduce((sum, t) => sum + t.netCommissionsPending, 0);
 
   // Account Balance Panel (similar to admin but filtered by user)
   const confirmedClientPayments = allClientPayments.filter(p => p.confirmed === true);
@@ -473,6 +474,86 @@ export default function Dashboard() {
                     </div>
                   </div>
                 ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Commissions to Collect — finished trips */}
+      {myFinishedTripsWithNetCommissions.length > 0 && (
+        <div className="bg-white rounded-2xl overflow-hidden"
+             style={{ border: '1px solid rgba(22,163,74,0.18)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+          <button
+            onClick={() => setShowCommissionsToCollect(!showCommissionsToCollect)}
+            className="w-full px-5 py-3.5 flex items-center justify-between transition-colors"
+            style={{ background: showCommissionsToCollect ? 'rgba(22,163,74,0.05)' : 'transparent' }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(22,163,74,0.05)'; }}
+            onMouseLeave={e => { e.currentTarget.style.background = showCommissionsToCollect ? 'rgba(22,163,74,0.05)' : 'transparent'; }}
+          >
+            <div className="flex items-center gap-3 flex-1 min-w-0">
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+                   style={{ background: 'rgba(22,163,74,0.07)', border: '1px solid rgba(22,163,74,0.15)' }}>
+                <Wallet className="w-4 h-4" style={{ color: '#16A34A' }} />
+              </div>
+              <div className="text-left flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-0.5">
+                  <p className="text-sm font-semibold" style={{ color: '#1C1C1E' }}>Comisiones por Cobrar</p>
+                  <span className="text-xs font-bold px-2 py-0.5 rounded-full text-white flex-shrink-0" style={{ background: '#16A34A' }}>
+                    {myFinishedTripsWithNetCommissions.length}
+                  </span>
+                </div>
+                <p className="text-xs" style={{ color: '#AEAEB2' }}>
+                  Viajes ya terminados · {readyCount} listo{readyCount === 1 ? '' : 's'} para cobrar
+                  {reviewCount > 0 ? ` · ${reviewCount} por revisar` : ''}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 flex-shrink-0">
+              <span className="text-base font-bold" style={{ color: '#16A34A' }}>
+                ${totalNetCommissionsPending.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+              </span>
+              {showCommissionsToCollect
+                ? <ChevronUp className="w-4 h-4" style={{ color: '#16A34A' }} />
+                : <ChevronDown className="w-4 h-4" style={{ color: '#AEAEB2' }} />}
+            </div>
+          </button>
+          {showCommissionsToCollect && (
+            <div className="px-5 pb-5">
+              <div className="space-y-2">
+                {myFinishedTripsWithNetCommissions.map(trip => {
+                  const isReady = trip.status === 'ready';
+                  return (
+                    <Link
+                      key={trip.id}
+                      to={createPageUrl(`SoldTripDetail?id=${trip.id}`)}
+                      className="block rounded-xl p-3 hover:opacity-90 transition-opacity"
+                      style={{ background: '#FAFAFA', border: '1px solid rgba(0,0,0,0.06)' }}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold truncate" style={{ color: '#1C1C1E' }}>{trip.client_name || 'Sin cliente'}</p>
+                          <p className="text-xs truncate mb-1.5" style={{ color: '#AEAEB2' }}>
+                            {trip.destination} · regresó {formatDate(trip.end_date, 'd MMM yyyy', { locale: es })}
+                          </p>
+                          <span className="text-xs font-medium px-2 py-0.5 rounded-full"
+                                style={{
+                                  color: isReady ? '#16A34A' : '#B45309',
+                                  background: isReady ? 'rgba(22,163,74,0.1)' : 'rgba(217,119,6,0.1)'
+                                }}>
+                            {isReady ? 'Listo para cobrar' : 'Por revisar'}
+                          </span>
+                        </div>
+                        <div className="text-right flex-shrink-0">
+                          <p className="text-base font-bold" style={{ color: '#16A34A' }}>
+                            ${trip.netCommissionsPending.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                          </p>
+                          <p className="text-xs" style={{ color: '#AEAEB2' }}>tu comisión</p>
+                        </div>
+                      </div>
+                    </Link>
+                  );
+                })}
               </div>
             </div>
           )}
