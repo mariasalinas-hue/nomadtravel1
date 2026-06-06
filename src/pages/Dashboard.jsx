@@ -311,6 +311,9 @@ export default function Dashboard() {
                  style={{ color: '#AEAEB2', letterSpacing: '0.06em', fontFamily: 'Inter, sans-serif' }}>
                 Mi Saldo en Cuenta
               </p>
+              <p className="text-xs mb-2" style={{ color: '#AEAEB2' }}>
+                Efectivo neto que pasó por tu cuenta. No incluye lo que el cliente pagó directo al proveedor con su tarjeta.
+              </p>
               {selectedTrip !== 'all' && selectedTripData && (
                 <p className="text-xs mb-2" style={{ color: '#6B6B6F' }}>
                   {selectedTripData.client_name} — {selectedTripData.destination}
@@ -322,14 +325,14 @@ export default function Dashboard() {
               </p>
               <div className="grid grid-cols-2 gap-3">
                 <div className="rounded-xl p-3" style={{ background: 'rgba(22,163,74,0.07)', border: '1px solid rgba(22,163,74,0.12)' }}>
-                  <p className="text-[10px] font-medium uppercase tracking-wide mb-1" style={{ color: '#16A34A', letterSpacing: '0.06em' }}>Total Cobrado</p>
+                  <p className="text-[10px] font-medium uppercase tracking-wide mb-1" style={{ color: '#16A34A', letterSpacing: '0.06em' }}>Cobrado en tu cuenta</p>
                   <p className="text-lg font-bold" style={{ color: '#1C1C1E', fontFamily: 'Inter, sans-serif', letterSpacing: '-0.02em' }}>
                     ${totalIncome.toLocaleString()}
                   </p>
                   <p className="text-xs mt-0.5" style={{ color: '#AEAEB2' }}>{filteredClientPaymentsForBalance.length} pagos</p>
                 </div>
                 <div className="rounded-xl p-3" style={{ background: 'rgba(220,38,38,0.05)', border: '1px solid rgba(220,38,38,0.1)' }}>
-                  <p className="text-[10px] font-medium uppercase tracking-wide mb-1" style={{ color: '#DC2626', letterSpacing: '0.06em' }}>Total Pagado</p>
+                  <p className="text-[10px] font-medium uppercase tracking-wide mb-1" style={{ color: '#DC2626', letterSpacing: '0.06em' }}>Pagado a proveedores</p>
                   <p className="text-lg font-bold" style={{ color: '#1C1C1E', fontFamily: 'Inter, sans-serif', letterSpacing: '-0.02em' }}>
                     ${totalExpenses.toLocaleString()}
                   </p>
