@@ -2,14 +2,13 @@ import React, { useState, useEffect, useContext } from 'react';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { supabaseAPI } from '@/api/supabaseClient';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { isPast } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { DollarSign, Plane, Users, TrendingUp, Loader2, AlertCircle, ChevronDown, ChevronUp, ArrowRight } from 'lucide-react';
 import { ViewModeContext } from '@/Layout';
 import StatsCard from '@/components/ui/StatsCard';
 import UpcomingTrips from '@/components/dashboard/UpcomingTrips';
-import TasksList from '@/components/dashboard/TasksList';
 import UpcomingPayments from '@/components/dashboard/UpcomingPayments';
 import ActiveReminders from '@/components/dashboard/ActiveReminders';
 import { parseLocalDate, formatDate } from '@/components/utils/dateHelpers';
@@ -31,7 +30,6 @@ export default function Dashboard() {
 
   const [selectedTrip, setSelectedTrip] = useState('all');
   const [showPendingCollection, setShowPendingCollection] = useState(false);
-  const queryClient = useQueryClient();
 
   // Time filter for the stat cards (defaults to the current month)
   const now = new Date();
@@ -75,16 +73,6 @@ export default function Dashboard() {
   const soldTrips = allSoldTrips.filter(t => !t.is_deleted);
   const clients = allClients.filter(c => !c.is_deleted);
 
-  const { data: tasks = [] } = useQuery({
-    queryKey: ['tasks', user?.email, isAdmin],
-    queryFn: async () => {
-      if (!user) return [];
-      if (isAdmin) return supabaseAPI.entities.Task.list();
-      return supabaseAPI.entities.Task.filter({ created_by: user.email });
-    },
-    enabled: !!user
-  });
-
   const soldTripIds = soldTrips.map(t => t.id);
   const { data: allServices = [] } = useQuery({
     queryKey: ['services', soldTripIds],
@@ -110,21 +98,6 @@ export default function Dashboard() {
     queryKey: ['supplierPayments'],
     queryFn: () => supabaseAPI.entities.SupplierPayment.list(),
     enabled: !!user
-  });
-
-  const createTaskMutation = useMutation({
-    mutationFn: (data) => supabaseAPI.entities.Task.create(data),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['tasks'] })
-  });
-
-  const updateTaskMutation = useMutation({
-    mutationFn: ({ id, data }) => supabaseAPI.entities.Task.update(id, data),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['tasks'] })
-  });
-
-  const deleteTaskMutation = useMutation({
-    mutationFn: (id) => supabaseAPI.entities.Task.delete(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['tasks'] })
   });
 
   // --- Time filter (year + month) applied to the 4 stat cards ---
@@ -503,17 +476,13 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Main Content Grid — even 2x2 layout */}
+      {/* Main Content Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-stretch">
         <ActiveReminders userEmail={user?.email} isAdmin={isAdmin} />
-        <TasksList
-          tasks={tasks}
-          onToggle={(task) => updateTaskMutation.mutate({ id: task.id, data: { completed: !task.completed } })}
-          onDelete={(task) => deleteTaskMutation.mutate(task.id)}
-          onCreate={(data) => createTaskMutation.mutate(data)}
-        />
         <UpcomingTrips soldTrips={soldTrips} />
-        <UpcomingPayments services={services} soldTrips={soldTrips} />
+        <div className="lg:col-span-2">
+          <UpcomingPayments services={services} soldTrips={soldTrips} />
+        </div>
       </div>
     </div>
   );
