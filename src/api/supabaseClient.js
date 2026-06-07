@@ -63,9 +63,13 @@ export const createSupabaseAPI = () => {
         query = query.eq('is_deleted', false);
       }
 
-      // Aplicar cada filtro
+      // Aplicar cada filtro (arreglo => IN, valor simple => igualdad)
       Object.entries(filters).forEach(([key, value]) => {
-        query = query.eq(key, value);
+        if (Array.isArray(value)) {
+          query = query.in(key, value);
+        } else {
+          query = query.eq(key, value);
+        }
       });
 
       // Solo ordenar por created_date si la tabla lo soporta
