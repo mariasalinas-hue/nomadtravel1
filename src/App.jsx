@@ -11,6 +11,7 @@ import Login from '@/components/Login';
 import { SignedIn, SignedOut, SignInButton, UserButton, useUser } from '@clerk/clerk-react';
 import AdminRoute from '@/components/AdminRoute';
 import ClientTripForm from '@/pages/ClientTripForm';
+import ClientIntakeForm from '@/pages/ClientIntakeForm';
 import ErrorBoundary from '@/components/ui/ErrorBoundary';
 import { SpoofProvider } from '@/contexts/SpoofContext';
 
@@ -89,6 +90,7 @@ function App() {
         <Routes>
           {/* Public routes - no authentication required */}
           <Route path="/public/trip-form/:token" element={<ClientTripForm />} />
+          <Route path="/public/client-form/:token" element={<ClientIntakeForm />} />
 
           {/* All other routes - authentication required */}
           <Route path="*" element={

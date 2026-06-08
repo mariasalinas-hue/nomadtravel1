@@ -9,7 +9,7 @@ import { es } from 'date-fns/locale';
 import { formatDate } from '@/lib/dateUtils';
 import { parseLocalDate } from '@/components/utils/dateHelpers';
 import {
-  Plus, Search, Edit2, Trash2, Loader2, Users, Eye, Cake, Plane
+  Plus, Search, Edit2, Trash2, Loader2, Users, Eye, Cake, Plane, Share2
 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,6 +25,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import ClientForm from '@/components/clients/ClientForm';
+import ShareClientFormModal from '@/components/clients/ShareClientFormModal';
 import EmptyState from '@/components/ui/EmptyState';
 
 const SOURCE_LABELS = {
@@ -63,6 +64,7 @@ export default function Clients() {
   const [sourceFilter, setSourceFilter] = useState('all');
   const [sortBy, setSortBy] = useState('recent');
   const [formOpen, setFormOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const [editingClient, setEditingClient] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
 
@@ -202,14 +204,24 @@ export default function Clients() {
           <h1 className="text-2xl lg:text-3xl font-bold text-stone-800">Clientes</h1>
           <p className="text-stone-500 mt-1">{clients.length} clientes registrados</p>
         </div>
-        <Button
-          onClick={() => { setEditingClient(null); setFormOpen(true); }}
-          className="text-white rounded-xl"
-          style={{ backgroundColor: '#2E442A' }}
-        >
-          <Plus className="w-4 h-4 mr-2" />
-          Nuevo Cliente
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            onClick={() => setShareOpen(true)}
+            variant="outline"
+            className="rounded-xl"
+          >
+            <Share2 className="w-4 h-4 mr-2" />
+            Compartir formulario
+          </Button>
+          <Button
+            onClick={() => { setEditingClient(null); setFormOpen(true); }}
+            className="text-white rounded-xl"
+            style={{ backgroundColor: '#2E442A' }}
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            Nuevo Cliente
+          </Button>
+        </div>
       </div>
 
       {/* Controls: search + filters + sort */}
@@ -364,6 +376,9 @@ export default function Clients() {
           </div>
         </div>
       )}
+
+      {/* Share client intake form */}
+      <ShareClientFormModal open={shareOpen} onClose={() => setShareOpen(false)} />
 
       {/* Form Dialog */}
       <ClientForm
