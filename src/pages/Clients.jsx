@@ -9,7 +9,7 @@ import { es } from 'date-fns/locale';
 import { formatDate } from '@/lib/dateUtils';
 import { parseLocalDate } from '@/components/utils/dateHelpers';
 import {
-  Plus, Search, Edit2, Trash2, Loader2, Users, Eye, Cake, Plane, Share2
+  Plus, Search, Edit2, Trash2, Loader2, Users, Eye, Cake, Plane, Share2, Send
 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import ClientForm from '@/components/clients/ClientForm';
 import ShareClientFormModal from '@/components/clients/ShareClientFormModal';
+import SendTripFormModal from '@/components/clients/SendTripFormModal';
 import EmptyState from '@/components/ui/EmptyState';
 
 const SOURCE_LABELS = {
@@ -65,6 +66,7 @@ export default function Clients() {
   const [sortBy, setSortBy] = useState('recent');
   const [formOpen, setFormOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
+  const [tripFormClient, setTripFormClient] = useState(null);
   const [editingClient, setEditingClient] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
 
@@ -355,6 +357,15 @@ export default function Clients() {
                       </td>
                       <td className="p-4 text-right">
                         <div className="flex justify-end gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            title="Enviar formulario de viaje"
+                            onClick={() => setTripFormClient(client)}
+                          >
+                            <Send className="w-4 h-4" style={{ color: '#2E442A' }} />
+                          </Button>
                           <Link to={createPageUrl(`ClientDetail?id=${client.id}`)}>
                             <Button variant="ghost" size="icon" className="h-8 w-8">
                               <Eye className="w-4 h-4 text-stone-400" />
@@ -379,6 +390,13 @@ export default function Clients() {
 
       {/* Share client intake form */}
       <ShareClientFormModal open={shareOpen} onClose={() => setShareOpen(false)} />
+
+      {/* Send trip-request form for a specific client */}
+      <SendTripFormModal
+        open={!!tripFormClient}
+        client={tripFormClient}
+        onClose={() => setTripFormClient(null)}
+      />
 
       {/* Form Dialog */}
       <ClientForm

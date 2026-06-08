@@ -12,6 +12,7 @@ import { SignedIn, SignedOut, SignInButton, UserButton, useUser } from '@clerk/c
 import AdminRoute from '@/components/AdminRoute';
 import ClientTripForm from '@/pages/ClientTripForm';
 import ClientIntakeForm from '@/pages/ClientIntakeForm';
+import TripRequestForm from '@/pages/TripRequestForm';
 import ErrorBoundary from '@/components/ui/ErrorBoundary';
 import { SpoofProvider } from '@/contexts/SpoofContext';
 
@@ -92,6 +93,7 @@ function App() {
           <Route path="/public/trip-form/:token" element={<ClientTripForm />} />
           <Route path="/public/client-form/:token" element={<ClientIntakeForm />} />
           <Route path="/c/:token" element={<ClientIntakeForm />} />
+          <Route path="/t/:clientId" element={<TripRequestForm />} />
 
           {/* All other routes - authentication required */}
           <Route path="*" element={

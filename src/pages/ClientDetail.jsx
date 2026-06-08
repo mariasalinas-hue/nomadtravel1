@@ -9,7 +9,7 @@ import { formatDate } from '@/lib/dateUtils';
 import { parseLocalDate } from '@/components/utils/dateHelpers';
 import {
   ArrowLeft, Mail, Phone, Calendar, Loader2,
-  Plane, Plus, Send, Copy, Check, ExternalLink, Settings, Trash2,
+  Plane, Plus, Send, Settings, Trash2,
   DollarSign, Wallet, MessageCircle, Cake
 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
@@ -29,6 +29,7 @@ import TripForm from '@/components/trips/TripForm';
 import TravelDocumentsList from '@/components/documents/TravelDocumentsList';
 import ClientPreferencesForm from '@/components/clients/ClientPreferencesForm';
 import CompanionsList from '@/components/clients/CompanionsList';
+import SendTripFormModal from '@/components/clients/SendTripFormModal';
 
 const SOURCE_LABELS = {
   referido: 'Referido',
@@ -92,7 +93,7 @@ export default function ClientDetail() {
   const clientId = urlParams.get('id');
 
   const [formOpen, setFormOpen] = useState(false);
-  const [linkCopied, setLinkCopied] = useState(false);
+  const [shareTripOpen, setShareTripOpen] = useState(false);
   const [preferencesOpen, setPreferencesOpen] = useState(false);
   const [tripToDelete, setTripToDelete] = useState(null);
 
@@ -201,15 +202,6 @@ export default function ClientDetail() {
       toast.success('Acompañantes actualizados');
     }
   });
-
-  const handleCopyLink = () => {
-    const baseUrl = window.location.origin;
-    const formUrl = `${baseUrl}/#/TripRequestPublic?clientId=${clientId}`;
-    navigator.clipboard.writeText(formUrl);
-    setLinkCopied(true);
-    toast.success('Link copiado al portapapeles');
-    setTimeout(() => setLinkCopied(false), 2000);
-  };
 
   if (isLoading) {
     return (
@@ -406,29 +398,16 @@ export default function ClientDetail() {
           <div className="bg-white rounded-2xl p-6 shadow-sm border border-stone-100">
             <h3 className="font-semibold text-stone-800 mb-3">Enviar Formulario de Viaje</h3>
             <p className="text-sm text-stone-500 mb-4">
-              Envía este link al cliente para que llene su solicitud de viaje desde su celular o computadora.
+              Manda un link al cliente para que cuente cómo, cuándo y cuánto quiere gastar. Se creará una cotización ligada a este cliente.
             </p>
-            <div className="flex gap-2">
-              <Button 
-                onClick={handleCopyLink}
-                variant="outline"
-                className="flex-1 rounded-xl"
-              >
-                {linkCopied ? <Check className="w-4 h-4 mr-2" /> : <Copy className="w-4 h-4 mr-2" />}
-                {linkCopied ? 'Copiado' : 'Copiar Link'}
-              </Button>
-              <Button 
-                onClick={() => {
-                  const baseUrl = window.location.origin;
-                  const formUrl = `${baseUrl}/#/TripRequestPublic?clientId=${clientId}`;
-                  window.open(formUrl, '_blank');
-                }}
-                variant="outline"
-                className="rounded-xl"
-              >
-                <ExternalLink className="w-4 h-4" />
-              </Button>
-            </div>
+            <Button
+              onClick={() => setShareTripOpen(true)}
+              className="w-full rounded-xl text-white"
+              style={{ backgroundColor: '#2E442A' }}
+            >
+              <Send className="w-4 h-4 mr-2" />
+              Enviar formulario
+            </Button>
           </div>
 
           {/* Travel Documents */}
@@ -594,6 +573,13 @@ export default function ClientDetail() {
           id: clientId,
           name: `${client.first_name} ${client.last_name}`
         }}
+      />
+
+      {/* Send Trip-request Form */}
+      <SendTripFormModal
+        open={shareTripOpen}
+        client={client}
+        onClose={() => setShareTripOpen(false)}
       />
 
       {/* Client Preferences Form */}
