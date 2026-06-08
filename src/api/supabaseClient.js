@@ -380,7 +380,7 @@ export const createSupabaseAPI = () => {
       TripDocumentFile: createEntityMethods('trip_document_files'),
       TripReminder: createEntityMethods('trip_reminders'),
       ErrorReport: createEntityMethods('error_reports', { hasIsDeleted: false }),
-      SharedTripForm: createEntityMethods('shared_trip_forms', { hasIsDeleted: false }),
+      SharedTripForm: createEntityMethods('shared_trip_forms', { hasIsDeleted: false, hasCreatedDate: false }),
       ServiceDropdownOption: createEntityMethods('service_dropdown_options', { hasIsDeleted: false, hasCreatedDate: false })
     }
   };
