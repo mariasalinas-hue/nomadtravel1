@@ -76,38 +76,29 @@ export default function Dashboard() {
 
   const soldTripIds = soldTrips.map(t => t.id);
   const { data: allServices = [] } = useQuery({
-    queryKey: ['services', isAdmin, soldTripIds],
+    queryKey: ['services', soldTripIds],
     queryFn: async () => {
-      if (isAdmin) return supabaseAPI.entities.TripService.list();
       if (soldTripIds.length === 0) return [];
-      return supabaseAPI.entities.TripService.filter({ sold_trip_id: soldTripIds });
+      return supabaseAPI.entities.TripService.list();
     },
-    enabled: !!user && (isAdmin || soldTripIds.length > 0)
+    enabled: soldTripIds.length > 0
   });
 
-  // Services for the user's trips
-  const services = allServices.filter(service =>
+  // Filter services to only show user's trips
+  const services = allServices.filter(service => 
     soldTripIds.includes(service.sold_trip_id)
   );
 
   const { data: allClientPayments = [] } = useQuery({
-    queryKey: ['clientPayments', isAdmin, soldTripIds],
-    queryFn: async () => {
-      if (isAdmin) return supabaseAPI.entities.ClientPayment.list();
-      if (soldTripIds.length === 0) return [];
-      return supabaseAPI.entities.ClientPayment.filter({ sold_trip_id: soldTripIds });
-    },
-    enabled: !!user && (isAdmin || soldTripIds.length > 0)
+    queryKey: ['clientPayments'],
+    queryFn: () => supabaseAPI.entities.ClientPayment.list(),
+    enabled: !!user
   });
 
   const { data: allSupplierPayments = [] } = useQuery({
-    queryKey: ['supplierPayments', isAdmin, soldTripIds],
-    queryFn: async () => {
-      if (isAdmin) return supabaseAPI.entities.SupplierPayment.list();
-      if (soldTripIds.length === 0) return [];
-      return supabaseAPI.entities.SupplierPayment.filter({ sold_trip_id: soldTripIds });
-    },
-    enabled: !!user && (isAdmin || soldTripIds.length > 0)
+    queryKey: ['supplierPayments'],
+    queryFn: () => supabaseAPI.entities.SupplierPayment.list(),
+    enabled: !!user
   });
 
   // --- Time filter (year + month) applied to the 4 stat cards ---

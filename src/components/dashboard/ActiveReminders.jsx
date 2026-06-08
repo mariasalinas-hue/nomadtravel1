@@ -28,15 +28,10 @@ export default function ActiveReminders({ userEmail, isAdmin }) {
     enabled: !!userEmail
   });
 
-  const soldTripIds = soldTrips.map(t => t.id);
   const { data: allReminders = [], isLoading: remindersLoading } = useQuery({
-    queryKey: ['allReminders', isAdmin, soldTripIds],
-    queryFn: async () => {
-      if (isAdmin) return supabaseAPI.entities.TripReminder.list();
-      if (soldTripIds.length === 0) return [];
-      return supabaseAPI.entities.TripReminder.filter({ sold_trip_id: soldTripIds });
-    },
-    enabled: !!userEmail && (isAdmin || soldTripIds.length > 0)
+    queryKey: ['allReminders'],
+    queryFn: () => supabaseAPI.entities.TripReminder.list(),
+    enabled: true
   });
 
   const updateReminderMutation = useMutation({
