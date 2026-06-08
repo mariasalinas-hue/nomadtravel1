@@ -91,6 +91,7 @@ function App() {
           {/* Public routes - no authentication required */}
           <Route path="/public/trip-form/:token" element={<ClientTripForm />} />
           <Route path="/public/client-form/:token" element={<ClientIntakeForm />} />
+          <Route path="/c/:token" element={<ClientIntakeForm />} />
 
           {/* All other routes - authentication required */}
           <Route path="*" element={

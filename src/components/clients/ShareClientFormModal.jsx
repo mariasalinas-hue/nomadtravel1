@@ -3,14 +3,18 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Copy, Check, Share2, ExternalLink, UserPlus } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabaseAPI } from '@/api/supabaseClient';
 import { useSpoofableUser } from '@/contexts/SpoofContext';
 
+const DEFAULT_MESSAGE = '¡Hola! 🙏 Gracias por confiar en nosotros. Por favor llena tus datos en el siguiente formulario para agregarte a nuestro sistema y poder cotizarte:';
+
 export default function ShareClientFormModal({ open, onClose }) {
   const { user: clerkUser } = useSpoofableUser();
   const [shareLink, setShareLink] = useState('');
+  const [message, setMessage] = useState(DEFAULT_MESSAGE);
   const [copied, setCopied] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
 
@@ -28,7 +32,8 @@ export default function ShareClientFormModal({ open, onClose }) {
 
     setIsGenerating(true);
     try {
-      const token = `${user.id}-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+      // Short, unique-enough token
+      const token = (Math.random().toString(36).substring(2, 8) + Math.random().toString(36).substring(2, 6));
 
       await supabaseAPI.entities.SharedTripForm.create({
         share_token: token,
@@ -40,7 +45,7 @@ export default function ShareClientFormModal({ open, onClose }) {
       });
 
       const baseUrl = window.location.origin;
-      setShareLink(`${baseUrl}/public/client-form/${token}`);
+      setShareLink(`${baseUrl}/c/${token}`);
       toast.success('Link generado exitosamente');
     } catch (error) {
       console.error('Error generating share link:', error);
@@ -50,15 +55,17 @@ export default function ShareClientFormModal({ open, onClose }) {
     }
   };
 
-  const copyToClipboard = () => {
-    navigator.clipboard.writeText(shareLink);
+  const copyMessageAndLink = () => {
+    const text = `${message}\n\n${shareLink}`;
+    navigator.clipboard.writeText(text);
     setCopied(true);
-    toast.success('Link copiado al portapapeles');
+    toast.success('Mensaje y link copiados');
     setTimeout(() => setCopied(false), 2000);
   };
 
   const handleClose = () => {
     setShareLink('');
+    setMessage(DEFAULT_MESSAGE);
     setCopied(false);
     onClose();
   };
@@ -75,8 +82,8 @@ export default function ShareClientFormModal({ open, onClose }) {
 
         <div className="space-y-4 mt-4">
           <p className="text-sm text-stone-600">
-            Genera un link para que tu cliente llene sus datos (nombre, email, teléfono y
-            fecha de nacimiento). Se guardará automáticamente en tu lista de clientes.
+            Genera un link para que tu cliente llene sus datos. Se guardará automáticamente
+            en tu lista de clientes.
           </p>
 
           {!shareLink ? (
@@ -100,21 +107,39 @@ export default function ShareClientFormModal({ open, onClose }) {
             </Button>
           ) : (
             <div className="space-y-3">
+              {/* Editable message */}
               <div className="space-y-2">
-                <Label htmlFor="client-share-link">Link para compartir</Label>
-                <div className="flex gap-2">
-                  <Input
-                    id="client-share-link"
-                    value={shareLink}
-                    readOnly
-                    className="rounded-xl font-mono text-sm"
-                    onClick={(e) => e.target.select()}
-                  />
-                  <Button onClick={copyToClipboard} variant="outline" className="rounded-xl flex-shrink-0">
-                    {copied ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
-                  </Button>
-                </div>
+                <Label htmlFor="share-message">Mensaje (puedes editarlo)</Label>
+                <Textarea
+                  id="share-message"
+                  value={message}
+                  onChange={(e) => setMessage(e.target.value)}
+                  rows={3}
+                  className="rounded-xl text-sm resize-none"
+                />
               </div>
+
+              {/* Link */}
+              <div className="space-y-2">
+                <Label htmlFor="client-share-link">Link</Label>
+                <Input
+                  id="client-share-link"
+                  value={shareLink}
+                  readOnly
+                  className="rounded-xl font-mono text-sm"
+                  onClick={(e) => e.target.select()}
+                />
+              </div>
+
+              {/* Copy message + link (primary) */}
+              <Button
+                onClick={copyMessageAndLink}
+                className="w-full rounded-xl text-white"
+                style={{ backgroundColor: '#2E442A' }}
+              >
+                {copied ? <Check className="w-4 h-4 mr-2" /> : <Copy className="w-4 h-4 mr-2" />}
+                {copied ? 'Copiado' : 'Copiar mensaje + link'}
+              </Button>
 
               <div className="flex gap-2">
                 <Button
@@ -127,13 +152,13 @@ export default function ShareClientFormModal({ open, onClose }) {
                 </Button>
                 <Button onClick={generateShareLink} variant="outline" className="flex-1 rounded-xl">
                   <Share2 className="w-4 h-4 mr-2" />
-                  Generar nuevo
+                  Nuevo link
                 </Button>
               </div>
 
               <div className="p-3 bg-blue-50 rounded-xl border border-blue-200">
                 <p className="text-xs text-blue-800">
-                  <strong>Tip:</strong> Compártelo por WhatsApp, email o donde quieras. No expira.
+                  <strong>Tip:</strong> Pega el mensaje + link directo en WhatsApp o email. No expira.
                 </p>
               </div>
             </div>
