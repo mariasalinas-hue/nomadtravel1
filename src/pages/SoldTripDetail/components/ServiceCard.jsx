@@ -1,4 +1,3 @@
-import React from 'react';
 import { Edit2, Trash2, MoreVertical, TrendingUp, TrendingDown, StickyNote } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -7,11 +6,13 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { SERVICE_ICONS, SERVICE_COLORS } from '../constants/serviceConstants';
 import { getServiceDetails, calculateExchangeAlert } from '../utils/serviceUtils';
+import { getSupplierOutstanding } from '@/components/utils/serviceCost';
 
 const RESERVATION_STATUS = {
-  reservado: { label: 'Reservado', bg: '#FEF3C7', color: '#92400E' },
-  pagado:    { label: 'Pagado',    bg: '#F0FDF4', color: '#166534' },
-  cancelado: { label: 'Cancelado', bg: '#FEF2F2', color: '#991B1B' },
+  reservado: { label: 'Reservado',            bg: '#FEF3C7', color: '#92400E' },
+  parcial:   { label: 'Parcialmente pagado',  bg: '#DBEAFE', color: '#1E40AF' },
+  pagado:    { label: 'Pagado',               bg: '#F0FDF4', color: '#166534' },
+  cancelado: { label: 'Cancelado',            bg: '#FEF2F2', color: '#991B1B' },
 };
 
 const PROVIDER_LABEL = {
@@ -38,10 +39,7 @@ export default function ServiceCard({
   const servicePayments = supplierPayments.filter(p => p.trip_service_id === service.id);
   const paidToSupplier = servicePayments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
   const hasNetoPayments = servicePayments.some(p => p.payment_type === 'neto');
-  const costToPay = hasNetoPayments
-    ? (service.total_price || 0) - (service.commission || 0)
-    : (service.total_price || 0);
-  const outstanding = Math.max(0, costToPay - paidToSupplier);
+  const outstanding = getSupplierOutstanding(service, paidToSupplier, hasNetoPayments);
 
   const reservationNumber = service.reservation_number
     || service.flight_reservation_number
@@ -87,6 +85,7 @@ export default function ServiceCard({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="reservado">Reservado</SelectItem>
+                <SelectItem value="parcial">Parcialmente pagado</SelectItem>
                 <SelectItem value="pagado">Pagado</SelectItem>
                 <SelectItem value="cancelado">Cancelado</SelectItem>
               </SelectContent>
@@ -138,6 +137,14 @@ export default function ServiceCard({
               </p>
             </div>
           )}
+          {paidToSupplier > 0 && outstanding > 0 && (
+            <div className="text-right">
+              <p className="text-[10px] font-medium mb-0.5 uppercase tracking-wide" style={{ color: '#AEAEB2', letterSpacing: '0.06em' }}>Saldo</p>
+              <p className="text-sm font-bold" style={{ color: '#B45309' }}>
+                ${outstanding.toLocaleString()}
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Actions menu */}
@@ -174,6 +181,12 @@ export default function ServiceCard({
           <div>
             <p className="text-[10px] text-stone-400 uppercase tracking-wide mb-0.5">Pagado</p>
             <p className="text-sm font-bold" style={{ color: '#C9A84C' }}>${paidToSupplier.toLocaleString()}</p>
+          </div>
+        )}
+        {paidToSupplier > 0 && outstanding > 0 && (
+          <div>
+            <p className="text-[10px] text-stone-400 uppercase tracking-wide mb-0.5">Saldo</p>
+            <p className="text-sm font-bold" style={{ color: '#B45309' }}>${outstanding.toLocaleString()}</p>
           </div>
         )}
       </div>

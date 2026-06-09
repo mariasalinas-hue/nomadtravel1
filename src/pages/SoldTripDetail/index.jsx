@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { Loader2, StickyNote, FolderOpen, Bell } from 'lucide-react';
@@ -437,6 +437,7 @@ export default function SoldTripDetail() {
         onClose={() => { setSupplierPaymentOpen(false); setEditingSupplierPayment(null); }}
         soldTripId={tripId}
         services={services}
+        supplierPayments={supplierPayments}
         payment={editingSupplierPayment}
         onSave={(data) => {
           if (editingSupplierPayment) {

@@ -1,4 +1,5 @@
 import { supabaseAPI } from "@/api/supabaseClient";
+import { getSupplierCostToPay, computeAutoReservationStatus } from "@/components/utils/serviceCost";
 
 /**
  * Recalcula todos los totales para un SoldTrip y actualiza los ítems de ClientPaymentPlan.
@@ -101,15 +102,30 @@ export async function updateSoldTripAndTripServiceTotals(soldTripId, queryClient
       total_paid_to_suppliers: totalPaidToSuppliers,
     });
 
-    // Actualizar amount_paid_to_supplier en TripService
+    // Actualizar amount_paid_to_supplier y el estado de reservación en TripService
     for (const service of newServices) {
       const servicePayments = newSupplierPayments.filter(p => p.trip_service_id === service.id);
       const totalPaidForService = servicePayments.reduce((sum, p) => sum + (p.amount || 0), 0);
 
+      // Costo a pagar al proveedor (neto vs bruto, misma lógica que ServiceCard)
+      const treatAsNeto = servicePayments.some(p => p.payment_type === 'neto');
+      const costToPay = getSupplierCostToPay(service, treatAsNeto);
+
+      // Estado automático según avance de pago (no toca cancelados ni pagos directos sin registro)
+      const currentStatus = service.reservation_status || service.metadata?.reservation_status || 'reservado';
+      const autoStatus = computeAutoReservationStatus(currentStatus, totalPaidForService, costToPay);
+
+      const patch = {};
       if (service.amount_paid_to_supplier !== totalPaidForService) {
-        await supabaseAPI.entities.TripService.update(service.id, {
-          amount_paid_to_supplier: totalPaidForService
-        });
+        patch.amount_paid_to_supplier = totalPaidForService;
+      }
+      if (autoStatus !== currentStatus) {
+        patch.reservation_status = autoStatus;
+        patch.metadata = { ...(service.metadata || {}), reservation_status: autoStatus };
+      }
+
+      if (Object.keys(patch).length > 0) {
+        await supabaseAPI.entities.TripService.update(service.id, patch);
       }
     }
 

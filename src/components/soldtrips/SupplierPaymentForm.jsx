@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2 } from 'lucide-react';
 import { supabaseAPI } from '@/api/supabaseClient';
+import { getSupplierOutstanding } from '@/components/utils/serviceCost';
 import { toast } from "sonner";
 
 const SUPPLIER_METHODS = [
@@ -48,7 +49,7 @@ function getServiceLabel(service) {
   }
 }
 
-export default function SupplierPaymentForm({ open, onClose, soldTripId, services, payment, onSave, isLoading }) {
+export default function SupplierPaymentForm({ open, onClose, soldTripId, services, supplierPayments = [], payment, onSave, isLoading }) {
   const [formData, setFormData] = useState({
     supplier: '',
     date: today(),
@@ -105,13 +106,36 @@ export default function SupplierPaymentForm({ open, onClose, soldTripId, service
     }
   };
 
-  // Auto-rellena el proveedor SOLO cuando el usuario elige un servicio (no pisa lo escrito al editar)
+  // Monto ya pagado a un servicio por OTROS pagos (excluye el pago que se está editando)
+  const paidByService = (serviceId) => supplierPayments
+    .filter(p => p.trip_service_id === serviceId && p.id !== payment?.id)
+    .reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+
+  // Saldo pendiente de un servicio. Si no hay pagos previos, usa el tipo de pago seleccionado para decidir neto/bruto.
+  const outstandingFor = (service, paymentType = formData.payment_type) => {
+    const others = supplierPayments.filter(p => p.trip_service_id === service.id && p.id !== payment?.id);
+    const treatAsNeto = others.length > 0 ? others.some(p => p.payment_type === 'neto') : paymentType === 'neto';
+    return getSupplierOutstanding(service, paidByService(service.id), treatAsNeto);
+  };
+
+  const selectedService = formData.trip_service_id !== 'none'
+    ? services.find(s => s.id === formData.trip_service_id)
+    : null;
+  const selectedOutstanding = selectedService ? outstandingFor(selectedService) : null;
+
+  // Auto-rellena proveedor y monto SOLO cuando el usuario elige un servicio (no pisa lo escrito al editar)
   const handleServiceChange = (value) => {
     setFormData(prev => {
       const next = { ...prev, trip_service_id: value };
       if (value !== 'none') {
-        const derived = deriveSupplierName(services.find(s => s.id === value));
+        const service = services.find(s => s.id === value);
+        const derived = deriveSupplierName(service);
         if (derived) next.supplier = derived;
+        // Al crear un pago nuevo, prellenar con el saldo pendiente del servicio
+        if (!payment && service) {
+          const remaining = outstandingFor(service, prev.payment_type);
+          if (remaining > 0) next.amount = remaining;
+        }
       }
       return next;
     });
@@ -150,11 +174,16 @@ export default function SupplierPaymentForm({ open, onClose, soldTripId, service
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">Sin asociar</SelectItem>
-                {services.map((service) => (
-                  <SelectItem key={service.id} value={service.id}>
-                    {getServiceLabel(service)} - ${(service.total_price ?? 0).toLocaleString()}
-                  </SelectItem>
-                ))}
+                {services.map((service) => {
+                  const remaining = outstandingFor(service);
+                  return (
+                    <SelectItem key={service.id} value={service.id}>
+                      {getServiceLabel(service)} — {remaining > 0
+                        ? `Saldo $${remaining.toLocaleString()}`
+                        : 'Pagado ✓'}
+                    </SelectItem>
+                  );
+                })}
               </SelectContent>
             </Select>
             <p className="text-xs text-stone-500 mt-1">
@@ -196,6 +225,13 @@ export default function SupplierPaymentForm({ open, onClose, soldTripId, service
                 placeholder="0.00"
                 required
               />
+              {selectedService && selectedOutstanding !== null && (
+                <p className="text-xs text-stone-500 mt-1">
+                  {selectedOutstanding > 0
+                    ? <>Saldo pendiente del servicio: <strong>${selectedOutstanding.toLocaleString()}</strong></>
+                    : 'Este servicio ya está pagado por completo'}
+                </p>
+              )}
             </div>
           </div>
 
