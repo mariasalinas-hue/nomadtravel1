@@ -17,7 +17,7 @@ const STAGE_CONFIG = {
   perdido: { label: 'Perdido', color: 'bg-red-100 text-red-700' }
 };
 
-export default function TripCard({ trip, onEdit, onDelete, onMoveStage, onMarkLost }) {
+export default function TripCard({ trip, onEdit, onDelete, onMoveStage, onMarkLost, accentColor }) {
   const stageConfig = STAGE_CONFIG[trip.stage] || STAGE_CONFIG.nuevo;
 
   return (
@@ -28,6 +28,7 @@ export default function TripCard({ trip, onEdit, onDelete, onMoveStage, onMarkLo
       exit={{ opacity: 0, y: 20 }}
       transition={{ layout: { duration: 0.2 } }}
       className="bg-white rounded-xl p-4 shadow-sm border border-stone-100 hover:shadow-md transition-all duration-200"
+      style={accentColor ? { borderLeft: `3px solid ${accentColor}` } : undefined}
     >
       <div className="flex items-start justify-between mb-3">
         <Badge className={`${stageConfig.color} font-medium text-xs`}>

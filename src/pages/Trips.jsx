@@ -312,6 +312,26 @@ export default function Trips() {
         </Button>
       </div>
 
+      {/* Pipeline funnel summary */}
+      <div className="bg-white rounded-2xl p-4 shadow-sm border border-stone-100">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+          {STAGES.map((stage) => {
+            const st = filteredTrips.filter(t => t.stage === stage.key);
+            const val = st.reduce((sum, t) => sum + (t.budget || 0), 0);
+            return (
+              <div key={stage.key} className="rounded-xl p-3" style={{ background: `${stage.color}10`, border: `1px solid ${stage.color}25` }}>
+                <div className="flex items-center gap-1.5 mb-1">
+                  <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: stage.color }} />
+                  <p className="text-xs font-medium text-stone-600 truncate">{stage.label}</p>
+                </div>
+                <p className="text-xl font-bold leading-none" style={{ color: stage.color }}>{st.length}</p>
+                <p className="text-[11px] text-stone-400 mt-1">${val.toLocaleString()}</p>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
       {/* Search */}
       <div className="relative max-w-md">
         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-stone-400" />
@@ -344,29 +364,33 @@ export default function Trips() {
                   className="w-72 flex-shrink-0"
                 >
                   {/* Column Header */}
-                  <div className="mb-4 px-1">
+                  <div className="rounded-t-2xl px-3 pt-3 pb-2" style={{ background: `${stage.color}15` }}>
                     <div className="flex items-center gap-2">
                       <div
                         className="w-3 h-3 rounded-full"
                         style={{ backgroundColor: stage.color }}
                       />
-                      <h3 className="font-semibold text-stone-700">{stage.label}</h3>
-                      <span className="text-sm text-stone-400 ml-auto">
+                      <h3 className="font-semibold text-sm" style={{ color: stage.color }}>{stage.label}</h3>
+                      <span
+                        className="text-xs font-bold ml-auto px-2 py-0.5 rounded-full"
+                        style={{ background: `${stage.color}25`, color: stage.color }}
+                      >
                         {stageTrips.length}
                       </span>
                     </div>
                     {stageValue > 0 && (
-                      <p className="text-xs text-stone-400 mt-0.5 pl-5">${stageValue.toLocaleString()}</p>
+                      <p className="text-[11px] mt-1 pl-5 font-medium" style={{ color: stage.color }}>${stageValue.toLocaleString()}</p>
                     )}
                   </div>
 
                   {/* Column Content */}
-                  <div className="space-y-3 min-h-[200px] bg-stone-50 rounded-2xl p-3">
+                  <div className="space-y-3 min-h-[200px] rounded-b-2xl p-3" style={{ background: `${stage.color}0a` }}>
                     <AnimatePresence>
                       {stageTrips.map((trip) => (
                         <TripCard
                           key={trip.id}
                           trip={trip}
+                          accentColor={stage.color}
                           onEdit={(t) => { setEditingTrip(t); setFormOpen(true); }}
                           onDelete={(t) => setDeleteConfirm(t)}
                           onMoveStage={handleMoveStage}
@@ -376,8 +400,8 @@ export default function Trips() {
                     </AnimatePresence>
                     
                     {stageTrips.length === 0 && (
-                      <div className="text-center py-8 text-sm text-stone-400">
-                        Sin viajes
+                      <div className="text-center py-8 text-xs text-stone-400">
+                        Sin cotizaciones
                       </div>
                     )}
                   </div>
