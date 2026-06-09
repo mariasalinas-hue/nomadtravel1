@@ -106,7 +106,9 @@ export default function SoldTrips() {
   });
 
   // Calculate stats — all derived from the trips' actual services (single source of truth)
-  const scopedServices = allServices.filter(s => soldTripIds.includes(s.sold_trip_id));
+  // Los servicios cancelados no cuentan para los totales
+  const isCancelledService = (s) => (s.reservation_status || s.metadata?.reservation_status) === 'cancelado';
+  const scopedServices = allServices.filter(s => soldTripIds.includes(s.sold_trip_id) && !isCancelledService(s));
   const scopedPayments = allClientPayments.filter(p => soldTripIds.includes(p.sold_trip_id));
   const totalRevenue = scopedServices.reduce((sum, s) => sum + (s.price || 0), 0);
   const totalCommissions = scopedServices.reduce((sum, s) => sum + (s.commission || 0), 0);
@@ -261,7 +263,7 @@ export default function SoldTrips() {
             {filteredTrips.map((trip, index) => {
               const statusConfig = STATUS_CONFIG[trip.status] || STATUS_CONFIG.pendiente;
               const StatusIcon = statusConfig.icon;
-              const tripServices = allServices.filter(s => s.sold_trip_id === trip.id);
+              const tripServices = allServices.filter(s => s.sold_trip_id === trip.id && !isCancelledService(s));
               const totalServices = tripServices.reduce((sum, s) => sum + (s.price || 0), 0);
               const tripCommission = tripServices.reduce((sum, s) => sum + (s.commission || 0), 0);
               const totalClientPaid = allClientPayments

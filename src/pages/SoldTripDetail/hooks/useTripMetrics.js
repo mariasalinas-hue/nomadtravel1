@@ -6,16 +6,20 @@ export function useTripMetrics(soldTrip, services, clientPayments, supplierPayme
   return useMemo(() => {
     if (!soldTrip) return null;
 
-    const totalServices = services.reduce((sum, s) => sum + (s.total_price || 0), 0);
-    const totalCommissions = services.reduce((sum, s) => sum + (s.commission || 0), 0);
+    // Los servicios cancelados no cuentan para los totales del viaje
+    const isCancelled = (s) => (s.reservation_status || s.metadata?.reservation_status) === 'cancelado';
+    const activeServices = services.filter(s => !isCancelled(s));
+
+    const totalServices = activeServices.reduce((sum, s) => sum + (s.total_price || 0), 0);
+    const totalCommissions = activeServices.reduce((sum, s) => sum + (s.commission || 0), 0);
     const totalClientPaid = clientPayments.reduce((sum, p) => {
       return sum + (p.amount_usd_fixed || p.amount || 0);
     }, 0);
     const totalSupplierPaid = supplierPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
 
     // Calcular el total de servicios que el cliente debe pagar
-    // Excluyendo los servicios marcados como "pagado" (pagados directamente al proveedor)
-    const totalServicesToPay = services.reduce((sum, s) => {
+    // Excluyendo los servicios marcados como "pagado" (pagados directamente al proveedor) o cancelados
+    const totalServicesToPay = activeServices.reduce((sum, s) => {
       // Check reservation_status in both direct field and metadata
       const reservationStatus = s.reservation_status || s.metadata?.reservation_status;
       if (reservationStatus === 'pagado') return sum;
@@ -37,7 +41,7 @@ export function useTripMetrics(soldTrip, services, clientPayments, supplierPayme
 
       // Check reservation_status in both direct field and metadata
       const reservationStatus = service.reservation_status || service.metadata?.reservation_status;
-      if (reservationStatus === 'pagado') return false;
+      if (reservationStatus === 'pagado' || reservationStatus === 'cancelado') return false;
 
       // Exclude services that already have supplier payments covering the full amount
       const serviceSupplierPayments = supplierPayments.filter(p => p.trip_service_id === service.id);

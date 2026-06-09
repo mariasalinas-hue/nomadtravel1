@@ -360,11 +360,12 @@ export default function ServiceForm({ open, onClose, service, soldTripId, onSave
   useEffect(() => {
     if (service) {
       // When editing, merge the base fields with metadata
+      const appliedYtcFee = service.metadata?.ytc_fee || service.ytc_fee || 0;
       setFormData({
         ...service,
         ...(service.metadata || {}),
-        // Ensure we keep the correct mappings
-        total_price: service.total_price || service.price || 0,
+        // El campo muestra el precio base (sin el fee de YTC, que se re-aplica al guardar)
+        total_price: Math.max(0, (service.total_price || service.price || 0) - appliedYtcFee),
         local_currency: service.local_currency || (service.metadata?.local_currency) || 'USD',
         local_amount: service.local_amount || (service.metadata?.local_amount) || 0
       });
@@ -400,7 +401,7 @@ export default function ServiceForm({ open, onClose, service, soldTripId, onSave
       };
     } catch (error) {
       console.error('Error converting currency:', error);
-      alert('No se pudo obtener el tipo de cambio. Por favor intenta nuevamente.');
+      alert('No se pudo obtener el tipo de cambio automático. Puedes escribir el Precio Total (USD) manualmente.');
       return null;
     } finally {
       setConvertingCurrency(false);
@@ -439,6 +440,11 @@ export default function ServiceForm({ open, onClose, service, soldTripId, onSave
     }
   };
 
+  // Fee de YTC: $5 USD por pasajero cuando el vuelo se compra vía YTC
+  const ytcFee = (formData.service_type === 'vuelo' && formData.flight_consolidator === 'ytc')
+    ? (parseInt(formData.passengers) || 0) * 5
+    : 0;
+
   const handleSubmit = (e) => {
     e.preventDefault();
 
@@ -448,15 +454,20 @@ export default function ServiceForm({ open, onClose, service, soldTripId, onSave
       return;
     }
 
+    // El precio que se guarda incluye el fee de YTC (el campo del formulario es el precio base)
+    const finalPrice = (parseFloat(formData.total_price) || 0) + ytcFee;
+
     // Generate service_name based on service type
     let serviceName = '';
     switch (formData.service_type) {
       case 'hotel':
         serviceName = formData.hotel_name || 'Hotel';
         break;
-      case 'vuelo':
-        serviceName = `${formData.airline || 'Vuelo'} ${formData.flight_number || ''}`.trim();
+      case 'vuelo': {
+        const airlineName = formData.airline === 'Otro' ? (formData.airline_other || 'Vuelo') : (formData.airline || 'Vuelo');
+        serviceName = `${airlineName} ${formData.flight_number || ''}`.trim();
         break;
+      }
       case 'traslado':
         serviceName = `${formData.transfer_origin || ''} → ${formData.transfer_destination || ''}`.trim() || 'Traslado';
         break;
@@ -484,7 +495,7 @@ export default function ServiceForm({ open, onClose, service, soldTripId, onSave
       service_type: formData.service_type,
       service_name: serviceName,
       sold_trip_id: soldTripId,
-      price: formData.total_price || 0,  // Map total_price to price field
+      price: finalPrice,  // Map total_price (+ fee YTC) to price field
       commission: formData.commission || 0,
       notes: formData.notes || '',
       // These fields might also exist in the table
@@ -495,14 +506,15 @@ export default function ServiceForm({ open, onClose, service, soldTripId, onSave
 
     // All other fields go into metadata
     const metadata = { ...formData };
-    // Remove base fields from metadata to avoid duplication
-    delete metadata.service_type;
-    delete metadata.service_name;
-    delete metadata.sold_trip_id;
-    delete metadata.total_price;
-    delete metadata.commission;
-    delete metadata.notes;
-    delete metadata.commission_payment_date;
+    // Guardar el fee de YTC aplicado para poder editar el precio base sin duplicarlo
+    metadata.ytc_fee = ytcFee;
+    // Remove base/system fields from metadata to avoid duplication and bloat
+    [
+      'service_type', 'service_name', 'sold_trip_id', 'total_price', 'commission',
+      'notes', 'commission_payment_date', 'id', 'price', 'created_date', 'created_by',
+      'updated_date', 'start_date', 'end_date', 'payment_date', 'amount_paid_to_supplier',
+      'is_deleted', 'metadata'
+    ].forEach(key => delete metadata[key]);
 
     const dataToSave = {
       ...baseFields,
@@ -717,7 +729,7 @@ export default function ServiceForm({ open, onClose, service, soldTripId, onSave
           <Input
             type="number"
             value={formData.num_rooms || ''}
-            onChange={(e) => updateField('num_rooms', parseInt(e.target.value) || 0)}
+            onChange={(e) => updateField('num_rooms', e.target.value === '' ? '' : (parseInt(e.target.value) || 0))}
             className="rounded-xl"
           />
         </div>
@@ -914,7 +926,7 @@ export default function ServiceForm({ open, onClose, service, soldTripId, onSave
           <Input
             type="number"
             value={formData.passengers || ''}
-            onChange={(e) => updateField('passengers', parseInt(e.target.value) || 0)}
+            onChange={(e) => updateField('passengers', e.target.value === '' ? '' : (parseInt(e.target.value) || 0))}
             className="rounded-xl"
           />
         </div>
@@ -999,7 +1011,7 @@ export default function ServiceForm({ open, onClose, service, soldTripId, onSave
           <Input
             type="number"
             value={formData.transfer_passengers || ''}
-            onChange={(e) => updateField('transfer_passengers', parseInt(e.target.value) || 0)}
+            onChange={(e) => updateField('transfer_passengers', e.target.value === '' ? '' : (parseInt(e.target.value) || 0))}
             className="rounded-xl"
           />
         </div>
@@ -1084,7 +1096,7 @@ export default function ServiceForm({ open, onClose, service, soldTripId, onSave
           <Input
             type="number"
             value={formData.tour_people || ''}
-            onChange={(e) => updateField('tour_people', parseInt(e.target.value) || 0)}
+            onChange={(e) => updateField('tour_people', e.target.value === '' ? '' : (parseInt(e.target.value) || 0))}
             className="rounded-xl"
           />
         </div>
@@ -1277,7 +1289,7 @@ export default function ServiceForm({ open, onClose, service, soldTripId, onSave
           <Input
             type="number"
             value={formData.cruise_passengers || ''}
-            onChange={(e) => updateField('cruise_passengers', parseInt(e.target.value) || 0)}
+            onChange={(e) => updateField('cruise_passengers', e.target.value === '' ? '' : (parseInt(e.target.value) || 0))}
             className="rounded-xl"
           />
         </div>
@@ -1373,7 +1385,7 @@ export default function ServiceForm({ open, onClose, service, soldTripId, onSave
           <Input
             type="number"
             value={formData.dmc_passengers || ''}
-            onChange={(e) => updateField('dmc_passengers', parseInt(e.target.value) || 0)}
+            onChange={(e) => updateField('dmc_passengers', e.target.value === '' ? '' : (parseInt(e.target.value) || 0))}
             className="rounded-xl"
           />
         </div>
@@ -1478,7 +1490,7 @@ export default function ServiceForm({ open, onClose, service, soldTripId, onSave
           <Input
             type="number"
             value={formData.train_passengers || ''}
-            onChange={(e) => updateField('train_passengers', parseInt(e.target.value) || 0)}
+            onChange={(e) => updateField('train_passengers', e.target.value === '' ? '' : (parseInt(e.target.value) || 0))}
             className="rounded-xl"
           />
         </div>
@@ -1654,9 +1666,8 @@ export default function ServiceForm({ open, onClose, service, soldTripId, onSave
                       min="0"
                       value={formData.total_price || ''}
                       onChange={(e) => updateField('total_price', parseFloat(e.target.value) || 0)}
-                      className="rounded-xl bg-stone-50"
+                      className="rounded-xl bg-white"
                       placeholder="0.00"
-                      readOnly={formData.local_currency !== 'USD'}
                     />
                     {formData.local_currency !== 'USD' && formData.local_amount > 0 && (
                       <Button
@@ -1672,6 +1683,11 @@ export default function ServiceForm({ open, onClose, service, soldTripId, onSave
                   </div>
                 </div>
               </div>
+              {formData.local_currency !== 'USD' && (
+                <p className="text-xs text-stone-500">
+                  Al convertir se aplica un <span className="font-medium">+1% de protección</span> de tipo de cambio. Si la conversión automática falla, escribe el Precio Total (USD) a mano.
+                </p>
+              )}
               {formData.quote_exchange_rate && formData.quote_date && (
                 <div className="text-xs text-stone-600 bg-white rounded-lg p-2">
                   <p>Tipo de cambio: <span className="font-semibold">1 {formData.local_currency} = ${formData.quote_exchange_rate?.toFixed(4)} USD</span></p>
@@ -1723,9 +1739,9 @@ export default function ServiceForm({ open, onClose, service, soldTripId, onSave
             </div>
             <div className={`grid gap-4 ${formData.service_type === 'hotel' || formData.service_type === 'vuelo' || formData.service_type === 'crucero' || formData.service_type === 'tren' ? 'grid-cols-2' : 'grid-cols-1'}`}>
               <div className="space-y-2">
-                <Label>IATA</Label>
-                <Select 
-                  value={formData.booked_by || 'montecito'} 
+                <Label>Agencia (IATA)</Label>
+                <Select
+                  value={formData.booked_by || 'montecito'}
                   onValueChange={(v) => {
                     updateField('booked_by', v);
                     // Auto-select consolidator for flights
@@ -1770,9 +1786,9 @@ export default function ServiceForm({ open, onClose, service, soldTripId, onSave
                       ))}
                     </SelectContent>
                   </Select>
-                  {formData.flight_consolidator === 'ytc' && formData.passengers && (
+                  {ytcFee > 0 && (
                     <p className="text-xs text-blue-600 mt-1">
-                      💡 +${(formData.passengers * 5).toFixed(2)} fee YTC ({formData.passengers}p × $5)
+                      💡 +${ytcFee.toFixed(2)} fee YTC ({formData.passengers}p × $5) — se suma automáticamente al guardar
                     </p>
                   )}
                 </div>

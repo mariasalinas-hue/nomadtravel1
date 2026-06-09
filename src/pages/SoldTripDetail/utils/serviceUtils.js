@@ -9,12 +9,14 @@ export const getServiceDetails = (service) => {
         subtitle: `${service.hotel_city || ''} • ${service.nights || 0} noches`,
         extra: service.check_in ? `Check-in: ${formatDate(service.check_in, 'd MMM', { locale: es })}` : ''
       };
-    case 'vuelo':
+    case 'vuelo': {
+      const airlineName = service.airline === 'Otro' ? (service.airline_other || 'Otro') : (service.airline || 'Vuelo');
       return {
-        title: `${service.airline || 'Vuelo'} ${service.flight_number || ''}`,
+        title: `${airlineName} ${service.flight_number || ''}`.trim(),
         subtitle: service.route || '',
         extra: service.flight_date ? formatDate(service.flight_date, 'd MMM yyyy', { locale: es }) : ''
       };
+    }
     case 'traslado':
       return {
         title: `${service.transfer_origin || ''} → ${service.transfer_destination || ''}`,

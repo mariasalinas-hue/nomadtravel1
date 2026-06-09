@@ -88,8 +88,10 @@ export async function updateSoldTripAndTripServiceTotals(soldTripId, queryClient
       supabaseAPI.entities.SupplierPayment.filter({ sold_trip_id: soldTripId })
     ]);
 
-    const totalPrice = newServices.reduce((sum, s) => sum + (s.price || s.total_price || 0), 0);
-    const totalCommission = newServices.reduce((sum, s) => sum + (s.commission || 0), 0);
+    // Los servicios cancelados no cuentan para los totales del viaje
+    const activeServices = newServices.filter(s => (s.reservation_status || s.metadata?.reservation_status) !== 'cancelado');
+    const totalPrice = activeServices.reduce((sum, s) => sum + (s.price || s.total_price || 0), 0);
+    const totalCommission = activeServices.reduce((sum, s) => sum + (s.commission || 0), 0);
     const totalPaidToSuppliers = newSupplierPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
 
     // Actualizar la entidad SoldTrip
@@ -134,8 +136,10 @@ export async function updateSoldTripTotalsFromServices(soldTripId, queryClient) 
 
   try {
     const services = await supabaseAPI.entities.TripService.filter({ sold_trip_id: soldTripId });
-    const totalPrice = services.reduce((sum, s) => sum + (s.price || s.total_price || 0), 0);
-    const totalCommission = services.reduce((sum, s) => sum + (s.commission || 0), 0);
+    // Los servicios cancelados no cuentan para los totales del viaje
+    const activeServices = services.filter(s => (s.reservation_status || s.metadata?.reservation_status) !== 'cancelado');
+    const totalPrice = activeServices.reduce((sum, s) => sum + (s.price || s.total_price || 0), 0);
+    const totalCommission = activeServices.reduce((sum, s) => sum + (s.commission || 0), 0);
 
     await supabaseAPI.entities.SoldTrip.update(soldTripId, {
       total_price: totalPrice,
