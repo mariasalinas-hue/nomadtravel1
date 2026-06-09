@@ -1,5 +1,5 @@
 import React, { memo } from 'react';
-import { DollarSign, TrendingUp, Wallet, TrendingDown, Building2, CreditCard } from 'lucide-react';
+import { DollarSign, TrendingUp, Wallet, TrendingDown, Building2, AlertTriangle } from 'lucide-react';
 
 const FinancialCard = memo(({ label, value, sub, icon: Icon, accent, negative }) => (
   <div className="bg-white rounded-2xl p-4 flex flex-col gap-3"
@@ -56,8 +56,14 @@ const ProgressBar = memo(({ progress }) => (
 ProgressBar.displayName = 'ProgressBar';
 
 export default function FinancialSummary({ metrics }) {
-  const { totalServices, totalCommissions, totalClientPaid, clientBalance, totalSupplierPaid, paymentProgress } = metrics;
+  const { totalServices, totalCommissions, totalClientPaid, totalSupplierPaid, paymentProgress } = metrics;
   const porCobrar = totalServices - totalClientPaid;
+  // Si el cobrado supera el total registrado (con tolerancia de $1 por redondeo),
+  // probablemente faltan servicios por registrar.
+  const isOverpaid = porCobrar < -1;
+  const overpaidAmount = Math.abs(porCobrar);
+  const displayPorCobrar = isOverpaid ? 0 : Math.max(0, porCobrar);
+  const displayProgress = Math.min(paymentProgress, 100);
 
   return (
     <div className="space-y-3">
@@ -92,11 +98,11 @@ export default function FinancialSummary({ metrics }) {
         />
         <FinancialCard
           label="Por cobrar"
-          value={porCobrar}
-          sub={porCobrar <= 0 ? 'Al corriente' : 'Pendiente'}
-          icon={porCobrar > 0 ? TrendingDown : TrendingUp}
-          accent={porCobrar > 0 ? '#DC2626' : '#16A34A'}
-          negative={porCobrar > 0}
+          value={displayPorCobrar}
+          sub={isOverpaid ? 'Cobrado de más — revisar' : (displayPorCobrar <= 0 ? 'Al corriente' : 'Pendiente')}
+          icon={isOverpaid ? AlertTriangle : (displayPorCobrar > 0 ? TrendingDown : TrendingUp)}
+          accent={isOverpaid ? '#D97706' : (displayPorCobrar > 0 ? '#DC2626' : '#16A34A')}
+          negative={displayPorCobrar > 0}
         />
         <FinancialCard
           label="Proveedores"
@@ -105,8 +111,20 @@ export default function FinancialSummary({ metrics }) {
           icon={Building2}
           accent="#C9A84C"
         />
-        <ProgressBar progress={paymentProgress} />
+        <ProgressBar progress={displayProgress} />
       </div>
+
+      {isOverpaid && (
+        <div className="flex items-start gap-2.5 px-4 py-3 rounded-xl"
+             style={{ background: '#FFFBEB', border: '1px solid rgba(217,119,6,0.25)' }}>
+          <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: '#D97706' }} />
+          <p className="text-xs leading-relaxed" style={{ color: '#92400E' }}>
+            El <strong>cobrado (${totalClientPaid.toLocaleString()})</strong> supera el{' '}
+            <strong>total de servicios registrados (${totalServices.toLocaleString()})</strong> por{' '}
+            <strong>${overpaidAmount.toLocaleString()}</strong>. Es posible que falten servicios por registrar.
+          </p>
+        </div>
+      )}
     </div>
   );
 }
