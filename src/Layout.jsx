@@ -217,7 +217,7 @@ export default function Layout({ children, currentPageName }) {
     { name: 'Dashboard', page: 'Dashboard', icon: LayoutDashboard },
     { name: 'Clientes', page: 'Clients', icon: Users },
     { name: 'Cotizaciones', page: 'Trips', icon: Plane },
-    { name: 'Viajes Vendidos', page: 'SoldTrips', icon: CheckCircle },
+    { name: 'Corsario de Viajes', page: 'SoldTrips', icon: CheckCircle },
     { name: 'Comisiones', page: 'Commissions', icon: DollarSign },
     { name: 'Mi Progreso', page: 'Statistics', icon: BarChart3 },
     { name: 'Proveedores', page: 'Suppliers', icon: Building2 },

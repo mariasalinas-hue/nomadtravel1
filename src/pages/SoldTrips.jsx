@@ -8,19 +8,18 @@ import { useSpoofableUser } from '@/contexts/SpoofContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import { differenceInDays, isPast } from 'date-fns';
 import { formatDate } from '@/lib/dateUtils';
+import { parseLocalDate } from '@/components/utils/dateHelpers';
 import { es } from 'date-fns/locale';
 import {
   Search, MapPin, Calendar, Users, DollarSign,
   Eye, Loader2, CheckCircle, Filter, TrendingUp,
-  AlertCircle, Clock, ArrowUpRight, Plane, Edit2, Trash2, MoreVertical
+  AlertCircle, Clock, ArrowUpRight, Plane, Trash2, MoreVertical
 } from 'lucide-react';
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Progress } from "@/components/ui/progress";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -64,9 +63,7 @@ export default function SoldTrips() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [sortBy, setSortBy] = useState('recent');
-  const [editingTrip, setEditingTrip] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
-  const [editTotal, setEditTotal] = useState('');
 
   const queryClient = useQueryClient();
 
@@ -83,15 +80,6 @@ export default function SoldTrips() {
     staleTime: 0,
     refetchOnWindowFocus: true,
     refetchOnMount: true
-  });
-
-  const updateMutation = useMutation({
-    mutationFn: ({ id, data }) => supabaseAPI.entities.SoldTrip.update(id, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['soldTrips'] });
-      setEditingTrip(null);
-      toast.success('Viaje actualizado');
-    }
   });
 
   const soldTripIds = soldTrips.filter(t => !t.is_deleted).map(t => t.id);
@@ -116,19 +104,6 @@ export default function SoldTrips() {
       toast.success('Viaje eliminado');
     }
   });
-
-  const handleEditTrip = (trip) => {
-    setEditingTrip(trip);
-    setEditTotal(trip.total_price || 0);
-  };
-
-  const handleSaveTotal = () => {
-    if (!editingTrip) return;
-    updateMutation.mutate({
-      id: editingTrip.id,
-      data: { total_price: parseFloat(editTotal) || 0 }
-    });
-  };
 
   // Calculate stats
   const totalRevenue = soldTrips.reduce((sum, t) => sum + (t.total_price || 0), 0);
@@ -181,7 +156,7 @@ export default function SoldTrips() {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-2xl lg:text-3xl font-bold text-stone-800">Viajes Vendidos</h1>
+        <h1 className="text-2xl lg:text-3xl font-bold text-stone-800">Corsario de Viajes</h1>
         <p className="text-stone-500 mt-1">Gestiona tus viajes cerrados y su seguimiento financiero</p>
       </div>
 
@@ -272,17 +247,20 @@ export default function SoldTrips() {
               const StatusIcon = statusConfig.icon;
               const tripServices = allServices.filter(s => s.sold_trip_id === trip.id);
               const totalServices = tripServices.reduce((sum, s) => sum + (s.price || 0), 0);
+              // Fall back to the stored total when no services are itemized yet
+              const effectiveTotal = totalServices > 0 ? totalServices : (trip.total_price || 0);
               const totalClientPaid = allClientPayments
                 .filter(p => p.sold_trip_id === trip.id)
                 .reduce((sum, p) => sum + (p.amount_usd_fixed || p.amount || 0), 0);
-              const rawBalance = totalServices - totalClientPaid;
+              const rawBalance = effectiveTotal - totalClientPaid;
               const balance = Math.abs(rawBalance) < 2 ? 0 : rawBalance;
-              const paymentProgress = totalServices > 0
-                ? Math.round((totalClientPaid) / totalServices * 100)
+              const paymentProgress = effectiveTotal > 0
+                ? Math.round((totalClientPaid) / effectiveTotal * 100)
                 : 0;
-              
-              const daysUntilTrip = differenceInDays(new Date(trip.start_date), new Date());
-              const isTripPast = isPast(new Date(trip.start_date));
+
+              const startDate = parseLocalDate(trip.start_date);
+              const daysUntilTrip = startDate ? differenceInDays(startDate, new Date()) : null;
+              const isTripPast = startDate ? isPast(startDate) : false;
               
               return (
                 <motion.div
@@ -344,9 +322,9 @@ export default function SoldTrips() {
                                   <span>{trip.travelers} viajero(s)</span>
                                 </div>
                               )}
-                              {!isTripPast && daysUntilTrip <= 30 && (
-                                <Badge 
-                                  variant="outline" 
+                              {startDate && !isTripPast && daysUntilTrip <= 30 && (
+                                <Badge
+                                  variant="outline"
                                   className={`text-xs ${daysUntilTrip <= 7 ? 'border-red-300 text-red-600' : 'border-orange-300 text-orange-600'}`}
                                 >
                                   {daysUntilTrip === 0 ? '¡Hoy!' : `En ${daysUntilTrip} días`}
@@ -363,7 +341,7 @@ export default function SoldTrips() {
                           <div>
                             <p className="text-xs text-stone-400">Total</p>
                             <p className="font-bold text-sm" style={{ color: '#2E442A' }}>
-                              ${totalServices.toLocaleString()}
+                              ${effectiveTotal.toLocaleString()}
                             </p>
                           </div>
                           <div>
@@ -415,11 +393,7 @@ export default function SoldTrips() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => handleEditTrip(trip)}>
-                              <Edit2 className="w-4 h-4 mr-2" />
-                              Editar Total
-                            </DropdownMenuItem>
-                            <DropdownMenuItem 
+                            <DropdownMenuItem
                               className="text-red-600"
                               onClick={() => setDeleteConfirm(trip)}
                             >
@@ -455,52 +429,6 @@ export default function SoldTrips() {
           </AnimatePresence>
         </div>
       )}
-
-      {/* Edit Total Dialog */}
-      <Dialog open={!!editingTrip} onOpenChange={() => setEditingTrip(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Editar Total del Viaje</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label>Cliente</Label>
-              <p className="text-sm font-medium text-stone-700">{editingTrip?.client_name}</p>
-            </div>
-            <div className="space-y-2">
-              <Label>Destino</Label>
-              <p className="text-sm text-stone-600">{editingTrip?.destination}</p>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="total">Total del Viaje (USD) *</Label>
-              <Input
-                id="total"
-                type="number"
-                step="0.01"
-                min="0"
-                value={editTotal}
-                onChange={(e) => setEditTotal(e.target.value)}
-                className="rounded-xl"
-                placeholder="0.00"
-              />
-            </div>
-          </div>
-          <div className="flex justify-end gap-3">
-            <Button variant="outline" onClick={() => setEditingTrip(null)} className="rounded-xl">
-              Cancelar
-            </Button>
-            <Button
-              onClick={handleSaveTotal}
-              disabled={updateMutation.isPending}
-              className="rounded-xl text-white"
-              style={{ backgroundColor: '#2E442A' }}
-            >
-              {updateMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              Guardar
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
 
       {/* Delete Confirmation */}
       <AlertDialog open={!!deleteConfirm} onOpenChange={() => setDeleteConfirm(null)}>
