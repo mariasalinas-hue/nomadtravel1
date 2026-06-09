@@ -41,10 +41,10 @@ import StatsCard from '@/components/ui/StatsCard';
 import { toast } from "sonner";
 
 const STATUS_CONFIG = {
-  pendiente: { label: 'Pendiente', color: 'bg-yellow-100 text-yellow-700', icon: Clock },
-  parcial: { label: 'Pago Parcial', color: 'bg-blue-100 text-blue-700', icon: AlertCircle },
-  pagado: { label: 'Pagado', color: 'bg-green-100 text-green-700', icon: CheckCircle },
-  completado: { label: 'Completado', color: 'bg-emerald-100 text-emerald-800', icon: CheckCircle }
+  pendiente: { label: 'Pendiente', color: 'bg-yellow-100 text-yellow-700', icon: Clock, accent: '#eab308' },
+  parcial: { label: 'Pago Parcial', color: 'bg-blue-100 text-blue-700', icon: AlertCircle, accent: '#3b82f6' },
+  pagado: { label: 'Pagado', color: 'bg-green-100 text-green-700', icon: CheckCircle, accent: '#22c55e' },
+  completado: { label: 'Completado', color: 'bg-emerald-100 text-emerald-800', icon: CheckCircle, accent: '#10b981' }
 };
 
 export default function SoldTrips() {
@@ -157,9 +157,23 @@ export default function SoldTrips() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl lg:text-3xl font-bold text-stone-800">Corsario de Viajes</h1>
-        <p className="text-stone-500 mt-1">Gestiona tus viajes cerrados y su seguimiento financiero</p>
+      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-3">
+            <div className="w-1.5 h-8 rounded-full" style={{ background: 'linear-gradient(180deg, #C9A84C, #DFC078)' }} />
+            <h1 className="text-3xl lg:text-4xl font-bold text-stone-800" style={{ fontFamily: 'Playfair Display, serif', letterSpacing: '-0.01em' }}>
+              Corsario de Viajes
+            </h1>
+          </div>
+          <p className="text-stone-500 mt-2 ml-[18px]">Gestiona tus viajes cerrados y su seguimiento financiero</p>
+        </div>
+        {soldTrips.length > 0 && (
+          <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-white border border-stone-100 shadow-sm self-start sm:self-auto">
+            <Plane className="w-4 h-4" style={{ color: '#C9A84C' }} />
+            <span className="text-sm font-bold text-stone-700">{soldTrips.length}</span>
+            <span className="text-sm text-stone-400">{soldTrips.length === 1 ? 'viaje' : 'viajes'}</span>
+          </div>
+        )}
       </div>
 
       {/* Stats Cards */}
@@ -270,16 +284,22 @@ export default function SoldTrips() {
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, scale: 0.95 }}
                   transition={{ delay: index * 0.03 }}
-                  className="bg-white rounded-2xl shadow-sm border border-stone-100 hover:shadow-md transition-all overflow-hidden"
+                  className="group bg-white rounded-2xl shadow-sm border border-stone-100 hover:shadow-xl hover:border-stone-200 hover:-translate-y-0.5 transition-all duration-300 overflow-hidden flex"
                 >
+                  {/* Status accent bar */}
+                  <div
+                    className="w-1.5 self-stretch flex-shrink-0"
+                    style={{ background: `linear-gradient(180deg, ${statusConfig.accent}, ${statusConfig.accent}88)` }}
+                  />
+                  <div className="flex-1 min-w-0">
                   <div className="p-5">
                     <div className="flex flex-col lg:flex-row lg:items-center gap-4">
                       {/* Left Section - Trip Info */}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-start gap-4">
-                          <div 
-                            className="w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0"
-                            style={{ backgroundColor: '#2E442A' }}
+                          <div
+                            className="w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0 shadow-md ring-2 ring-transparent group-hover:ring-[#C9A84C]/40 transition-all duration-300"
+                            style={{ background: 'linear-gradient(135deg, #3F5E39 0%, #1A2E17 100%)' }}
                           >
                             <Plane className="w-6 h-6 text-white" />
                           </div>
@@ -293,7 +313,7 @@ export default function SoldTrips() {
                                   — {trip.trip_name}
                                 </span>
                               )}
-                              <Badge className={`${statusConfig.color} font-medium text-xs flex-shrink-0`}>
+                              <Badge className={`${statusConfig.color} font-medium text-xs flex-shrink-0 rounded-full shadow-sm`}>
                                 <StatusIcon className="w-3 h-3 mr-1" />
                                 {statusConfig.label}
                               </Badge>
@@ -337,23 +357,23 @@ export default function SoldTrips() {
                       </div>
 
                       {/* Middle Section - Financial */}
-                      <div className="lg:w-72 space-y-3">
-                        <div className="grid grid-cols-3 gap-2 text-center">
-                          <div>
-                            <p className="text-xs text-stone-400">Total</p>
-                            <p className="font-bold text-sm" style={{ color: '#2E442A' }}>
+                      <div className="lg:w-72 space-y-3 rounded-xl bg-stone-50/70 border border-stone-100 p-3.5">
+                        <div className="grid grid-cols-3 gap-2 text-center divide-x divide-stone-200">
+                          <div className="px-1">
+                            <p className="text-[11px] uppercase tracking-wide text-stone-400">Total</p>
+                            <p className="font-bold text-sm mt-0.5" style={{ color: '#2D4629' }}>
                               ${totalServices.toLocaleString()}
                             </p>
                           </div>
-                          <div>
-                            <p className="text-xs text-stone-400">Comisión</p>
-                            <p className="font-semibold text-sm text-stone-700">
+                          <div className="px-1">
+                            <p className="text-[11px] uppercase tracking-wide text-stone-400">Comisión</p>
+                            <p className="font-bold text-sm mt-0.5" style={{ color: '#C9A84C' }}>
                               ${tripCommission.toLocaleString()}
                             </p>
                           </div>
-                          <div>
-                            <p className="text-xs text-stone-400">Saldo</p>
-                            <p className={`font-bold text-sm ${balance > 0 ? 'text-orange-500' : 'text-green-600'}`}>
+                          <div className="px-1">
+                            <p className="text-[11px] uppercase tracking-wide text-stone-400">Saldo</p>
+                            <p className={`font-bold text-sm mt-0.5 ${balance > 0 ? 'text-orange-500' : 'text-green-600'}`}>
                               ${balance.toLocaleString()}
                             </p>
                           </div>
@@ -379,9 +399,9 @@ export default function SoldTrips() {
                           to={createPageUrl(`SoldTripDetail?id=${trip.id}`)}
                           className="flex-1"
                         >
-                          <Button 
-                            className="w-full rounded-xl text-white"
-                            style={{ backgroundColor: '#2E442A' }}
+                          <Button
+                            className="w-full rounded-xl text-white shadow-sm hover:shadow-md transition-shadow border-0"
+                            style={{ background: 'linear-gradient(135deg, #2D4629 0%, #1A2E17 100%)' }}
                           >
                             <Eye className="w-4 h-4 mr-2" />
                             Ver Detalle
@@ -408,21 +428,24 @@ export default function SoldTrips() {
                   </div>
 
                   {/* Quick Stats Footer */}
-                  <div className="bg-stone-50 px-5 py-3 flex items-center justify-between text-xs">
+                  <div className="border-t border-stone-100 bg-stone-50/60 px-5 py-3 flex items-center justify-between text-xs">
                     <div className="flex items-center gap-4">
-                      <span className="text-stone-400">
-                        Pagado: <span className="text-green-600 font-semibold">${(trip.total_paid_by_client || 0).toLocaleString()}</span>
+                      <span className="flex items-center gap-1.5 text-stone-400">
+                        <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                        Pagado: <span className="text-green-600 font-semibold">${totalClientPaid.toLocaleString()}</span>
                       </span>
-                      <span className="text-stone-400">
+                      <span className="flex items-center gap-1.5 text-stone-400">
+                        <span className="w-1.5 h-1.5 rounded-full bg-stone-400" />
                         A proveedores: <span className="text-stone-600 font-semibold">${(trip.total_paid_to_suppliers || 0).toLocaleString()}</span>
                       </span>
                     </div>
-                    <Link 
+                    <Link
                       to={createPageUrl(`SoldTripDetail?id=${trip.id}`)}
-                      className="flex items-center text-stone-500 hover:text-stone-700 transition-colors"
+                      className="flex items-center font-medium text-stone-500 hover:text-[#C9A84C] transition-colors"
                     >
                       Gestionar <ArrowUpRight className="w-3 h-3 ml-1" />
                     </Link>
+                  </div>
                   </div>
                 </motion.div>
               );
