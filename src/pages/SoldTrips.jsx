@@ -105,10 +105,12 @@ export default function SoldTrips() {
     }
   });
 
-  // Calculate stats
-  const totalRevenue = soldTrips.reduce((sum, t) => sum + (t.total_price || 0), 0);
-  const totalCommissions = soldTrips.reduce((sum, t) => sum + (t.total_commission || 0), 0);
-  const totalCollected = soldTrips.reduce((sum, t) => sum + (t.total_paid_by_client || 0), 0);
+  // Calculate stats — all derived from the trips' actual services (single source of truth)
+  const scopedServices = allServices.filter(s => soldTripIds.includes(s.sold_trip_id));
+  const scopedPayments = allClientPayments.filter(p => soldTripIds.includes(p.sold_trip_id));
+  const totalRevenue = scopedServices.reduce((sum, s) => sum + (s.price || 0), 0);
+  const totalCommissions = scopedServices.reduce((sum, s) => sum + (s.commission || 0), 0);
+  const totalCollected = scopedPayments.reduce((sum, p) => sum + (p.amount_usd_fixed || p.amount || 0), 0);
   const pendingCollection = totalRevenue - totalCollected;
 
   // Filter and sort
@@ -247,15 +249,14 @@ export default function SoldTrips() {
               const StatusIcon = statusConfig.icon;
               const tripServices = allServices.filter(s => s.sold_trip_id === trip.id);
               const totalServices = tripServices.reduce((sum, s) => sum + (s.price || 0), 0);
-              // Fall back to the stored total when no services are itemized yet
-              const effectiveTotal = totalServices > 0 ? totalServices : (trip.total_price || 0);
+              const tripCommission = tripServices.reduce((sum, s) => sum + (s.commission || 0), 0);
               const totalClientPaid = allClientPayments
                 .filter(p => p.sold_trip_id === trip.id)
                 .reduce((sum, p) => sum + (p.amount_usd_fixed || p.amount || 0), 0);
-              const rawBalance = effectiveTotal - totalClientPaid;
+              const rawBalance = totalServices - totalClientPaid;
               const balance = Math.abs(rawBalance) < 2 ? 0 : rawBalance;
-              const paymentProgress = effectiveTotal > 0
-                ? Math.round((totalClientPaid) / effectiveTotal * 100)
+              const paymentProgress = totalServices > 0
+                ? Math.round((totalClientPaid) / totalServices * 100)
                 : 0;
 
               const startDate = parseLocalDate(trip.start_date);
@@ -341,13 +342,13 @@ export default function SoldTrips() {
                           <div>
                             <p className="text-xs text-stone-400">Total</p>
                             <p className="font-bold text-sm" style={{ color: '#2E442A' }}>
-                              ${effectiveTotal.toLocaleString()}
+                              ${totalServices.toLocaleString()}
                             </p>
                           </div>
                           <div>
                             <p className="text-xs text-stone-400">Comisión</p>
                             <p className="font-semibold text-sm text-stone-700">
-                              ${(trip.total_commission || 0).toLocaleString()}
+                              ${tripCommission.toLocaleString()}
                             </p>
                           </div>
                           <div>
