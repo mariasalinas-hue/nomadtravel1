@@ -1,114 +1,92 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, Upload, Sparkles, FileText, CheckCircle } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { supabaseAPI } from '@/api/supabaseClient';
 import { toast } from "sonner";
 
+const SUPPLIER_METHODS = [
+  { value: 'transferencia', label: 'Transferencia' },
+  { value: 'ms_beyond', label: 'MS Beyond' },
+  { value: 'capital_one_blue', label: 'Capital One Blue' },
+  { value: 'capital_one_green', label: 'Capital One Green' },
+  { value: 'amex', label: 'American Express' },
+  { value: 'amex_verde', label: 'American Express Verde' },
+  { value: 'tarjeta_cliente', label: 'Tarjeta de Cliente' },
+];
+
+const today = () => new Date().toISOString().split('T')[0];
+
+// Deriva el nombre del proveedor a partir del servicio seleccionado
+function deriveSupplierName(service) {
+  if (!service) return '';
+  switch (service.service_type) {
+    case 'hotel': return service.hotel_name || service.hotel_chain || '';
+    case 'vuelo': return service.airline || '';
+    case 'tour': return service.tour_name || '';
+    case 'crucero': return service.cruise_line || '';
+    case 'tren': return service.train_operator || '';
+    case 'dmc': return service.dmc_name || service.name || service.provider_name || '';
+    default: return service.other_name || '';
+  }
+}
+
+function getServiceLabel(service) {
+  switch (service.service_type) {
+    case 'hotel': return `Hotel: ${service.hotel_name || service.hotel_chain || 'Sin nombre'}`;
+    case 'vuelo': return `Vuelo: ${service.airline || ''} ${service.route || ''}`;
+    case 'traslado': return `Traslado: ${service.transfer_origin || ''} - ${service.transfer_destination || ''}`;
+    case 'tour': return `Tour: ${service.tour_name || 'Sin nombre'}`;
+    case 'crucero': return `Crucero: ${service.cruise_line || 'Sin nombre'}`;
+    case 'tren': return `Tren: ${service.train_operator || service.train_route || 'Sin nombre'}`;
+    case 'dmc': return `DMC: ${service.dmc_name || service.name || service.provider_name || 'Sin nombre'}`;
+    default: return `Otro: ${service.other_name || 'Sin nombre'}`;
+  }
+}
+
 export default function SupplierPaymentForm({ open, onClose, soldTripId, services, payment, onSave, isLoading }) {
-  const [activeTab, setActiveTab] = useState('manual');
-  const [smartFileUrls, setSmartFileUrls] = useState([]);
-  const [smartUploading, setSmartUploading] = useState(false);
-  const [importing, setImporting] = useState(false);
-  
   const [formData, setFormData] = useState({
     supplier: '',
-    date: new Date().toISOString().split('T')[0],
-    amount: 0,
+    date: today(),
+    amount: '',
     payment_type: 'neto',
     method: 'transferencia',
     trip_service_id: 'none',
     receipt_url: '',
-    notes: '',
-    confirmed: false
+    notes: ''
   });
   const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
-    if (open) {
-      if (payment) {
-        setFormData({
-          supplier: payment.supplier || '',
-          date: payment.date || new Date().toISOString().split('T')[0],
-          amount: payment.amount || 0,
-          payment_type: payment.payment_type || 'neto',
-          method: payment.method || 'transferencia',
-          trip_service_id: payment.trip_service_id || 'none',
-          receipt_url: payment.receipt_url || '',
-          notes: payment.notes || '',
-          confirmed: payment.confirmed || false
-        });
-        setActiveTab('manual');
-      } else {
-        setFormData({
-          supplier: '',
-          date: new Date().toISOString().split('T')[0],
-          amount: 0,
-          payment_type: 'neto',
-          method: 'transferencia',
-          trip_service_id: 'none',
-          receipt_url: '',
-          notes: '',
-          confirmed: false
-        });
-        setSmartFileUrls([]);
-        setActiveTab('manual');
-      }
+    if (!open) return;
+    if (payment) {
+      setFormData({
+        supplier: payment.supplier || '',
+        date: payment.date || today(),
+        amount: payment.amount ?? '',
+        payment_type: payment.payment_type || 'neto',
+        method: payment.method || 'transferencia',
+        trip_service_id: payment.trip_service_id || 'none',
+        receipt_url: payment.receipt_url || '',
+        notes: payment.notes || ''
+      });
+    } else {
+      setFormData({
+        supplier: '',
+        date: today(),
+        amount: '',
+        payment_type: 'neto',
+        method: 'transferencia',
+        trip_service_id: 'none',
+        receipt_url: '',
+        notes: ''
+      });
     }
   }, [open, payment]);
-
-  const handleSmartFileUpload = async (e) => {
-    const files = Array.from(e.target.files);
-    if (files.length === 0) return;
-
-    setSmartUploading(true);
-    try {
-      const uploadedUrls = [];
-      for (const file of files) {
-        const { file_url } = await supabaseAPI.storage.uploadFile(file, 'supplier-payments');
-        uploadedUrls.push(file_url);
-      }
-      setSmartFileUrls(prev => [...prev, ...uploadedUrls]);
-      toast.success(`${files.length} archivo(s) subido(s)`);
-    } catch (error) {
-      console.error('Error uploading files:', error);
-      toast.error('Error al subir archivos');
-    } finally {
-      setSmartUploading(false);
-    }
-  };
-
-  const handleSmartImport = async () => {
-    if (smartFileUrls.length === 0) {
-      toast.error('Sube al menos un archivo');
-      return;
-    }
-
-    setImporting(true);
-    try {
-      const response = await base44.functions.invoke('importSupplierPaymentFromFiles', {
-        file_urls: smartFileUrls,
-        sold_trip_id: soldTripId
-      });
-
-      if (response.data.success) {
-        toast.success(response.data.message);
-        onClose();
-        window.location.reload();
-      } else {
-        toast.error(response.data.error || 'Error al importar');
-      }
-    } catch (error) {
-      toast.error('Error al importar pagos');
-    } finally {
-      setImporting(false);
-    }
-  };
 
   const handleFileUpload = async (e) => {
     const file = e.target.files[0];
@@ -117,7 +95,7 @@ export default function SupplierPaymentForm({ open, onClose, soldTripId, service
     setUploading(true);
     try {
       const { file_url } = await supabaseAPI.storage.uploadFile(file, 'supplier-payments');
-      setFormData({ ...formData, receipt_url: file_url });
+      setFormData(prev => ({ ...prev, receipt_url: file_url }));
       toast.success('Comprobante subido');
     } catch (error) {
       console.error('Error uploading file:', error);
@@ -127,69 +105,34 @@ export default function SupplierPaymentForm({ open, onClose, soldTripId, service
     }
   };
 
+  // Auto-rellena el proveedor SOLO cuando el usuario elige un servicio (no pisa lo escrito al editar)
+  const handleServiceChange = (value) => {
+    setFormData(prev => {
+      const next = { ...prev, trip_service_id: value };
+      if (value !== 'none') {
+        const derived = deriveSupplierName(services.find(s => s.id === value));
+        if (derived) next.supplier = derived;
+      }
+      return next;
+    });
+  };
+
   const handleSubmit = (e) => {
     e.preventDefault();
+    const amount = parseFloat(formData.amount);
+    if (!amount || amount <= 0) {
+      toast.error('Debes ingresar un monto válido');
+      return;
+    }
     onSave({
       ...formData,
       sold_trip_id: soldTripId,
-      amount: parseFloat(formData.amount),
+      amount,
       trip_service_id: formData.trip_service_id === 'none' || !formData.trip_service_id ? null : formData.trip_service_id
     });
   };
 
-  // Get supplier name from selected service
-  const selectedService = formData.trip_service_id !== 'none' ? services.find(s => s.id === formData.trip_service_id) : null;
-  
-  useEffect(() => {
-    if (selectedService) {
-      // Auto-fill supplier name based on service
-      let supplierName = '';
-      switch (selectedService.service_type) {
-        case 'hotel':
-          supplierName = selectedService.hotel_name || selectedService.hotel_chain || '';
-          break;
-        case 'vuelo':
-          supplierName = selectedService.airline || '';
-          break;
-        case 'tour':
-          supplierName = selectedService.tour_name || '';
-          break;
-        case 'crucero':
-          supplierName = selectedService.cruise_line || '';
-          break;
-        case 'tren':
-          supplierName = selectedService.train_operator || '';
-          break;
-        case 'dmc':
-          supplierName = selectedService.dmc_name || selectedService.name || selectedService.provider_name || '';
-          break;
-        default:
-          supplierName = selectedService.other_name || '';
-      }
-      setFormData(prev => ({ ...prev, supplier: supplierName }));
-    }
-  }, [selectedService]);
-
-  const getServiceLabel = (service) => {
-    switch (service.service_type) {
-      case 'hotel':
-        return `Hotel: ${service.hotel_name || service.hotel_chain || 'Sin nombre'}`;
-      case 'vuelo':
-        return `Vuelo: ${service.airline || ''} ${service.route || ''}`;
-      case 'traslado':
-        return `Traslado: ${service.transfer_origin || ''} - ${service.transfer_destination || ''}`;
-      case 'tour':
-        return `Tour: ${service.tour_name || 'Sin nombre'}`;
-      case 'crucero':
-        return `Crucero: ${service.cruise_line || 'Sin nombre'}`;
-      case 'tren':
-        return `Tren: ${service.train_operator || service.train_route || 'Sin nombre'}`;
-      case 'dmc':
-        return `DMC: ${service.dmc_name || service.name || service.provider_name || service.supplier_name || service.description || 'Sin nombre'}`;
-      default:
-        return `Otro: ${service.other_name || 'Sin nombre'}`;
-    }
-  };
+  const isFutureDate = formData.date && formData.date > today();
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -198,24 +141,10 @@ export default function SupplierPaymentForm({ open, onClose, soldTripId, service
           <DialogTitle>{payment ? 'Editar Pago a Proveedor' : 'Registrar Pago a Proveedor'}</DialogTitle>
         </DialogHeader>
 
-        {!payment && (
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-4">
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="manual">Manual</TabsTrigger>
-              <TabsTrigger value="smart">
-                <Sparkles className="w-4 h-4 mr-2" />
-                Smart Import
-              </TabsTrigger>
-            </TabsList>
-
-          <TabsContent value="manual">
-            <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4 mt-4">
           <div>
             <Label>Asociar a Servicio (Opcional)</Label>
-            <Select 
-              value={formData.trip_service_id} 
-              onValueChange={(value) => setFormData({ ...formData, trip_service_id: value })}
-            >
+            <Select value={formData.trip_service_id} onValueChange={handleServiceChange}>
               <SelectTrigger>
                 <SelectValue placeholder="Selecciona un servicio..." />
               </SelectTrigger>
@@ -252,12 +181,16 @@ export default function SupplierPaymentForm({ open, onClose, soldTripId, service
                 onChange={(e) => setFormData({ ...formData, date: e.target.value })}
                 required
               />
+              {isFutureDate && (
+                <p className="text-xs text-amber-600 mt-1">⚠️ La fecha es futura. Verifica que sea correcta.</p>
+              )}
             </div>
             <div>
-              <Label>Monto *</Label>
+              <Label>Monto (USD) *</Label>
               <Input
                 type="number"
                 step="0.01"
+                min="0.01"
                 value={formData.amount}
                 onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
                 placeholder="0.00"
@@ -286,13 +219,9 @@ export default function SupplierPaymentForm({ open, onClose, soldTripId, service
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="transferencia">Transferencia</SelectItem>
-                  <SelectItem value="ms_beyond">MS Beyond</SelectItem>
-                  <SelectItem value="capital_one_blue">Capital One Blue</SelectItem>
-                  <SelectItem value="capital_one_green">Capital One Green</SelectItem>
-                  <SelectItem value="amex">American Express</SelectItem>
-                  <SelectItem value="amex_verde">American Express Verde</SelectItem>
-                  <SelectItem value="tarjeta_cliente">Tarjeta de Cliente</SelectItem>
+                  {SUPPLIER_METHODS.map(m => (
+                    <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -332,228 +261,21 @@ export default function SupplierPaymentForm({ open, onClose, soldTripId, service
             />
           </div>
 
-              <div className="flex justify-end gap-3 pt-4">
-                <Button type="button" variant="outline" onClick={onClose}>
-                  Cancelar
-                </Button>
-                <Button
-                  type="submit"
-                  disabled={isLoading}
-                  className="text-white"
-                  style={{ backgroundColor: '#2E442A' }}
-                >
-                  {isLoading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                  {payment ? 'Actualizar Pago' : 'Registrar Pago'}
-                </Button>
-              </div>
-            </form>
-          </TabsContent>
-
-          <TabsContent value="smart">
-            <div className="space-y-4 mt-4">
-              <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-                <div className="flex items-start gap-3">
-                  <Sparkles className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <h4 className="font-semibold text-blue-900 text-sm">Smart Import con IA</h4>
-                    <p className="text-xs text-blue-700 mt-1">
-                      Sube comprobantes de pago a proveedores (PDFs o fotos) y la IA extraerá automáticamente los pagos
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <Label>Subir Comprobantes (PDFs o Imágenes)</Label>
-                <div className="flex items-center gap-3 mt-2">
-                  <input
-                    type="file"
-                    accept="application/pdf,image/*"
-                    multiple
-                    onChange={handleSmartFileUpload}
-                    disabled={smartUploading || importing}
-                    className="flex-1 text-sm"
-                  />
-                  {smartUploading && <Loader2 className="w-5 h-5 animate-spin text-stone-400" />}
-                  {smartFileUrls.length > 0 && !smartUploading && <CheckCircle className="w-5 h-5 text-green-600" />}
-                </div>
-                {smartFileUrls.length > 0 && (
-                  <div className="mt-3 space-y-1">
-                    <p className="text-xs font-medium text-stone-600">{smartFileUrls.length} archivo(s) subido(s):</p>
-                    {smartFileUrls.map((url, index) => (
-                      <a
-                        key={index}
-                        href={url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-xs text-blue-600 hover:underline flex items-center gap-1"
-                      >
-                        <FileText className="w-3 h-3" />
-                        Archivo {index + 1}
-                      </a>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className="flex justify-end gap-3 pt-4">
-                <Button type="button" variant="outline" onClick={onClose}>
-                  Cancelar
-                </Button>
-                <Button
-                  type="button"
-                  onClick={handleSmartImport}
-                  disabled={smartFileUrls.length === 0 || importing}
-                  className="text-white"
-                  style={{ backgroundColor: '#2E442A' }}
-                >
-                  {importing && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                  <Sparkles className="w-4 h-4 mr-2" />
-                  Importar Pagos
-                </Button>
-              </div>
-            </div>
-          </TabsContent>
-          </Tabs>
-        )}
-
-        {payment && (
-          <form onSubmit={handleSubmit} className="space-y-4 mt-4">
-            <div>
-              <Label>Asociar a Servicio (Opcional)</Label>
-              <Select 
-                value={formData.trip_service_id} 
-                onValueChange={(value) => setFormData({ ...formData, trip_service_id: value })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecciona un servicio..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Sin asociar</SelectItem>
-                  {services.map((service) => (
-                    <SelectItem key={service.id} value={service.id}>
-                      {getServiceLabel(service)} - ${(service.total_price ?? 0).toLocaleString()}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
-              <Label>Proveedor *</Label>
-              <Input
-                value={formData.supplier}
-                onChange={(e) => setFormData({ ...formData, supplier: e.target.value })}
-                placeholder="Nombre del proveedor"
-                required
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Fecha *</Label>
-                <Input
-                  type="date"
-                  value={formData.date}
-                  onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                  required
-                />
-              </div>
-              <div>
-                <Label>Monto *</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={formData.amount}
-                  onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
-                  placeholder="0.00"
-                  required
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Tipo de Pago *</Label>
-                <Select value={formData.payment_type} onValueChange={(value) => setFormData({ ...formData, payment_type: value })}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="neto">Neto</SelectItem>
-                    <SelectItem value="bruto">Bruto</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Método de Pago *</Label>
-                <Select value={formData.method} onValueChange={(value) => setFormData({ ...formData, method: value })}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="transferencia">Transferencia</SelectItem>
-                    <SelectItem value="ms_beyond">MS Beyond</SelectItem>
-                    <SelectItem value="capital_one_blue">Capital One Blue</SelectItem>
-                    <SelectItem value="capital_one_green">Capital One Green</SelectItem>
-                    <SelectItem value="amex">American Express</SelectItem>
-                    <SelectItem value="amex_verde">American Express Verde</SelectItem>
-                    <SelectItem value="tarjeta_cliente">Tarjeta de Cliente</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div>
-              <Label>Comprobante de Pago</Label>
-              <div className="flex items-center gap-3">
-                <Input
-                  type="file"
-                  accept="image/*,.pdf"
-                  onChange={handleFileUpload}
-                  disabled={uploading}
-                  className="flex-1"
-                />
-                {uploading && <Loader2 className="w-4 h-4 animate-spin text-stone-400" />}
-              </div>
-              {formData.receipt_url && (
-                <a
-                  href={formData.receipt_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs text-blue-600 hover:underline mt-1 inline-block"
-                >
-                  Ver comprobante subido
-                </a>
-              )}
-            </div>
-
-            <div>
-              <Label>Notas</Label>
-              <Textarea
-                value={formData.notes}
-                onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                placeholder="Notas adicionales..."
-                rows={3}
-              />
-            </div>
-
-            <div className="flex justify-end gap-3 pt-4">
-              <Button type="button" variant="outline" onClick={onClose}>
-                Cancelar
-              </Button>
-              <Button
-                type="submit"
-                disabled={isLoading}
-                className="text-white"
-                style={{ backgroundColor: '#2E442A' }}
-              >
-                {isLoading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                Actualizar Pago
-              </Button>
-            </div>
-          </form>
-        )}
+          <div className="flex justify-end gap-3 pt-4">
+            <Button type="button" variant="outline" onClick={onClose}>
+              Cancelar
+            </Button>
+            <Button
+              type="submit"
+              disabled={isLoading}
+              className="text-white"
+              style={{ backgroundColor: '#2E442A' }}
+            >
+              {isLoading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {payment ? 'Actualizar Pago' : 'Registrar Pago'}
+            </Button>
+          </div>
+        </form>
       </DialogContent>
     </Dialog>
   );
