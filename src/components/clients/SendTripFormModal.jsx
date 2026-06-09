@@ -6,12 +6,13 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Copy, Check, ExternalLink, Plane } from 'lucide-react';
 import { toast } from 'sonner';
+import { PUBLIC_BASE_URL } from '@/lib/publicUrl';
 
 export default function SendTripFormModal({ open, onClose, client }) {
   const [message, setMessage] = useState('');
   const [copied, setCopied] = useState(false);
 
-  const link = client ? `${window.location.origin}/t/${client.id}` : '';
+  const link = client ? `${PUBLIC_BASE_URL}/t/${client.id}` : '';
   const firstName = client?.first_name || '';
 
   useEffect(() => {

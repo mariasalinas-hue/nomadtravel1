@@ -8,6 +8,7 @@ import { Copy, Check, Share2, ExternalLink, UserPlus } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabaseAPI } from '@/api/supabaseClient';
 import { useSpoofableUser } from '@/contexts/SpoofContext';
+import { PUBLIC_BASE_URL } from '@/lib/publicUrl';
 
 const DEFAULT_MESSAGE = '¡Hola! 🙏 Gracias por confiar en nosotros. Por favor llena tus datos en el siguiente formulario para agregarte a nuestro sistema y poder cotizarte:';
 
@@ -44,8 +45,7 @@ export default function ShareClientFormModal({ open, onClose }) {
         expires_at: null
       });
 
-      const baseUrl = window.location.origin;
-      setShareLink(`${baseUrl}/c/${token}`);
+      setShareLink(`${PUBLIC_BASE_URL}/c/${token}`);
       toast.success('Link generado exitosamente');
     } catch (error) {
       console.error('Error generating share link:', error);
