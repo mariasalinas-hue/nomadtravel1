@@ -17,7 +17,7 @@ const STAGE_CONFIG = {
   perdido: { label: 'Perdido', color: 'bg-red-100 text-red-700' }
 };
 
-export default function TripCard({ trip, onEdit, onDelete, onMoveStage }) {
+export default function TripCard({ trip, onEdit, onDelete, onMoveStage, onMarkLost }) {
   const stageConfig = STAGE_CONFIG[trip.stage] || STAGE_CONFIG.nuevo;
 
   return (
@@ -122,15 +122,26 @@ export default function TripCard({ trip, onEdit, onDelete, onMoveStage }) {
       )}
 
       {trip.stage !== 'vendido' && trip.stage !== 'perdido' && (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="w-full mt-3 text-xs font-medium"
-          style={{ color: '#2E442A' }}
-          onClick={() => onMoveStage(trip)}
-        >
-          Avanzar etapa <ArrowRight className="w-3 h-3 ml-1" />
-        </Button>
+        <div className="mt-3 flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="flex-1 text-xs font-medium"
+            style={{ color: '#2E442A' }}
+            onClick={() => onMoveStage(trip)}
+          >
+            Avanzar etapa <ArrowRight className="w-3 h-3 ml-1" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-xs text-stone-400 hover:text-red-500"
+            onClick={() => onMarkLost(trip)}
+            title="Marcar como perdido"
+          >
+            <XCircle className="w-3.5 h-3.5" />
+          </Button>
+        </div>
       )}
     </motion.div>
   );

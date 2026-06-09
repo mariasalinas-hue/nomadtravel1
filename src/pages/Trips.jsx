@@ -1,10 +1,12 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useContext } from 'react';
 import { supabaseAPI } from '@/api/supabaseClient';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ViewModeContext } from '@/Layout';
 import { AnimatePresence } from 'framer-motion';
-import { Plus, Loader2, Plane, Share2 } from 'lucide-react';
+import { Plus, Loader2, Plane, Search } from 'lucide-react';
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { useSpoofableUser } from '@/contexts/SpoofContext';
 import {
   AlertDialog,
@@ -18,7 +20,6 @@ import {
 } from "@/components/ui/alert-dialog";
 import TripForm from '@/components/trips/TripForm';
 import TripCard from '@/components/trips/TripCard';
-import ShareTripFormModal from '@/components/trips/ShareTripFormModal';
 import EmptyState from '@/components/ui/EmptyState';
 import { toast } from 'sonner';
 
@@ -49,7 +50,9 @@ export default function Trips() {
   const [formOpen, setFormOpen] = useState(false);
   const [editingTrip, setEditingTrip] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
-  const [shareFormOpen, setShareFormOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const [lostConfirm, setLostConfirm] = useState(null);
+  const [lostReason, setLostReason] = useState('');
 
   const queryClient = useQueryClient();
 
@@ -251,6 +254,36 @@ export default function Trips() {
     }
   };
 
+  const handleMarkLost = async () => {
+    if (!lostConfirm) return;
+    try {
+      await updateMutation.mutateAsync({
+        id: lostConfirm.id,
+        data: { stage: 'perdido', lost_reason: lostReason || null }
+      });
+      toast.success('Marcado como perdido');
+      setLostConfirm(null);
+      setLostReason('');
+    } catch (error) {
+      console.error('Error marking trip as lost:', error);
+      toast.error('Error al marcar como perdido');
+    }
+  };
+
+  // Search filter (client / destination / trip name)
+  const q = search.toLowerCase().trim();
+  const filteredTrips = q
+    ? trips.filter(t =>
+        (t.client_name || '').toLowerCase().includes(q) ||
+        (t.destination || '').toLowerCase().includes(q) ||
+        (t.trip_name || '').toLowerCase().includes(q)
+      )
+    : trips;
+
+  // Active pipeline value (open opportunities, excluding sold/lost)
+  const activeTrips = filteredTrips.filter(t => t.stage !== 'perdido' && t.stage !== 'vendido');
+  const pipelineValue = activeTrips.reduce((sum, t) => sum + (t.budget || 0), 0);
+
   if (tripsLoading) {
     return (
       <div className="flex items-center justify-center h-96">
@@ -264,27 +297,30 @@ export default function Trips() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl lg:text-3xl font-bold text-stone-800">Viajes</h1>
-          <p className="text-stone-500 mt-1">{trips.length} viajes en proceso</p>
+          <h1 className="text-2xl lg:text-3xl font-bold text-stone-800">Cotizaciones</h1>
+          <p className="text-stone-500 mt-1">
+            {activeTrips.length} cotizaciones activas · <span className="font-semibold" style={{ color: '#2E442A' }}>${pipelineValue.toLocaleString()}</span> en pipeline
+          </p>
         </div>
-        <div className="flex gap-3">
-          <Button
-            onClick={() => setShareFormOpen(true)}
-            variant="outline"
-            className="rounded-xl"
-          >
-            <Share2 className="w-4 h-4 mr-2" />
-            Compartir formulario <span className='font-bold'>BETA</span>
-          </Button>
-          <Button
-            onClick={() => { setEditingTrip(null); setFormOpen(true); }}
-            className="text-white rounded-xl"
-            style={{ backgroundColor: '#2E442A' }}
-          >
-            <Plus className="w-4 h-4 mr-2" />
-            Nuevo Viaje
-          </Button>
-        </div>
+        <Button
+          onClick={() => { setEditingTrip(null); setFormOpen(true); }}
+          className="text-white rounded-xl"
+          style={{ backgroundColor: '#2E442A' }}
+        >
+          <Plus className="w-4 h-4 mr-2" />
+          Nueva Cotización
+        </Button>
+      </div>
+
+      {/* Search */}
+      <div className="relative max-w-md">
+        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-stone-400" />
+        <Input
+          placeholder="Buscar por cliente o destino..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="pl-10 rounded-xl"
+        />
       </div>
 
       {trips.length === 0 ? (
@@ -300,22 +336,28 @@ export default function Trips() {
         <div className="overflow-x-auto pb-4">
           <div className="flex gap-4 min-w-max">
             {STAGES.map((stage) => {
-              const stageTrips = trips.filter(t => t.stage === stage.key);
+              const stageTrips = filteredTrips.filter(t => t.stage === stage.key);
+              const stageValue = stageTrips.reduce((sum, t) => sum + (t.budget || 0), 0);
               return (
-                <div 
+                <div
                   key={stage.key}
                   className="w-72 flex-shrink-0"
                 >
                   {/* Column Header */}
-                  <div className="flex items-center gap-2 mb-4 px-1">
-                    <div 
-                      className="w-3 h-3 rounded-full"
-                      style={{ backgroundColor: stage.color }}
-                    />
-                    <h3 className="font-semibold text-stone-700">{stage.label}</h3>
-                    <span className="text-sm text-stone-400 ml-auto">
-                      {stageTrips.length}
-                    </span>
+                  <div className="mb-4 px-1">
+                    <div className="flex items-center gap-2">
+                      <div
+                        className="w-3 h-3 rounded-full"
+                        style={{ backgroundColor: stage.color }}
+                      />
+                      <h3 className="font-semibold text-stone-700">{stage.label}</h3>
+                      <span className="text-sm text-stone-400 ml-auto">
+                        {stageTrips.length}
+                      </span>
+                    </div>
+                    {stageValue > 0 && (
+                      <p className="text-xs text-stone-400 mt-0.5 pl-5">${stageValue.toLocaleString()}</p>
+                    )}
                   </div>
 
                   {/* Column Content */}
@@ -328,6 +370,7 @@ export default function Trips() {
                           onEdit={(t) => { setEditingTrip(t); setFormOpen(true); }}
                           onDelete={(t) => setDeleteConfirm(t)}
                           onMoveStage={handleMoveStage}
+                          onMarkLost={(t) => { setLostConfirm(t); setLostReason(''); }}
                         />
                       ))}
                     </AnimatePresence>
@@ -355,11 +398,31 @@ export default function Trips() {
         isLoading={createMutation.isPending || updateMutation.isPending}
       />
 
-      {/* Share Form Modal */}
-      <ShareTripFormModal
-        open={shareFormOpen}
-        onClose={() => setShareFormOpen(false)}
-      />
+      {/* Mark as Lost */}
+      <AlertDialog open={!!lostConfirm} onOpenChange={() => { setLostConfirm(null); setLostReason(''); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Marcar como perdido</AlertDialogTitle>
+            <AlertDialogDescription>
+              Mueve la cotización de <strong>{lostConfirm?.client_name}</strong> ({lostConfirm?.destination}) a "Perdido".
+              ¿Cuál fue el motivo? (opcional)
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <Textarea
+            value={lostReason}
+            onChange={(e) => setLostReason(e.target.value)}
+            rows={3}
+            className="rounded-xl resize-none"
+            placeholder="Ej: presupuesto, eligió otra agencia, ya no viaja..."
+          />
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleMarkLost} className="bg-red-600 hover:bg-red-700">
+              Marcar como perdido
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Delete Confirmation */}
       <AlertDialog open={!!deleteConfirm} onOpenChange={() => setDeleteConfirm(null)}>
