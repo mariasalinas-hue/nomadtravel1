@@ -1,14 +1,14 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { format, differenceInCalendarDays } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { Printer, Hotel, Plane, Car, Compass, Package, Ship, Download, Loader2 } from 'lucide-react';
+import { Printer, Hotel, Plane, Car, Compass, Package, Ship, Train, Briefcase, Download, Loader2, ImagePlus } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 
 /* ----------------------------------------------------------------------------
- * Brand palette (kept inline so html2canvas captures exact colors for the PDF)
+ * Brand palette (inline so html2canvas captures exact colors in the PDF)
  * -------------------------------------------------------------------------- */
 const C = {
   green: '#2D4629',
@@ -16,12 +16,11 @@ const C = {
   greenLight: '#3F5E39',
   gold: '#C9A84C',
   goldSoft: '#E7D6A6',
-  cream: '#FBF9F4',
-  creamDeep: '#F3EEE3',
+  cream: '#FAF8F3',
   ink: '#1F2421',
-  body: '#4A4F4A',
-  muted: '#8C8C86',
-  line: '#E7E2D6',
+  body: '#565C55',
+  muted: '#9A998F',
+  line: '#ECE8DD',
   white: '#FFFFFF',
 };
 const SERIF = "'Playfair Display', Georgia, 'Times New Roman', serif";
@@ -49,16 +48,13 @@ const fmt = (d, pattern = 'd MMM yyyy') => {
 };
 
 /* ------------------------------- service config ---------------------------- */
-const SERVICE_ICONS = { hotel: Hotel, vuelo: Plane, traslado: Car, tour: Compass, crucero: Ship, otro: Package };
-const SERVICE_LABELS = { hotel: 'Hospedaje', vuelo: 'Vuelos', traslado: 'Traslados', tour: 'Experiencias & Tours', crucero: 'Cruceros', otro: 'Servicios' };
+const SERVICE_ICONS = { hotel: Hotel, vuelo: Plane, traslado: Car, tren: Train, crucero: Ship, tour: Compass, dmc: Briefcase, otro: Package };
+const SERVICE_LABELS = { hotel: 'Hospedaje', vuelo: 'Vuelos', traslado: 'Traslados', tren: 'Trenes', crucero: 'Cruceros', tour: 'Experiencias', dmc: 'Servicios en Destino', otro: 'Otros Servicios' };
 const MEAL_PLAN_LABELS = { solo_habitacion: 'Solo Habitación', desayuno: 'Desayuno Incluido', all_inclusive: 'All Inclusive' };
-const PAYMENT_METHOD_LABELS = {
-  efectivo: 'Efectivo', transferencia: 'Transferencia', tarjeta: 'Tarjeta',
-  link_pago: 'Link de Pago', tarjeta_cliente: 'Tarjeta', otro: 'Otro',
-};
-const TYPE_ORDER = ['hotel', 'vuelo', 'traslado', 'crucero', 'tour', 'otro'];
+const PAYMENT_METHOD_LABELS = { efectivo: 'Efectivo', transferencia: 'Transferencia', tarjeta: 'Tarjeta', link_pago: 'Link de Pago', tarjeta_cliente: 'Tarjeta', otro: 'Otro' };
+const TYPE_ORDER = ['hotel', 'vuelo', 'tren', 'traslado', 'crucero', 'tour', 'dmc', 'otro'];
 
-/* Builds a normalized {title, subtitle, details[]} view for any service type */
+/* Normalized {title, subtitle, details[]} view for any service type */
 function buildServiceView(service) {
   switch (service.service_type) {
     case 'hotel':
@@ -99,16 +95,17 @@ function buildServiceView(service) {
           service.transfer_passengers && ['Pasajeros', String(service.transfer_passengers)],
         ].filter(Boolean),
       };
-    case 'tour':
+    case 'tren':
       return {
-        title: service.tour_name || 'Experiencia',
-        subtitle: service.tour_city || '',
+        title: service.train_operator || 'Tren',
+        subtitle: service.train_route || '',
         details: [
-          service.tour_date && ['Fecha', fmt(service.tour_date)],
-          service.tour_duration && ['Duración', service.tour_duration],
-          service.tour_people && ['Personas', String(service.tour_people)],
-          service.tour_includes && ['Incluye', service.tour_includes],
-          service.tour_reservation_number && ['Reservación', service.tour_reservation_number],
+          service.train_number && ['Tren', `#${service.train_number}`],
+          service.train_date && ['Fecha', fmt(service.train_date)],
+          (service.train_departure_time || service.train_arrival_time) && ['Horario', `${service.train_departure_time || '--'} → ${service.train_arrival_time || '--'}`],
+          service.train_class && ['Clase', service.train_class],
+          service.train_passengers && ['Pasajeros', String(service.train_passengers)],
+          service.train_reservation_number && ['Reservación', service.train_reservation_number],
         ].filter(Boolean),
       };
     case 'crucero':
@@ -124,6 +121,29 @@ function buildServiceView(service) {
           service.cruise_cabin_type && ['Cabina', service.cruise_cabin_type],
           service.cruise_passengers && ['Pasajeros', String(service.cruise_passengers)],
           service.cruise_reservation_number && ['Reservación', service.cruise_reservation_number],
+        ].filter(Boolean),
+      };
+    case 'tour':
+      return {
+        title: service.tour_name || 'Experiencia',
+        subtitle: service.tour_city || '',
+        details: [
+          service.tour_date && ['Fecha', fmt(service.tour_date)],
+          service.tour_duration && ['Duración', service.tour_duration],
+          service.tour_people && ['Personas', String(service.tour_people)],
+          service.tour_includes && ['Incluye', service.tour_includes],
+          service.tour_reservation_number && ['Reservación', service.tour_reservation_number],
+        ].filter(Boolean),
+      };
+    case 'dmc':
+      return {
+        title: service.dmc_name || 'Servicios en destino',
+        subtitle: service.dmc_destination || '',
+        details: [
+          service.dmc_services && ['Servicios', service.dmc_services],
+          service.dmc_date && ['Fecha', fmt(service.dmc_date)],
+          service.dmc_passengers && ['Pasajeros', String(service.dmc_passengers)],
+          service.dmc_reservation_number && ['Reservación', service.dmc_reservation_number],
         ].filter(Boolean),
       };
     default:
@@ -147,12 +167,14 @@ function buildIncludeHighlights(servicesByType) {
     out.push(`Hospedaje${nights ? ` · ${nights} noche${nights > 1 ? 's' : ''}` : ''}${names.length ? ` en ${names.join(', ')}` : ''}`);
   }
   if (servicesByType.vuelo?.length) out.push(`${servicesByType.vuelo.length} vuelo${servicesByType.vuelo.length > 1 ? 's' : ''} según itinerario`);
+  if (servicesByType.tren?.length) out.push(`${servicesByType.tren.length} trayecto${servicesByType.tren.length > 1 ? 's' : ''} en tren`);
   if (servicesByType.traslado?.length) out.push(`Traslados ${servicesByType.traslado.some(t => t.transfer_type === 'privado') ? 'privados' : ''}`.trim());
   if (servicesByType.crucero?.length) out.push('Crucero con cabina y servicios a bordo indicados');
   if (servicesByType.tour?.length) {
     const names = servicesByType.tour.map(t => t.tour_name).filter(Boolean);
-    out.push(`Experiencias${names.length ? `: ${names.join(', ')}` : ' y tours seleccionados'}`);
+    out.push(`Experiencias${names.length ? `: ${names.join(', ')}` : ' seleccionadas'}`);
   }
+  if (servicesByType.dmc?.length) out.push('Servicios y asistencia en destino (DMC)');
   if (servicesByType.otro?.length) servicesByType.otro.forEach(o => o.other_name && out.push(o.other_name));
   out.push('Asesoría y coordinación personalizada de su asesor Nomad');
   return out;
@@ -160,24 +182,26 @@ function buildIncludeHighlights(servicesByType) {
 
 const EXCLUSIONS = [
   'Gastos personales (minibar, lavandería, llamadas, consumos extra).',
-  'Propinas a guías, choferes y personal de hoteles, salvo que se indique.',
-  'Seguro de viaje y asistencia médica, salvo especificación expresa.',
-  'Trámites y costos de pasaporte, visas y vacunas.',
-  'Comidas, bebidas y excursiones no señaladas en este itinerario.',
-  'Cualquier servicio no descrito explícitamente en este documento.',
-  'Cargos por exceso de equipaje y gastos imprevistos de proveedores.',
+  'Propinas a guías, choferes y personal, salvo que se indique.',
+  'Seguro de viaje y asistencia médica, salvo especificación.',
+  'Pasaporte, visas, vacunas y trámites migratorios.',
+  'Comidas, bebidas y excursiones no señaladas en el itinerario.',
+  'Cualquier servicio no descrito en este documento.',
 ];
 
 const TERMS = [
-  ['Reservaciones y pagos', 'La reservación se confirma con el depósito acordado. El saldo deberá liquidarse en las fechas indicadas en el plan de pagos. La falta de pago en tiempo puede ocasionar la cancelación de los servicios y la pérdida de depósitos no reembolsables.'],
-  ['Tarifas y tipo de cambio', 'Las tarifas están expresadas en dólares estadounidenses (USD) y pueden variar hasta su confirmación y pago total, conforme a disponibilidad y a las políticas de cada proveedor. Los pagos en otra moneda se calculan al tipo de cambio vigente del día.'],
-  ['Cancelaciones y cambios', 'Toda cancelación o modificación está sujeta a las políticas de hoteles, aerolíneas y demás proveedores, las cuales pueden incluir cargos o penalidades. Recomendamos ampliamente contratar un seguro de cancelación.'],
-  ['Documentación del viajero', 'Es responsabilidad del viajero contar con pasaporte vigente, visas y requisitos sanitarios del destino. Nomad Travel Society no se hace responsable por la negación de abordaje o entrada por documentación incompleta.'],
-  ['Responsabilidad', 'Nomad Travel Society actúa como intermediario entre el cliente y los prestadores de servicios, por lo que no asume responsabilidad por demoras, cancelaciones o eventos de fuerza mayor ajenos a su control.'],
+  ['Reservaciones y pagos', 'La reservación se confirma con el depósito acordado. El saldo deberá liquidarse en las fechas del plan de pagos. La falta de pago puede ocasionar la cancelación de servicios y la pérdida de depósitos no reembolsables.'],
+  ['Tarifas y tipo de cambio', 'Las tarifas se expresan en USD y pueden variar hasta su pago total, conforme a disponibilidad y políticas de cada proveedor. Los pagos en otra moneda se calculan al tipo de cambio vigente del día.'],
+  ['Cancelaciones y cambios', 'Toda cancelación o modificación está sujeta a las políticas de hoteles, aerolíneas y proveedores, que pueden incluir cargos o penalidades. Recomendamos contratar un seguro de cancelación.'],
+  ['Documentación del viajero', 'Es responsabilidad del viajero contar con pasaporte vigente, visas y requisitos sanitarios del destino. La agencia no se hace responsable por negación de abordaje o entrada por documentación incompleta.'],
+  ['Responsabilidad', 'Nomad Travel Society actúa como intermediario entre el cliente y los prestadores de servicios, por lo que no asume responsabilidad por eventos de fuerza mayor ajenos a su control.'],
 ];
 
 export default function InvoiceView({ open, onClose, soldTrip, services = [], clientPayments = [] }) {
   const [generating, setGenerating] = useState(false);
+  const [heroImage, setHeroImage] = useState(soldTrip?.cover_image || null);
+  const fileInputRef = useRef(null);
+
   if (!soldTrip) return null;
 
   const totalPaid = clientPayments.reduce((sum, p) => sum + (p.amount_usd_fixed || p.amount || 0), 0);
@@ -188,7 +212,11 @@ export default function InvoiceView({ open, onClose, soldTrip, services = [], cl
     (acc[s.service_type] = acc[s.service_type] || []).push(s);
     return acc;
   }, {});
-  const orderedTypes = TYPE_ORDER.filter(t => servicesByType[t]?.length);
+  // Robust ordering: known types first, then any unexpected type so nothing is ever dropped
+  const orderedTypes = [
+    ...TYPE_ORDER.filter(t => servicesByType[t]?.length),
+    ...Object.keys(servicesByType).filter(t => !TYPE_ORDER.includes(t)),
+  ];
 
   const tripNights = (soldTrip.start_date && soldTrip.end_date)
     ? differenceInCalendarDays(parseDateOnlyLocal(soldTrip.end_date), parseDateOnlyLocal(soldTrip.start_date))
@@ -196,7 +224,22 @@ export default function InvoiceView({ open, onClose, soldTrip, services = [], cl
   const ref = `NTS-${String(soldTrip.id || '').slice(0, 6).toUpperCase() || format(new Date(), 'yyMMdd')}`;
   const includeHighlights = buildIncludeHighlights(servicesByType);
 
+  const statLine = [
+    `${fmt(soldTrip.start_date, 'd MMM')}${soldTrip.end_date ? ` – ${fmt(soldTrip.end_date, 'd MMM yyyy')}` : ''}`,
+    tripNights ? `${tripNights} noche${tripNights > 1 ? 's' : ''}` : null,
+    `${soldTrip.travelers || 1} viajero${(soldTrip.travelers || 1) > 1 ? 's' : ''}`,
+    `${services.length} servicio${services.length > 1 ? 's' : ''}`,
+  ].filter(Boolean);
+
   const handlePrint = () => window.print();
+
+  const handlePickImage = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => setHeroImage(ev.target.result); // data URL → safe for html2canvas
+    reader.readAsDataURL(file);
+  };
 
   const handleDownloadPDF = async () => {
     const element = document.getElementById("invoice-content");
@@ -204,11 +247,9 @@ export default function InvoiceView({ open, onClose, soldTrip, services = [], cl
     setGenerating(true);
     try {
       if (document.fonts?.ready) await document.fonts.ready;
-
       const pdf = new jsPDF("p", "mm", "a4");
       const pageW = pdf.internal.pageSize.getWidth();
       const pageH = pdf.internal.pageSize.getHeight();
-
       const blocks = Array.from(element.querySelectorAll('.pdf-block'));
       let cursorY = 0;
 
@@ -219,12 +260,10 @@ export default function InvoiceView({ open, onClose, soldTrip, services = [], cl
         const imgH = (canvas.height * imgW) / canvas.width;
 
         if (imgH <= pageH) {
-          // Place whole block; start a new page if it doesn't fit in the remaining space
           if (cursorY + imgH > pageH + 0.5) { pdf.addPage(); cursorY = 0; }
           pdf.addImage(imgData, "PNG", 0, cursorY, imgW, imgH);
           cursorY += imgH;
         } else {
-          // Block taller than a full page → slice it across pages
           if (cursorY > 0) { pdf.addPage(); cursorY = 0; }
           let position = 0;
           let heightLeft = imgH;
@@ -236,10 +275,9 @@ export default function InvoiceView({ open, onClose, soldTrip, services = [], cl
             pdf.addImage(imgData, "PNG", 0, position, imgW, imgH);
             heightLeft -= pageH;
           }
-          cursorY = pageH; // force next block onto a fresh page
+          cursorY = pageH;
         }
       }
-
       pdf.save(`Itinerario_Nomad_${(soldTrip.client_name || 'Cliente').replace(/\s+/g, '_')}.pdf`);
     } catch (err) {
       console.error("Error generando PDF:", err);
@@ -249,13 +287,10 @@ export default function InvoiceView({ open, onClose, soldTrip, services = [], cl
   };
 
   /* -------------------------------- sub-renderers ------------------------------- */
-  const SectionTitle = ({ children, light }) => (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-      <span style={{ width: 22, height: 1.5, background: C.gold }} />
-      <span style={{
-        fontFamily: SANS, fontSize: 11, fontWeight: 600, letterSpacing: '0.18em',
-        textTransform: 'uppercase', color: light ? C.goldSoft : C.green,
-      }}>{children}</span>
+  const SectionTitle = ({ children }) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+      <span style={{ width: 20, height: 1, background: C.gold }} />
+      <span style={{ fontFamily: SANS, fontSize: 10.5, fontWeight: 600, letterSpacing: '0.22em', textTransform: 'uppercase', color: C.green }}>{children}</span>
     </div>
   );
 
@@ -263,30 +298,20 @@ export default function InvoiceView({ open, onClose, soldTrip, services = [], cl
     const Icon = SERVICE_ICONS[service.service_type] || Package;
     const { title, subtitle, details } = buildServiceView(service);
     return (
-      <div key={idx} style={{
-        display: 'flex', gap: 14, padding: '16px 0',
-        borderBottom: `1px solid ${C.line}`,
-      }}>
-        <div style={{
-          width: 38, height: 38, borderRadius: 10, flexShrink: 0,
-          background: C.cream, border: `1px solid ${C.line}`,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>
-          <Icon style={{ width: 18, height: 18, color: C.green }} strokeWidth={1.6} />
-        </div>
-
+      <div key={idx} style={{ display: 'flex', gap: 14, padding: '15px 0', borderBottom: `1px solid ${C.line}` }}>
+        <Icon style={{ width: 17, height: 17, color: C.gold, flexShrink: 0, marginTop: 3 }} strokeWidth={1.5} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline' }}>
             <p style={{ fontFamily: SERIF, fontSize: 15, fontWeight: 600, color: C.ink, margin: 0 }}>{title}</p>
-            <p style={{ fontFamily: SANS, fontSize: 14, fontWeight: 700, color: C.green, margin: 0, whiteSpace: 'nowrap' }}>
+            <p style={{ fontFamily: SANS, fontSize: 13.5, fontWeight: 600, color: C.green, margin: 0, whiteSpace: 'nowrap' }}>
               ${(service.total_price || 0).toLocaleString()} <span style={{ fontSize: 9, fontWeight: 500, color: C.muted }}>USD</span>
             </p>
           </div>
-          {subtitle && <p style={{ fontFamily: SANS, fontSize: 11.5, color: C.gold, margin: '2px 0 0', fontWeight: 500 }}>{subtitle}</p>}
+          {subtitle && <p style={{ fontFamily: SANS, fontSize: 11, color: C.gold, margin: '2px 0 0', fontWeight: 500 }}>{subtitle}</p>}
           {details.length > 0 && (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '3px 18px', marginTop: 8 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px 20px', marginTop: 8 }}>
               {details.map(([label, value], i) => (
-                <p key={i} style={{ fontFamily: SANS, fontSize: 11, color: C.body, margin: 0, lineHeight: 1.5 }}>
+                <p key={i} style={{ fontFamily: SANS, fontSize: 10.5, color: C.body, margin: 0, lineHeight: 1.5 }}>
                   <span style={{ color: C.muted }}>{label}: </span>{value}
                 </p>
               ))}
@@ -297,7 +322,7 @@ export default function InvoiceView({ open, onClose, soldTrip, services = [], cl
     );
   };
 
-  const block = { padding: '0 44px' };
+  const pad = { padding: '0 48px' };
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -307,9 +332,13 @@ export default function InvoiceView({ open, onClose, soldTrip, services = [], cl
             Itinerario de Viaje
           </DialogTitle>
           <div className="flex gap-2">
+            <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handlePickImage} />
+            <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} className="rounded-xl">
+              <ImagePlus className="w-4 h-4 mr-2" /> {heroImage ? 'Cambiar foto' : 'Foto de portada'}
+            </Button>
             <Button variant="outline" size="sm" onClick={handleDownloadPDF} disabled={generating} className="rounded-xl">
               {generating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Download className="w-4 h-4 mr-2" />}
-              {generating ? 'Generando…' : 'Descargar PDF'}
+              {generating ? 'Generando…' : 'PDF'}
             </Button>
             <Button variant="outline" size="sm" onClick={handlePrint} className="rounded-xl">
               <Printer className="w-4 h-4 mr-2" /> Imprimir
@@ -320,97 +349,83 @@ export default function InvoiceView({ open, onClose, soldTrip, services = [], cl
         {/* ============================ INVOICE DOCUMENT ============================ */}
         <div id="invoice-content" style={{ background: C.white, fontFamily: SANS, color: C.body }}>
 
-          {/* —————————————————————— HEADER (full-bleed green band) —————————————————————— */}
+          {/* —————————————————————— HEADER —————————————————————— */}
           <div className="pdf-block">
-            <div style={{ background: C.green, padding: '34px 44px 30px', position: 'relative' }}>
-              <div style={{ position: 'absolute', left: 0, bottom: 0, width: '100%', height: 3, background: `linear-gradient(90deg, ${C.gold}, ${C.goldSoft})` }} />
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                  <div style={{
-                    width: 48, height: 48, borderRadius: 12, border: `1.5px solid ${C.gold}`,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  }}>
-                    <span style={{ fontFamily: SERIF, fontSize: 26, fontWeight: 600, color: C.gold }}>N</span>
+            <div style={{
+              position: 'relative',
+              minHeight: heroImage ? 220 : 'auto',
+              backgroundColor: C.green,
+              backgroundImage: heroImage
+                ? `linear-gradient(180deg, rgba(26,46,23,0.30) 0%, rgba(26,46,23,0.55) 55%, rgba(26,46,23,0.92) 100%), url(${heroImage})`
+                : `linear-gradient(135deg, ${C.green} 0%, ${C.greenDark} 100%)`,
+              backgroundSize: 'cover',
+              backgroundPosition: 'center',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'flex-end',
+              padding: heroImage ? '40px 48px 26px' : '30px 48px 26px',
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 13 }}>
+                  <div style={{ width: 44, height: 44, borderRadius: 11, border: `1.5px solid ${C.gold}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <span style={{ fontFamily: SERIF, fontSize: 24, fontWeight: 600, color: C.gold }}>N</span>
                   </div>
                   <div>
-                    <h2 style={{ fontFamily: SERIF, fontSize: 21, fontWeight: 600, color: C.white, margin: 0, lineHeight: 1.1 }}>Nomad Travel Society</h2>
-                    <p style={{ fontFamily: SANS, fontSize: 10, letterSpacing: '0.22em', color: C.gold, margin: '5px 0 0', textTransform: 'uppercase' }}>Luxury Travel · Diseñado a tu medida</p>
+                    <h2 style={{ fontFamily: SERIF, fontSize: 20, fontWeight: 600, color: C.white, margin: 0, lineHeight: 1.1 }}>Nomad Travel Society</h2>
+                    <p style={{ fontFamily: SANS, fontSize: 9, letterSpacing: '0.24em', color: C.goldSoft, margin: '5px 0 0', textTransform: 'uppercase' }}>Luxury Travel</p>
                   </div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
-                  <p style={{ fontFamily: SANS, fontSize: 9, letterSpacing: '0.18em', color: C.goldSoft, margin: 0, textTransform: 'uppercase' }}>Referencia</p>
-                  <p style={{ fontFamily: SANS, fontSize: 13, fontWeight: 600, color: C.white, margin: '3px 0 10px' }}>{ref}</p>
-                  <p style={{ fontFamily: SANS, fontSize: 9, letterSpacing: '0.18em', color: C.goldSoft, margin: 0, textTransform: 'uppercase' }}>Fecha</p>
-                  <p style={{ fontFamily: SANS, fontSize: 13, fontWeight: 600, color: C.white, margin: '3px 0 0' }}>{format(new Date(), 'd MMMM yyyy', { locale: es })}</p>
+                  <p style={{ fontFamily: SANS, fontSize: 12, fontWeight: 600, color: C.white, margin: 0 }}>{ref}</p>
+                  <p style={{ fontFamily: SANS, fontSize: 10, color: C.goldSoft, margin: '3px 0 0' }}>{format(new Date(), 'd MMMM yyyy', { locale: es })}</p>
                 </div>
               </div>
+              <div style={{ position: 'absolute', left: 0, bottom: 0, width: '100%', height: 2.5, background: `linear-gradient(90deg, ${C.gold}, ${C.goldSoft})` }} />
             </div>
 
-            {/* Hero: trip summary */}
-            <div style={{ padding: '28px 44px 6px' }}>
-              <p style={{ fontFamily: SANS, fontSize: 10, letterSpacing: '0.2em', color: C.gold, margin: 0, textTransform: 'uppercase', fontWeight: 600 }}>Preparado para</p>
-              <h1 style={{ fontFamily: SERIF, fontSize: 28, fontWeight: 600, color: C.ink, margin: '6px 0 2px', lineHeight: 1.1 }}>{soldTrip.client_name}</h1>
-              <p style={{ fontFamily: SERIF, fontSize: 16, fontStyle: 'italic', color: C.greenLight, margin: '0 0 18px' }}>
+            {/* Client / trip intro */}
+            <div style={{ padding: '34px 48px 8px' }}>
+              <p style={{ fontFamily: SANS, fontSize: 9.5, letterSpacing: '0.22em', color: C.gold, margin: 0, textTransform: 'uppercase', fontWeight: 600 }}>Preparado para</p>
+              <h1 style={{ fontFamily: SERIF, fontSize: 30, fontWeight: 600, color: C.ink, margin: '8px 0 2px', lineHeight: 1.05 }}>{soldTrip.client_name}</h1>
+              <p style={{ fontFamily: SERIF, fontSize: 16, fontStyle: 'italic', color: C.greenLight, margin: 0 }}>
                 {soldTrip.destination}{soldTrip.trip_name ? ` — ${soldTrip.trip_name}` : ''}
               </p>
-
-              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                {[
-                  ['Fechas', `${fmt(soldTrip.start_date, 'd MMM')}${soldTrip.end_date ? ` – ${fmt(soldTrip.end_date, 'd MMM yyyy')}` : ''}`],
-                  tripNights ? ['Duración', `${tripNights} noche${tripNights > 1 ? 's' : ''}`] : null,
-                  ['Viajeros', `${soldTrip.travelers || 1}`],
-                  ['Servicios', `${services.length}`],
-                ].filter(Boolean).map(([label, value], i) => (
-                  <div key={i} style={{ background: C.cream, border: `1px solid ${C.line}`, borderRadius: 10, padding: '10px 16px', minWidth: 96 }}>
-                    <p style={{ fontFamily: SANS, fontSize: 9, letterSpacing: '0.12em', color: C.muted, margin: 0, textTransform: 'uppercase' }}>{label}</p>
-                    <p style={{ fontFamily: SERIF, fontSize: 15, fontWeight: 600, color: C.green, margin: '3px 0 0' }}>{value}</p>
-                  </div>
-                ))}
-              </div>
+              <p style={{ fontFamily: SANS, fontSize: 11.5, color: C.muted, margin: '16px 0 0', letterSpacing: '0.02em' }}>
+                {statLine.join('   ·   ')}
+              </p>
             </div>
           </div>
 
           {/* —————————————————————— SERVICES (one block per type) —————————————————————— */}
-          {orderedTypes.map((type) => {
-            const Icon = SERVICE_ICONS[type] || Package;
-            return (
-              <div className="pdf-block" key={type}>
-                <div style={{ ...block, paddingTop: 26 }}>
-                  <SectionTitle>{SERVICE_LABELS[type]}</SectionTitle>
-                  <div>
-                    {servicesByType[type].map((s, i) => renderServiceRow(s, i))}
-                  </div>
-                  <div style={{ marginTop: 10, display: 'flex', justifyContent: 'flex-end' }}>
-                    <span style={{ fontFamily: SANS, fontSize: 11, color: C.muted }}>
-                      <Icon style={{ width: 12, height: 12, display: 'inline', verticalAlign: '-1px', marginRight: 5, color: C.gold }} strokeWidth={1.6} />
-                      Subtotal {SERVICE_LABELS[type].toLowerCase()}: <strong style={{ color: C.green }}>${servicesByType[type].reduce((s, x) => s + (x.total_price || 0), 0).toLocaleString()} USD</strong>
-                    </span>
-                  </div>
-                </div>
+          {orderedTypes.map((type) => (
+            <div className="pdf-block" key={type}>
+              <div style={{ ...pad, paddingTop: 30 }}>
+                <SectionTitle>{SERVICE_LABELS[type] || 'Servicios'}</SectionTitle>
+                <div>{servicesByType[type].map((s, i) => renderServiceRow(s, i))}</div>
               </div>
-            );
-          })}
+            </div>
+          ))}
 
           {/* —————————————————————— INCLUDES / EXCLUDES —————————————————————— */}
           <div className="pdf-block">
-            <div style={{ ...block, paddingTop: 30 }}>
-              <SectionTitle>Su experiencia incluye</SectionTitle>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 28 }}>
+            <div style={{ ...pad, paddingTop: 34 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1.15fr 1fr', gap: 36 }}>
                 <div>
+                  <SectionTitle>Su experiencia incluye</SectionTitle>
                   <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
                     {includeHighlights.map((item, i) => (
-                      <li key={i} style={{ display: 'flex', gap: 9, marginBottom: 9, fontFamily: SANS, fontSize: 11.5, color: C.body, lineHeight: 1.45 }}>
-                        <span style={{ color: C.green, fontWeight: 700, flexShrink: 0 }}>✓</span>
+                      <li key={i} style={{ display: 'flex', gap: 10, marginBottom: 10, fontFamily: SANS, fontSize: 11.5, color: C.body, lineHeight: 1.45 }}>
+                        <span style={{ color: C.gold, fontWeight: 700, flexShrink: 0 }}>✓</span>
                         <span>{item}</span>
                       </li>
                     ))}
                   </ul>
                 </div>
-                <div style={{ background: C.cream, borderRadius: 12, padding: '18px 20px', border: `1px solid ${C.line}` }}>
-                  <p style={{ fontFamily: SANS, fontSize: 10, fontWeight: 600, letterSpacing: '0.16em', color: C.muted, textTransform: 'uppercase', margin: '0 0 12px' }}>No incluye</p>
+                <div style={{ borderLeft: `1px solid ${C.line}`, paddingLeft: 32 }}>
+                  <p style={{ fontFamily: SANS, fontSize: 10.5, fontWeight: 600, letterSpacing: '0.18em', color: C.muted, textTransform: 'uppercase', margin: '2px 0 16px' }}>No incluye</p>
                   <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
                     {EXCLUSIONS.map((item, i) => (
-                      <li key={i} style={{ display: 'flex', gap: 9, marginBottom: 8, fontFamily: SANS, fontSize: 10.5, color: C.body, lineHeight: 1.4 }}>
+                      <li key={i} style={{ display: 'flex', gap: 10, marginBottom: 9, fontFamily: SANS, fontSize: 10.5, color: C.body, lineHeight: 1.4 }}>
                         <span style={{ color: C.muted, flexShrink: 0 }}>—</span>
                         <span>{item}</span>
                       </li>
@@ -421,21 +436,17 @@ export default function InvoiceView({ open, onClose, soldTrip, services = [], cl
             </div>
           </div>
 
-          {/* —————————————————————— PAYMENTS + SUMMARY —————————————————————— */}
+          {/* —————————————————————— INVESTMENT SUMMARY —————————————————————— */}
           <div className="pdf-block">
-            <div style={{ ...block, paddingTop: 30 }}>
+            <div style={{ ...pad, paddingTop: 36 }}>
               <SectionTitle>Resumen de inversión</SectionTitle>
 
               {clientPayments.length > 0 && (
-                <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 18 }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 22 }}>
                   <thead>
                     <tr>
                       {['Fecha', 'Método', 'Monto'].map((h, i) => (
-                        <th key={i} style={{
-                          textAlign: i === 2 ? 'right' : 'left', padding: '0 0 8px',
-                          fontFamily: SANS, fontSize: 9, fontWeight: 600, letterSpacing: '0.12em',
-                          color: C.muted, textTransform: 'uppercase', borderBottom: `1px solid ${C.line}`,
-                        }}>{h}</th>
+                        <th key={i} style={{ textAlign: i === 2 ? 'right' : 'left', padding: '0 0 8px', fontFamily: SANS, fontSize: 9, fontWeight: 600, letterSpacing: '0.14em', color: C.muted, textTransform: 'uppercase', borderBottom: `1px solid ${C.line}` }}>{h}</th>
                       ))}
                     </tr>
                   </thead>
@@ -446,12 +457,12 @@ export default function InvoiceView({ open, onClose, soldTrip, services = [], cl
                       const amountUSD = p.amount_usd_fixed || p.amount || 0;
                       return (
                         <tr key={i}>
-                          <td style={{ padding: '9px 0', fontFamily: SANS, fontSize: 11.5, color: C.body, borderBottom: `1px solid ${C.line}` }}>{fmt(p.date)}</td>
-                          <td style={{ padding: '9px 0', fontFamily: SANS, fontSize: 11.5, color: C.body, borderBottom: `1px solid ${C.line}` }}>
+                          <td style={{ padding: '9px 0', fontFamily: SANS, fontSize: 11, color: C.body, borderBottom: `1px solid ${C.line}` }}>{fmt(p.date)}</td>
+                          <td style={{ padding: '9px 0', fontFamily: SANS, fontSize: 11, color: C.body, borderBottom: `1px solid ${C.line}` }}>
                             {PAYMENT_METHOD_LABELS[p.method] || p.method}
-                            {currency !== 'USD' && <span style={{ color: C.muted, fontSize: 10 }}> · {amountOriginal.toLocaleString()} {currency}{p.fx_rate ? ` @ ${Number(p.fx_rate).toFixed(2)}` : ''}</span>}
+                            {currency !== 'USD' && <span style={{ color: C.muted, fontSize: 9.5 }}> · {amountOriginal.toLocaleString()} {currency}{p.fx_rate ? ` @ ${Number(p.fx_rate).toFixed(2)}` : ''}</span>}
                           </td>
-                          <td style={{ padding: '9px 0', textAlign: 'right', fontFamily: SANS, fontSize: 11.5, fontWeight: 600, color: C.greenLight, borderBottom: `1px solid ${C.line}` }}>${amountUSD.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD</td>
+                          <td style={{ padding: '9px 0', textAlign: 'right', fontFamily: SANS, fontSize: 11, fontWeight: 600, color: C.greenLight, borderBottom: `1px solid ${C.line}` }}>${amountUSD.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD</td>
                         </tr>
                       );
                     })}
@@ -459,55 +470,45 @@ export default function InvoiceView({ open, onClose, soldTrip, services = [], cl
                 </table>
               )}
 
-              {/* Totals card */}
               <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                <div style={{ width: 320, background: C.cream, border: `1px solid ${C.line}`, borderRadius: 12, overflow: 'hidden' }}>
-                  <div style={{ padding: '14px 20px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: SANS, fontSize: 12, color: C.body, marginBottom: 8 }}>
-                      <span>Total del viaje</span><span style={{ fontWeight: 600 }}>${total.toLocaleString()} USD</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: SANS, fontSize: 12, color: C.body }}>
-                      <span>Pagado a la fecha</span><span style={{ fontWeight: 600, color: C.greenLight }}>${totalPaid.toLocaleString()} USD</span>
-                    </div>
+                <div style={{ width: 300 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: SANS, fontSize: 12, color: C.body, padding: '7px 0' }}>
+                    <span>Total del viaje</span><span style={{ fontWeight: 600 }}>${total.toLocaleString()} USD</span>
                   </div>
-                  <div style={{ background: C.green, padding: '14px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontFamily: SANS, fontSize: 11, letterSpacing: '0.1em', color: C.goldSoft, textTransform: 'uppercase' }}>Saldo pendiente</span>
-                    <span style={{ fontFamily: SERIF, fontSize: 20, fontWeight: 700, color: C.white }}>${balance.toLocaleString()} <span style={{ fontSize: 11 }}>USD</span></span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: SANS, fontSize: 12, color: C.body, padding: '7px 0', borderBottom: `1px solid ${C.line}` }}>
+                    <span>Pagado a la fecha</span><span style={{ fontWeight: 600, color: C.greenLight }}>${totalPaid.toLocaleString()} USD</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', paddingTop: 12 }}>
+                    <span style={{ fontFamily: SANS, fontSize: 10.5, letterSpacing: '0.12em', color: C.muted, textTransform: 'uppercase' }}>Saldo pendiente</span>
+                    <span style={{ fontFamily: SERIF, fontSize: 23, fontWeight: 700, color: C.green }}>${balance.toLocaleString()} <span style={{ fontSize: 11 }}>USD</span></span>
                   </div>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* —————————————————————— TERMS & CONDITIONS —————————————————————— */}
+          {/* —————————————————————— TERMS & FOOTER —————————————————————— */}
           <div className="pdf-block">
-            <div style={{ ...block, paddingTop: 32 }}>
+            <div style={{ ...pad, paddingTop: 38 }}>
               <SectionTitle>Términos y condiciones</SectionTitle>
-              <div style={{ columnGap: 28 }}>
-                {TERMS.map(([heading, text], i) => (
-                  <div key={i} style={{ marginBottom: 12 }}>
-                    <p style={{ fontFamily: SANS, fontSize: 11, fontWeight: 700, color: C.green, margin: '0 0 3px' }}>{i + 1}. {heading}</p>
-                    <p style={{ fontFamily: SANS, fontSize: 10, color: C.body, lineHeight: 1.5, margin: 0, textAlign: 'justify' }}>{text}</p>
-                  </div>
-                ))}
-              </div>
-              <p style={{ fontFamily: SANS, fontSize: 9.5, color: C.muted, fontStyle: 'italic', marginTop: 6 }}>
+              {TERMS.map(([heading, text], i) => (
+                <div key={i} style={{ marginBottom: 11 }}>
+                  <p style={{ fontFamily: SANS, fontSize: 10.5, fontWeight: 700, color: C.green, margin: '0 0 2px' }}>{i + 1}. {heading}</p>
+                  <p style={{ fontFamily: SANS, fontSize: 9.5, color: C.body, lineHeight: 1.5, margin: 0, textAlign: 'justify' }}>{text}</p>
+                </div>
+              ))}
+              <p style={{ fontFamily: SANS, fontSize: 9, color: C.muted, fontStyle: 'italic', margin: '8px 0 0' }}>
                 La confirmación del pago implica la aceptación de los presentes términos y condiciones.
               </p>
             </div>
 
-            {/* —————————————————————— FOOTER —————————————————————— */}
-            <div style={{ marginTop: 30, background: C.green, padding: '26px 44px', position: 'relative' }}>
-              <div style={{ position: 'absolute', left: 0, top: 0, width: '100%', height: 3, background: `linear-gradient(90deg, ${C.gold}, ${C.goldSoft})` }} />
-              <div style={{ textAlign: 'center' }}>
-                <p style={{ fontFamily: SERIF, fontSize: 16, fontStyle: 'italic', color: C.white, margin: 0 }}>Gracias por viajar con nosotros</p>
-                <p style={{ fontFamily: SANS, fontSize: 10, letterSpacing: '0.14em', color: C.goldSoft, margin: '10px 0 0', textTransform: 'uppercase' }}>
-                  Nomad Travel Society · San Pedro Garza García, N.L.
-                </p>
-                <p style={{ fontFamily: SANS, fontSize: 10, color: 'rgba(255,255,255,0.7)', margin: '5px 0 0' }}>
-                  contacto@nomadtravelsociety.com
-                </p>
-              </div>
+            <div style={{ marginTop: 36, padding: '26px 48px', borderTop: `1px solid ${C.line}`, textAlign: 'center' }}>
+              <span style={{ display: 'inline-block', width: 30, height: 2, background: C.gold, marginBottom: 14 }} />
+              <p style={{ fontFamily: SERIF, fontSize: 15, fontStyle: 'italic', color: C.green, margin: 0 }}>Gracias por viajar con nosotros</p>
+              <p style={{ fontFamily: SANS, fontSize: 9.5, letterSpacing: '0.16em', color: C.muted, margin: '10px 0 0', textTransform: 'uppercase' }}>
+                Nomad Travel Society · San Pedro Garza García, N.L.
+              </p>
+              <p style={{ fontFamily: SANS, fontSize: 9.5, color: C.muted, margin: '4px 0 0' }}>contacto@nomadtravelsociety.com</p>
             </div>
           </div>
 
