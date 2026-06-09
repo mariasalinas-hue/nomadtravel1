@@ -1,9 +1,11 @@
 import { useState, useRef } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { format, differenceInCalendarDays } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { Printer, Download, Loader2, ImagePlus } from 'lucide-react';
+import { Printer, Download, Loader2, ImagePlus, Settings2, Trash2 } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 
@@ -171,7 +173,17 @@ const TERMS = [
   ['Privacidad', 'La información personal se usará exclusivamente para gestión de reservaciones y no será compartida sin consentimiento, salvo cuando sea necesario para los servicios contratados.'],
 ];
 
-const CONTACT = 'hola@nomadtravelsociety.com  ·  +52 (81) 0000-0000  ·  www.nomadtravelsociety.com';
+const BRANDING_KEY = 'nomad_invoice_branding';
+const DEFAULT_BRANDING = {
+  logo: null,
+  email: 'hola@nomadtravelsociety.com',
+  phone: '+52 (81) 0000-0000',
+  website: 'www.nomadtravelsociety.com',
+};
+function loadBranding() {
+  try { return { ...DEFAULT_BRANDING, ...(JSON.parse(localStorage.getItem(BRANDING_KEY)) || {}) }; }
+  catch { return { ...DEFAULT_BRANDING }; }
+}
 
 /* A client payment that was auto-generated from a supplier payment (paid with the client's card) */
 const isSupplierDerived = (p) => (p.notes || '').includes('Generado automáticamente por pago a proveedor');
@@ -179,9 +191,25 @@ const isSupplierDerived = (p) => (p.notes || '').includes('Generado automáticam
 export default function InvoiceView({ open, onClose, soldTrip, services = [], clientPayments = [] }) {
   const [generating, setGenerating] = useState(false);
   const [heroImage, setHeroImage] = useState(soldTrip?.cover_image || null);
-  const fileInputRef = useRef(null);
+  const [branding, setBranding] = useState(loadBranding);
+  const [showSettings, setShowSettings] = useState(false);
+  const coverInputRef = useRef(null);
+  const logoInputRef = useRef(null);
 
   if (!soldTrip) return null;
+
+  const updateBranding = (patch) => {
+    const next = { ...branding, ...patch };
+    setBranding(next);
+    try { localStorage.setItem(BRANDING_KEY, JSON.stringify(next)); } catch { /* ignore quota */ }
+  };
+  const readImage = (file, cb) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => cb(ev.target.result);
+    reader.readAsDataURL(file);
+  };
+  const contactLine = [branding.email, branding.phone, branding.website].filter(Boolean).join('  ·  ');
 
   // "Sin pagos a proveedores": exclude client payments auto-generated from supplier card payments
   const visiblePayments = clientPayments.filter(p => !isSupplierDerived(p));
@@ -205,13 +233,6 @@ export default function InvoiceView({ open, onClose, soldTrip, services = [], cl
   const ref = `INV-${invNo}`;
 
   const handlePrint = () => window.print();
-  const handlePickImage = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => setHeroImage(ev.target.result);
-    reader.readAsDataURL(file);
-  };
 
   const handleDownloadPDF = async () => {
     const element = document.getElementById("invoice-content");
@@ -268,19 +289,32 @@ export default function InvoiceView({ open, onClose, soldTrip, services = [], cl
     <p style={{ fontFamily: SANS, fontSize: 10, fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase', color: C.gold, margin: 0 }}>{children}</p>
   );
 
+  // Brand lockup: real logo image if provided, else a typographic recreation
+  const Lockup = ({ size = 1 }) => (
+    branding.logo
+      ? <img src={branding.logo} alt="Nomad Travel Society" style={{ height: 40 * size, maxWidth: 240 * size, objectFit: 'contain', display: 'block' }} />
+      : (
+        <div>
+          <div style={{ fontFamily: SERIF, fontSize: 30 * size, fontWeight: 500, color: C.green, lineHeight: 1 }}>Nomad</div>
+          <div style={{ fontFamily: SANS, fontSize: 9 * size, fontWeight: 500, letterSpacing: '0.34em', color: C.green, marginTop: 6 * size, textTransform: 'uppercase' }}>Travel Society</div>
+        </div>
+      )
+  );
+
   // Repeated header used on pages 2 & 3
   const PageHeader = ({ rightLabel }) => (
     <div style={{ padding: '24px 44px 0' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', paddingBottom: 14, borderBottom: `2px solid ${C.green}` }}>
-        <span style={{ fontFamily: SERIF, fontSize: 19, fontWeight: 600, color: C.green }}>Nomad Travel Society</span>
+        <Lockup size={0.62} />
         <span style={{ fontFamily: SANS, fontSize: 10.5, letterSpacing: '0.12em', color: C.muted, textTransform: 'uppercase' }}>{rightLabel}</span>
       </div>
     </div>
   );
 
   const FooterBand = () => (
-    <div style={{ marginTop: 28, background: C.green, padding: '15px 44px', textAlign: 'center' }}>
-      <span style={{ fontFamily: SANS, fontSize: 10, letterSpacing: '0.04em', color: C.goldSoft }}>{CONTACT}</span>
+    <div style={{ marginTop: 28, background: C.green, padding: '16px 44px', textAlign: 'center' }}>
+      <span style={{ display: 'inline-block', width: 26, height: 2, background: C.goldSoft, marginBottom: 9 }} />
+      <p style={{ fontFamily: SANS, fontSize: 10, letterSpacing: '0.04em', color: C.goldSoft, margin: 0 }}>{contactLine}</p>
     </div>
   );
 
@@ -293,9 +327,13 @@ export default function InvoiceView({ open, onClose, soldTrip, services = [], cl
         <DialogHeader className="flex flex-row items-center justify-between px-6 py-4 border-b sticky top-0 bg-white z-10">
           <DialogTitle className="text-base font-bold" style={{ color: C.green, fontFamily: SERIF }}>Invoice</DialogTitle>
           <div className="flex gap-2">
-            <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handlePickImage} />
-            <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} className="rounded-xl">
-              <ImagePlus className="w-4 h-4 mr-2" /> {heroImage ? 'Cambiar foto' : 'Foto de portada'}
+            <input ref={coverInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => readImage(e.target.files?.[0], setHeroImage)} />
+            <input ref={logoInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => readImage(e.target.files?.[0], (url) => updateBranding({ logo: url }))} />
+            <Button variant="outline" size="sm" onClick={() => setShowSettings(s => !s)} className="rounded-xl">
+              <Settings2 className="w-4 h-4 mr-2" /> Personalizar
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => coverInputRef.current?.click()} className="rounded-xl">
+              <ImagePlus className="w-4 h-4 mr-2" /> {heroImage ? 'Cambiar foto' : 'Foto'}
             </Button>
             <Button variant="outline" size="sm" onClick={handleDownloadPDF} disabled={generating} className="rounded-xl">
               {generating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Download className="w-4 h-4 mr-2" />}
@@ -307,6 +345,47 @@ export default function InvoiceView({ open, onClose, soldTrip, services = [], cl
           </div>
         </DialogHeader>
 
+        {/* —————————————————————— SETTINGS PANEL (not part of the PDF) —————————————————————— */}
+        {showSettings && (
+          <div className="px-6 py-4 border-b bg-stone-50">
+            <div className="flex items-start gap-5 flex-wrap">
+              <div>
+                <Label className="text-xs text-stone-500">Logotipo</Label>
+                <div className="flex items-center gap-2 mt-1.5">
+                  <div className="w-28 h-12 rounded-lg border bg-white flex items-center justify-center overflow-hidden">
+                    {branding.logo
+                      ? <img src={branding.logo} alt="logo" className="max-w-full max-h-full object-contain" />
+                      : <span style={{ fontFamily: SERIF, color: C.green, fontSize: 15 }}>Nomad</span>}
+                  </div>
+                  <Button variant="outline" size="sm" className="rounded-lg" onClick={() => logoInputRef.current?.click()}>
+                    <ImagePlus className="w-4 h-4 mr-1.5" /> Subir
+                  </Button>
+                  {branding.logo && (
+                    <Button variant="ghost" size="icon" className="rounded-lg text-stone-400" onClick={() => updateBranding({ logo: null })}>
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  )}
+                </div>
+              </div>
+              <div className="flex-1 min-w-[260px] grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <Label className="text-xs text-stone-500">Correo</Label>
+                  <Input value={branding.email} onChange={(e) => updateBranding({ email: e.target.value })} className="mt-1.5 h-9 rounded-lg" />
+                </div>
+                <div>
+                  <Label className="text-xs text-stone-500">Teléfono</Label>
+                  <Input value={branding.phone} onChange={(e) => updateBranding({ phone: e.target.value })} className="mt-1.5 h-9 rounded-lg" />
+                </div>
+                <div>
+                  <Label className="text-xs text-stone-500">Sitio web</Label>
+                  <Input value={branding.website} onChange={(e) => updateBranding({ website: e.target.value })} className="mt-1.5 h-9 rounded-lg" />
+                </div>
+              </div>
+            </div>
+            <p className="text-[11px] text-stone-400 mt-3">El logo y los datos de contacto se guardan en este navegador y se reutilizan en todos los invoices.</p>
+          </div>
+        )}
+
         {/* ============================ INVOICE DOCUMENT ============================ */}
         <div id="invoice-content" style={{ background: C.white, fontFamily: SANS, color: C.body }}>
 
@@ -315,11 +394,8 @@ export default function InvoiceView({ open, onClose, soldTrip, services = [], cl
           <div className="pdf-block">
             <div style={{ display: 'flex', alignItems: 'stretch', gap: 0, minHeight: 150 }}>
               {/* Logo lockup */}
-              <div style={{ flex: '1 1 52%', background: C.cream, display: 'flex', alignItems: 'center', padding: '0 36px', borderRight: `1px solid ${C.line}` }}>
-                <div>
-                  <div style={{ fontFamily: SERIF, fontSize: 32, fontWeight: 600, color: C.green, lineHeight: 1 }}>Nomad</div>
-                  <div style={{ fontFamily: SANS, fontSize: 10, letterSpacing: '0.34em', color: C.gold, marginTop: 6, textTransform: 'uppercase' }}>Travel Society</div>
-                </div>
+              <div style={{ flex: '1 1 52%', background: C.cream, display: 'flex', alignItems: 'center', padding: '0 40px', borderRight: `1px solid ${C.line}` }}>
+                <Lockup size={1.05} />
               </div>
               {/* Cover photo / title */}
               <div style={{
@@ -373,7 +449,7 @@ export default function InvoiceView({ open, onClose, soldTrip, services = [], cl
                   {orderedServices.map((s, i) => {
                     const row = buildRow(s);
                     return (
-                      <tr key={i}>
+                      <tr key={i} style={{ background: i % 2 ? C.cream : C.white }}>
                         <td style={cell}>
                           <span style={{ fontFamily: SERIF, fontSize: 13, fontWeight: 600, color: C.ink }}>{row.title}</span>
                           {row.tag && <span style={{ display: 'block', fontFamily: SANS, fontSize: 10, color: C.gold, marginTop: 2 }}>{row.tag}</span>}
