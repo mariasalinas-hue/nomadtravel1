@@ -269,9 +269,13 @@ export default function SoldTrips() {
                 .reduce((sum, p) => sum + (p.amount_usd_fixed || p.amount || 0), 0);
               const rawBalance = totalServices - totalClientPaid;
               const balance = Math.abs(rawBalance) < 2 ? 0 : rawBalance;
+              // Si el cobrado supera el total registrado, probablemente faltan servicios por registrar
+              const isOverpaid = rawBalance < -1;
+              const displayBalance = isOverpaid ? 0 : balance;
               const paymentProgress = totalServices > 0
                 ? Math.round((totalClientPaid) / totalServices * 100)
                 : 0;
+              const displayProgress = Math.min(paymentProgress, 100);
 
               const startDate = parseLocalDate(trip.start_date);
               const daysUntilTrip = startDate ? differenceInDays(startDate, new Date()) : null;
@@ -373,23 +377,29 @@ export default function SoldTrips() {
                           </div>
                           <div className="px-1">
                             <p className="text-[11px] uppercase tracking-wide text-stone-400">Saldo</p>
-                            <p className={`font-bold text-sm mt-0.5 ${balance > 0 ? 'text-orange-500' : 'text-green-600'}`}>
-                              ${balance.toLocaleString()}
+                            <p className={`font-bold text-sm mt-0.5 ${isOverpaid ? 'text-amber-600' : (displayBalance > 0 ? 'text-orange-500' : 'text-green-600')}`}>
+                              ${displayBalance.toLocaleString()}
                             </p>
                           </div>
                         </div>
                         <div className="space-y-1">
                           <div className="flex items-center justify-between text-xs">
                             <span className="text-stone-400">Progreso de pago</span>
-                            <span className="font-medium" style={{ color: '#2E442A' }}>{paymentProgress}%</span>
+                            <span className="font-medium" style={{ color: '#2E442A' }}>{displayProgress}%</span>
                           </div>
-                          <Progress 
-                            value={paymentProgress} 
+                          <Progress
+                            value={displayProgress}
                             className="h-2"
-                            style={{ 
-                              '--progress-background': paymentProgress === 100 ? '#22c55e' : '#2E442A'
+                            style={{
+                              '--progress-background': displayProgress === 100 ? '#22c55e' : '#2E442A'
                             }}
                           />
+                          {isOverpaid && (
+                            <p className="flex items-center gap-1 text-[11px] text-amber-600 pt-0.5">
+                              <AlertCircle className="w-3 h-3 flex-shrink-0" />
+                              Cobrado supera servicios — ¿faltan por registrar?
+                            </p>
+                          )}
                         </div>
                       </div>
 
