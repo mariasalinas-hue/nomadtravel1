@@ -61,6 +61,12 @@ const getServiceName = (s) => {
   }
 };
 
+// El precio puede vivir en price (campo que guarda el formulario), total_price o metadata
+const getServicePrice = (s) => {
+  const m = s.metadata || {};
+  return Number(s.price || s.total_price || m.price || m.total_price || 0);
+};
+
 const getServiceDate = (s) =>
   s.check_in || s.flight_date || s.tour_date || s.transfer_datetime
   || s.cruise_departure_date || s.train_date || s.dmc_date || s.other_date
@@ -115,7 +121,7 @@ export default function AdminSearch() {
         date: getServiceDate(s),
         name: getServiceName(s),
         detail: [SERVICE_TYPE_LABELS[s.service_type] || s.service_type, getServiceChannel(s), getReservationNumber(s) && `#${getReservationNumber(s)}`].filter(Boolean).join(' · '),
-        amount: s.total_price || 0,
+        amount: getServicePrice(s),
         method: getServiceChannel(s),
         serviceType: s.service_type,
         client: trip?.client_name || '—',
