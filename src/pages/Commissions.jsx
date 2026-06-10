@@ -364,12 +364,14 @@ export default function Commissions() {
           <span className="text-sm font-semibold text-stone-700">{money(service.commission || 0)}</span>
         </div>
 
-        {/* Mi parte + desglose */}
+        {/* Mi parte (el desglose Nomad/Montecito es solo para admin) */}
         <div className="w-36 flex-shrink-0 text-right">
           <p className="text-sm font-bold text-stone-800">{money(split.agent)}</p>
-          <p className="text-[10px] text-stone-400 leading-tight whitespace-nowrap">
-            50% · Nomad {money(split.nomad)}{split.montecito > 0 && <> · <span className="text-amber-600">Mtcto {money(split.montecito)}</span></>}
-          </p>
+          {isAdmin && (
+            <p className="text-[10px] text-stone-400 leading-tight whitespace-nowrap">
+              50% · Nomad {money(split.nomad)}{split.montecito > 0 && <> · <span className="text-amber-600">Mtcto {money(split.montecito)}</span></>}
+            </p>
+          )}
         </div>
 
         {/* IATA */}
