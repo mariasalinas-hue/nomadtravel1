@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '@/api/supabaseClient';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -9,7 +9,7 @@ import { Loader2, FileText } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import { toast } from 'sonner';
 
-export default function AgentInvoiceGenerator({ open, onClose, services, soldTrips, currentUser }) {
+export default function AgentInvoiceGenerator({ open, onClose, services, soldTrips: _soldTrips, currentUser }) {
   const [profileData, setProfileData] = useState({
     full_name: '',
     business_name: '',
@@ -29,6 +29,7 @@ export default function AgentInvoiceGenerator({ open, onClose, services, soldTri
     description: 'Commission payment for trip referenced above per agreed split.'
   });
   const [autoInvoiceNumber, setAutoInvoiceNumber] = useState('');
+  const [profileMeta, setProfileMeta] = useState({ id: null, nextNumber: 1 });
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [errors, setErrors] = useState({});
@@ -67,6 +68,7 @@ export default function AgentInvoiceGenerator({ open, onClose, services, soldTri
       const nextNumber = (fullUser.last_invoice_number || 0) + 1;
       const autoNumber = `INV-${year}-${String(nextNumber).padStart(3, '0')}`;
       setAutoInvoiceNumber(autoNumber);
+      setProfileMeta({ id: profile?.id || null, nextNumber });
       setInvoiceData(prev => ({ ...prev, invoice_number: autoNumber }));
     } catch (error) {
       console.error('Error fetching user profile:', error);
@@ -221,22 +223,37 @@ export default function AgentInvoiceGenerator({ open, onClose, services, soldTri
       const col4X = pageWidth - margin; // Amount (right-aligned)
       const rowHeight = 8;
 
-      // Table Header
-      doc.setFillColor(...brandGreen);
-      doc.roundedRect(margin, yPos, contentWidth, rowHeight, 1, 1, 'F');
-      doc.setTextColor(255, 255, 255);
-      doc.setFontSize(8);
-      doc.setFont(undefined, 'bold');
-      doc.text('ITEM / TRIP COMPONENT', col1X + 3, yPos + 5.5);
-      doc.text('COMMISSION', col2X, yPos + 5.5);
-      doc.text('SPLIT', col3X, yPos + 5.5);
-      doc.text('AMOUNT OWED', col4X - 3, yPos + 5.5, { align: 'right' });
-      yPos += rowHeight;
+      const pageHeight = doc.internal.pageSize.getHeight();
+
+      const drawTableHeader = () => {
+        doc.setFillColor(...brandGreen);
+        doc.roundedRect(margin, yPos, contentWidth, rowHeight, 1, 1, 'F');
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(8);
+        doc.setFont(undefined, 'bold');
+        doc.text('ITEM / TRIP COMPONENT', col1X + 3, yPos + 5.5);
+        doc.text('COMMISSION', col2X, yPos + 5.5);
+        doc.text('SPLIT', col3X, yPos + 5.5);
+        doc.text('AMOUNT OWED', col4X - 3, yPos + 5.5, { align: 'right' });
+        yPos += rowHeight;
+      };
+
+      // Si el contenido no cabe, pasar a una página nueva (y repetir el header de tabla si aplica)
+      const ensureSpace = (needed, withTableHeader = false) => {
+        if (yPos + needed > pageHeight - 25) {
+          doc.addPage();
+          yPos = 20;
+          if (withTableHeader) drawTableHeader();
+        }
+      };
+
+      drawTableHeader();
 
       // Table Rows
       let totalOwed = 0;
 
       services.forEach((service, index) => {
+        ensureSpace(rowHeight, true);
         const serviceName = getServiceName(service);
         const amountReceived = service.commission || 0;
         const agentSplit = 50;
@@ -275,6 +292,7 @@ export default function AgentInvoiceGenerator({ open, onClose, services, soldTri
 
       // ── Total Row ──
       yPos += 2;
+      ensureSpace(14);
       doc.setFillColor(...brandGreen);
       doc.roundedRect(margin, yPos, contentWidth, 10, 1, 1, 'F');
       doc.setTextColor(255, 255, 255);
@@ -286,6 +304,7 @@ export default function AgentInvoiceGenerator({ open, onClose, services, soldTri
       yPos += 18;
 
       // ── Payment Instructions ──
+      ensureSpace(40);
       doc.setDrawColor(...borderGray);
       doc.setLineWidth(0.3);
       doc.line(margin, yPos, pageWidth - margin, yPos);
@@ -330,6 +349,13 @@ export default function AgentInvoiceGenerator({ open, onClose, services, soldTri
       // Save PDF
       doc.save(`Invoice_${invoiceData.invoice_number}_${profileData.full_name.replace(/\s+/g, '_')}.pdf`);
 
+      // Persistir el consecutivo para que la próxima sugerencia avance
+      if (profileMeta.id && invoiceData.invoice_number === autoInvoiceNumber) {
+        await supabase.from('users')
+          .update({ last_invoice_number: profileMeta.nextNumber })
+          .eq('id', profileMeta.id);
+      }
+
       toast.success('Factura generada exitosamente');
       onClose();
     } catch (error) {
@@ -343,10 +369,12 @@ export default function AgentInvoiceGenerator({ open, onClose, services, soldTri
   const getServiceName = (service) => {
     switch (service.service_type) {
       case 'hotel': return service.hotel_name || 'Hotel';
-      case 'vuelo': return `${service.airline || 'Vuelo'} ${service.route || ''}`;
+      case 'vuelo': return `${service.airline || 'Vuelo'} ${service.route || ''}`.trim();
       case 'traslado': return `Traslado ${service.transfer_origin || ''} → ${service.transfer_destination || ''}`;
       case 'tour': return service.tour_name || 'Tour';
-      case 'crucero': return `${service.cruise_ship || 'Crucero'} - ${service.cruise_itinerary || ''}`;
+      case 'crucero': return `${service.cruise_ship || 'Crucero'}${service.cruise_itinerary ? ` - ${service.cruise_itinerary}` : ''}`;
+      case 'tren': return `${service.train_operator || 'Tren'} ${service.train_route || ''}`.trim();
+      case 'dmc': return service.dmc_name || 'DMC';
       default: return service.other_name || 'Servicio';
     }
   };

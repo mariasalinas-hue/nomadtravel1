@@ -1,13 +1,15 @@
-import React, { useState, useRef, useContext } from 'react';
+import { useState, useContext } from 'react';
 import { supabaseAPI } from '@/api/supabaseClient';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ViewModeContext } from '@/Layout';
 import { useSpoofableUser } from '@/contexts/SpoofContext';
 import { formatDate } from '@/lib/dateUtils';
+import { updateSoldTripTotalsFromServices } from '@/components/utils/soldTripRecalculations';
 import { es } from 'date-fns/locale';
+import { toast } from 'sonner';
 import {
-  Loader2, Search, Filter, DollarSign,
-  Check, X, Download, FileText, Trash2
+  Loader2, Search, DollarSign,
+  Check, X, FileText, Trash2
 } from 'lucide-react';
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -63,7 +65,7 @@ const CRUISE_PROVIDER_LABELS = {
 };
 
 export default function Commissions() {
-  const { viewMode } = useContext(ViewModeContext);
+  const { viewMode, isActualAdmin } = useContext(ViewModeContext);
   const { user: clerkUser } = useSpoofableUser();
 
   // Convert Clerk user to app user format
@@ -71,7 +73,6 @@ export default function Commissions() {
     id: clerkUser.id,
     email: clerkUser.primaryEmailAddress?.emailAddress,
     full_name: clerkUser.fullName || clerkUser.username,
-    role: clerkUser.publicMetadata?.role || 'user',
     custom_role: clerkUser.publicMetadata?.custom_role
   } : null;
 
@@ -86,7 +87,8 @@ export default function Commissions() {
 
   const queryClient = useQueryClient();
 
-  const isAdmin = user?.role === 'admin' && viewMode === 'admin';
+  // Admin real viene del allowlist de emails (ViewModeContext), no de Clerk publicMetadata
+  const isAdmin = isActualAdmin && viewMode === 'admin';
 
   const { data: allServices = [], isLoading: servicesLoading } = useQuery({
     queryKey: ['allServices', user?.email, isAdmin],
@@ -124,16 +126,13 @@ export default function Commissions() {
     }
   });
 
-  const updateSoldTripMutation = useMutation({
-    mutationFn: ({ id, data }) => supabaseAPI.entities.SoldTrip.update(id, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['soldTrips'] });
-    }
-  });
-
   const deleteServiceMutation = useMutation({
-    mutationFn: (id) => supabaseAPI.entities.TripService.delete(id),
-    onSuccess: () => {
+    mutationFn: (service) => supabaseAPI.entities.TripService.delete(service.id),
+    onSuccess: async (_, service) => {
+      // El total del viaje (precio/comisión) depende de los servicios: recalcular
+      if (service?.sold_trip_id) {
+        await updateSoldTripTotalsFromServices(service.sold_trip_id, queryClient);
+      }
       queryClient.invalidateQueries({ queryKey: ['allServices'] });
       queryClient.invalidateQueries({ queryKey: ['soldTrips'] });
       setDeleteConfirm(null);
@@ -141,10 +140,17 @@ export default function Commissions() {
   });
 
   const togglePaid = (service, newValue) => {
-    updateServiceMutation.mutate({
-      id: service.id,
-      data: { paid_to_agent: newValue }
-    });
+    // Pagar al agente implica que la agencia ya recibió la comisión:
+    // mantener commission_paid/paid_to_agency en sincronía con Comisiones Internas
+    const data = newValue
+      ? {
+          paid_to_agent: true,
+          commission_paid: true,
+          paid_to_agency: true,
+          paid_to_agency_date: service.paid_to_agency_date || new Date().toISOString().split('T')[0]
+        }
+      : { paid_to_agent: false };
+    updateServiceMutation.mutate({ id: service.id, data });
   };
 
   const startEditing = (service) => {
@@ -163,22 +169,28 @@ export default function Commissions() {
   const saveEditing = (service) => {
     const commission = parseFloat(editValues.commission);
     if (isNaN(commission) || commission < 0) {
-      alert('El monto debe ser un número válido mayor o igual a cero');
+      toast.error('El monto debe ser un número válido mayor o igual a cero');
       return;
     }
 
     if (editValues.commission_payment_date && isNaN(new Date(editValues.commission_payment_date).getTime())) {
-      alert('La fecha no es válida');
+      toast.error('La fecha no es válida');
       return;
     }
 
-    updateServiceMutation.mutate({
-      id: service.id,
-      data: {
-        commission: commission,
-        commission_payment_date: editValues.commission_payment_date || null
+    updateServiceMutation.mutate(
+      {
+        id: service.id,
+        data: {
+          commission: commission,
+          commission_payment_date: editValues.commission_payment_date || null
+        }
+      },
+      {
+        // El total de comisión del viaje depende de los servicios: recalcular
+        onSuccess: () => updateSoldTripTotalsFromServices(service.sold_trip_id, queryClient)
       }
-    });
+    );
 
     setEditingService(null);
     setEditValues({});
@@ -190,15 +202,42 @@ export default function Commissions() {
     return acc;
   }, {});
 
+  const getServiceName = (service) => {
+    const m = service.metadata || {};
+    switch (service.service_type) {
+      case 'hotel':
+        return service.hotel_name || m.hotel_name || service.service_name || service.hotel_chain || m.hotel_chain || 'Hotel';
+      case 'vuelo':
+        return service.airline || m.airline || service.service_name || 'Vuelo';
+      case 'traslado': {
+        const origin = service.transfer_origin || m.transfer_origin || '';
+        const dest = service.transfer_destination || m.transfer_destination || '';
+        return (origin || dest) ? `${origin} → ${dest}` : (service.service_name || 'Traslado');
+      }
+      case 'tour':
+        return service.tour_name || m.tour_name || service.service_name || 'Tour';
+      case 'crucero':
+        return service.cruise_ship || m.cruise_ship || service.cruise_line || m.cruise_line || service.service_name || 'Crucero';
+      case 'tren':
+        return `${service.train_operator || m.train_operator || 'Tren'} ${service.train_number || m.train_number || ''}`.trim() || service.service_name || 'Tren';
+      case 'dmc':
+        return service.dmc_name || m.dmc_name || service.service_name || 'DMC';
+      case 'otro':
+        return service.other_name || m.other_name || service.other_description || m.other_description || service.service_name || 'Servicio';
+      default:
+        return service.service_name || 'Servicio';
+    }
+  };
+
   // Filter and sort services
   const allFilteredServices = services
     .filter(s => s.commission > 0) // Only show services with commission
     .filter(s => {
       const trip = tripsMap[s.sold_trip_id];
       const clientName = trip?.client_name || '';
-      const matchesSearch = clientName.toLowerCase().includes(search.toLowerCase()) ||
-                           (s.hotel_name || '').toLowerCase().includes(search.toLowerCase()) ||
-                           (s.airline || '').toLowerCase().includes(search.toLowerCase());
+      const q = search.toLowerCase();
+      const matchesSearch = clientName.toLowerCase().includes(q) ||
+                           getServiceName(s).toLowerCase().includes(q);
       const matchesBookedBy = filterBookedBy === 'all' || (s.booked_by || s.metadata?.booked_by) === filterBookedBy;
       return matchesSearch && matchesBookedBy;
     })
@@ -228,32 +267,8 @@ export default function Commissions() {
   const confirmedCommissions = allFilteredServices.filter(s => s.paid_to_agency && !s.paid_to_agent).reduce((sum, s) => sum + ((s.commission || 0) * agentCommissionRate), 0);
   const pendingCommissions = allFilteredServices.filter(s => !s.paid_to_agency).reduce((sum, s) => sum + ((s.commission || 0) * agentCommissionRate), 0);
 
-  const getServiceName = (service) => {
-    const m = service.metadata || {};
-    switch (service.service_type) {
-      case 'hotel':
-        return service.hotel_name || m.hotel_name || service.service_name || service.hotel_chain || m.hotel_chain || 'Hotel';
-      case 'vuelo':
-        return service.airline || m.airline || service.service_name || 'Vuelo';
-      case 'traslado': {
-        const origin = service.transfer_origin || m.transfer_origin || '';
-        const dest = service.transfer_destination || m.transfer_destination || '';
-        return (origin || dest) ? `${origin} → ${dest}` : (service.service_name || 'Traslado');
-      }
-      case 'tour':
-        return service.tour_name || m.tour_name || service.service_name || 'Tour';
-      case 'crucero':
-        return service.cruise_ship || m.cruise_ship || service.cruise_line || m.cruise_line || service.service_name || 'Crucero';
-      case 'tren':
-        return `${service.train_operator || m.train_operator || 'Tren'} ${service.train_number || m.train_number || ''}`.trim() || service.service_name || 'Tren';
-      case 'dmc':
-        return service.dmc_name || m.dmc_name || service.service_name || 'DMC';
-      case 'otro':
-        return service.other_name || m.other_name || service.other_description || m.other_description || service.service_name || 'Servicio';
-      default:
-        return service.service_name || 'Servicio';
-    }
-  };
+  // Solo los seleccionados visibles entran a la factura (la búsqueda/pestaña puede ocultar otros)
+  const selectedVisibleServices = filteredServices.filter(s => selectedServices.includes(s.id));
 
   const isLoading = servicesLoading || tripsLoading;
 
@@ -275,12 +290,12 @@ export default function Commissions() {
         </div>
         <Button
           onClick={() => setInvoiceDialogOpen(true)}
-          disabled={selectedServices.length === 0}
+          disabled={selectedVisibleServices.length === 0}
           className="text-white"
           style={{ backgroundColor: '#2E442A' }}
         >
           <FileText className="w-4 h-4 mr-2" />
-          Generar Factura ({selectedServices.length})
+          Generar Factura ({selectedVisibleServices.length})
         </Button>
       </div>
 
@@ -363,7 +378,15 @@ export default function Commissions() {
       </div>
 
       {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+      <Tabs
+        value={activeTab}
+        onValueChange={(tab) => {
+          setActiveTab(tab);
+          // La selección es por pestaña: evitar facturar servicios que ya no se ven
+          setSelectedServices([]);
+        }}
+        className="space-y-4"
+      >
         <TabsList className="grid w-full max-w-2xl grid-cols-3">
           <TabsTrigger value="pendientes">
             Pendientes ({allFilteredServices.filter(s => !s.paid_to_agency).length})
@@ -385,7 +408,7 @@ export default function Commissions() {
               <tr>
                 <th className="text-left p-3 font-semibold text-stone-600 w-12">
                   <Checkbox
-                    checked={selectedServices.length === filteredServices.length && filteredServices.length > 0}
+                    checked={selectedVisibleServices.length === filteredServices.length && filteredServices.length > 0}
                     onCheckedChange={(checked) => {
                       if (checked) {
                         setSelectedServices(filteredServices.map(s => s.id));
@@ -450,8 +473,10 @@ export default function Commissions() {
                           const newValue = value === 'yes';
                           updateServiceMutation.mutate({
                             id: service.id,
-                            data: { 
+                            data: {
                               paid_to_agency: newValue,
+                              // Comisiones Internas deriva el estado de commission_paid: mantener ambos en sincronía
+                              commission_paid: newValue,
                               paid_to_agency_date: newValue ? (service.paid_to_agency_date || new Date().toISOString().split('T')[0]) : null
                             }
                           });
@@ -588,7 +613,7 @@ export default function Commissions() {
       <AgentInvoiceGenerator
         open={invoiceDialogOpen}
         onClose={() => setInvoiceDialogOpen(false)}
-        services={filteredServices.filter(s => selectedServices.includes(s.id))}
+        services={selectedVisibleServices}
         soldTrips={soldTrips}
         currentUser={user}
       />
@@ -605,7 +630,7 @@ export default function Commissions() {
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
             <AlertDialogAction
-              onClick={() => deleteServiceMutation.mutate(deleteConfirm.id)}
+              onClick={() => deleteServiceMutation.mutate(deleteConfirm)}
               className="bg-red-600 hover:bg-red-700"
             >
               Eliminar
