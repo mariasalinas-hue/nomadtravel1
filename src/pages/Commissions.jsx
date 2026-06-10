@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ViewModeContext } from '@/Layout';
 import { useSpoofableUser } from '@/contexts/SpoofContext';
 import { formatDate, parseLocalDate } from '@/lib/dateUtils';
+import { updateSoldTripTotalsFromServices } from '@/components/utils/soldTripRecalculations';
 import { es } from 'date-fns/locale';
 import { toast } from 'sonner';
 import {
@@ -153,6 +154,7 @@ export default function Commissions() {
   const [expandedTrips, setExpandedTrips] = useState(() => new Set());
   const [tierOpen, setTierOpen] = useState(false);
   const [invoiceDialogOpen, setInvoiceDialogOpen] = useState(false);
+  const [editingCommission, setEditingCommission] = useState(null); // { id, value }
 
   const queryClient = useQueryClient();
 
@@ -211,6 +213,26 @@ export default function Commissions() {
       id: service.id,
       data: { paid_to_agency: false, commission_paid: false, paid_to_agency_date: null }
     });
+  };
+
+  // Edición inline de la comisión (clic en el monto)
+  const saveCommission = (service) => {
+    if (!editingCommission || editingCommission.id !== service.id) return;
+    const value = parseFloat(editingCommission.value);
+    if (isNaN(value) || value < 0) {
+      toast.error('El monto debe ser un número válido mayor o igual a cero');
+      return;
+    }
+    if (value !== (service.commission || 0)) {
+      updateServiceMutation.mutate(
+        { id: service.id, data: { commission: value } },
+        {
+          // El total de comisión del viaje depende de los servicios: recalcular
+          onSuccess: () => updateSoldTripTotalsFromServices(service.sold_trip_id, queryClient)
+        }
+      );
+    }
+    setEditingCommission(null);
   };
 
   const tripsMap = soldTrips.reduce((acc, trip) => { acc[trip.id] = trip; return acc; }, {});
@@ -359,21 +381,6 @@ export default function Commissions() {
           </span>
         </div>
 
-        {/* Comisión */}
-        <div className="w-20 flex-shrink-0 text-right hidden sm:block">
-          <span className="text-sm font-semibold text-stone-700">{money(service.commission || 0)}</span>
-        </div>
-
-        {/* Mi parte (el desglose Nomad/Montecito es solo para admin) */}
-        <div className="w-36 flex-shrink-0 text-right">
-          <p className="text-sm font-bold text-stone-800">{money(split.agent)}</p>
-          {isAdmin && (
-            <p className="text-[10px] text-stone-400 leading-tight whitespace-nowrap">
-              50% · Nomad {money(split.nomad)}{split.montecito > 0 && <> · <span className="text-amber-600">Mtcto {money(split.montecito)}</span></>}
-            </p>
-          )}
-        </div>
-
         {/* IATA */}
         <div className="w-20 flex-shrink-0 hidden lg:block">
           <span className="text-xs font-medium text-stone-600">
@@ -384,6 +391,44 @@ export default function Commissions() {
         {/* Canal */}
         <div className="w-28 flex-shrink-0 hidden lg:block min-w-0">
           <span className="text-xs text-stone-500 block truncate" title={channel}>{channel}</span>
+        </div>
+
+        {/* Comisión (editable con clic) */}
+        <div className="w-24 flex-shrink-0 text-right hidden sm:block">
+          {editingCommission?.id === service.id ? (
+            <Input
+              type="number"
+              step="0.01"
+              min="0"
+              autoFocus
+              value={editingCommission.value}
+              onChange={(e) => setEditingCommission({ id: service.id, value: e.target.value })}
+              onBlur={() => saveCommission(service)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') e.currentTarget.blur();
+                if (e.key === 'Escape') setEditingCommission(null);
+              }}
+              className="h-7 w-24 text-right text-sm rounded-lg px-2"
+            />
+          ) : (
+            <button
+              onClick={() => setEditingCommission({ id: service.id, value: service.commission || 0 })}
+              className="text-sm font-semibold text-stone-700 hover:text-blue-600 border-b border-dashed border-stone-300 hover:border-blue-400"
+              title="Clic para editar la comisión"
+            >
+              {money(service.commission || 0)}
+            </button>
+          )}
+        </div>
+
+        {/* Mi parte (el desglose Nomad/Montecito es solo para admin) */}
+        <div className="w-36 flex-shrink-0 text-right">
+          <p className="text-sm font-bold text-stone-800">{money(split.agent)}</p>
+          {isAdmin && (
+            <p className="text-[10px] text-stone-400 leading-tight whitespace-nowrap">
+              50% · Nomad {money(split.nomad)}{split.montecito > 0 && <> · <span className="text-amber-600">Mtcto {money(split.montecito)}</span></>}
+            </p>
+          )}
         </div>
 
         {/* Acción */}
@@ -558,10 +603,10 @@ export default function Commissions() {
           <span className="w-8 flex-shrink-0" />
           <span className="flex-1 min-w-0 text-[10px] font-bold uppercase tracking-wider text-stone-400">Servicio</span>
           <span className="w-14 flex-shrink-0 hidden md:block text-[10px] font-bold uppercase tracking-wider text-stone-400">Tipo</span>
-          <span className="w-20 flex-shrink-0 hidden sm:block text-right text-[10px] font-bold uppercase tracking-wider text-stone-400">Comisión</span>
-          <span className="w-36 flex-shrink-0 text-right text-[10px] font-bold uppercase tracking-wider text-stone-400">Mi parte</span>
           <span className="w-20 flex-shrink-0 hidden lg:block text-[10px] font-bold uppercase tracking-wider text-stone-400">IATA</span>
           <span className="w-28 flex-shrink-0 hidden lg:block text-[10px] font-bold uppercase tracking-wider text-stone-400">Canal</span>
+          <span className="w-24 flex-shrink-0 hidden sm:block text-right text-[10px] font-bold uppercase tracking-wider text-stone-400">Comisión</span>
+          <span className="w-36 flex-shrink-0 text-right text-[10px] font-bold uppercase tracking-wider text-stone-400">Mi parte</span>
           <span className="w-36 flex-shrink-0 text-right text-[10px] font-bold uppercase tracking-wider text-stone-400">Acción</span>
         </div>
 
