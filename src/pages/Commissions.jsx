@@ -8,7 +8,7 @@ import { updateSoldTripTotalsFromServices } from '@/components/utils/soldTripRec
 import { es } from 'date-fns/locale';
 import { toast } from 'sonner';
 import {
-  Loader2, Search, ChevronDown, ChevronUp, Check, Undo2, FileText,
+  Loader2, Search, ChevronDown, ChevronUp, Check, Undo2, FileText, Pencil,
   Hotel, Plane, Car, Compass, Ship, Train, Briefcase, Package, DollarSign
 } from 'lucide-react';
 import { Input } from "@/components/ui/input";
@@ -413,10 +413,11 @@ export default function Commissions() {
           ) : (
             <button
               onClick={() => setEditingCommission({ id: service.id, value: service.commission || 0 })}
-              className="text-sm font-semibold text-stone-700 hover:text-blue-600 border-b border-dashed border-stone-300 hover:border-blue-400"
+              className="inline-flex items-center gap-1.5 text-sm font-semibold text-stone-700 px-2 py-1 -mr-2 rounded-lg border border-stone-200 bg-white hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
               title="Clic para editar la comisión"
             >
               {money(service.commission || 0)}
+              <Pencil className="w-3 h-3 text-stone-400" />
             </button>
           )}
         </div>
@@ -605,7 +606,7 @@ export default function Commissions() {
           <span className="w-14 flex-shrink-0 hidden md:block text-[10px] font-bold uppercase tracking-wider text-stone-400">Tipo</span>
           <span className="w-20 flex-shrink-0 hidden lg:block text-[10px] font-bold uppercase tracking-wider text-stone-400">IATA</span>
           <span className="w-28 flex-shrink-0 hidden lg:block text-[10px] font-bold uppercase tracking-wider text-stone-400">Canal</span>
-          <span className="w-24 flex-shrink-0 hidden sm:block text-right text-[10px] font-bold uppercase tracking-wider text-stone-400">Comisión</span>
+          <span className="w-24 flex-shrink-0 hidden sm:block text-right text-[10px] font-bold uppercase tracking-wider text-stone-400 leading-tight">Comisión total</span>
           <span className="w-36 flex-shrink-0 text-right text-[10px] font-bold uppercase tracking-wider text-stone-400">Mi parte</span>
           <span className="w-36 flex-shrink-0 text-right text-[10px] font-bold uppercase tracking-wider text-stone-400">Acción</span>
         </div>
