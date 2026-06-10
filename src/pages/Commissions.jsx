@@ -3,36 +3,16 @@ import { supabaseAPI } from '@/api/supabaseClient';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ViewModeContext } from '@/Layout';
 import { useSpoofableUser } from '@/contexts/SpoofContext';
-import { formatDate } from '@/lib/dateUtils';
-import { updateSoldTripTotalsFromServices } from '@/components/utils/soldTripRecalculations';
+import { formatDate, parseLocalDate } from '@/lib/dateUtils';
 import { es } from 'date-fns/locale';
 import { toast } from 'sonner';
 import {
-  Loader2, Search, DollarSign,
-  Check, X, FileText, Trash2
+  Loader2, Search, ChevronDown, ChevronUp, Check, Undo2, FileText,
+  Hotel, Plane, Car, Compass, Ship, Train, Briefcase, Package, DollarSign
 } from 'lucide-react';
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import AgentInvoiceGenerator from '@/components/commissions/AgentInvoiceGenerator';
-
-const BOOKED_BY_LABELS = {
-  montecito: 'Montecito',
-  iata_nomad: 'IATA Nomad'
-};
 
 const RESERVED_BY_LABELS = {
   virtuoso: 'Virtuoso',
@@ -45,17 +25,6 @@ const RESERVED_BY_LABELS = {
   otro: 'Otro'
 };
 
-const SERVICE_TYPE_LABELS = {
-  hotel: 'Hotel',
-  vuelo: 'Vuelo',
-  traslado: 'Traslado',
-  tour: 'Tour',
-  crucero: 'Crucero',
-  tren: 'Tren',
-  dmc: 'DMC',
-  otro: 'Otro'
-};
-
 const CRUISE_PROVIDER_LABELS = {
   creative_travel: 'Creative Travel',
   directo: 'Directo',
@@ -64,26 +33,99 @@ const CRUISE_PROVIDER_LABELS = {
   pema: 'PeMA'
 };
 
+const SERVICE_ICONS = { hotel: Hotel, vuelo: Plane, traslado: Car, tour: Compass, crucero: Ship, tren: Train, dmc: Briefcase, otro: Package };
+const SERVICE_ICON_COLORS = {
+  hotel: 'bg-rose-50 text-rose-500',
+  vuelo: 'bg-sky-50 text-sky-500',
+  traslado: 'bg-amber-50 text-amber-500',
+  tour: 'bg-emerald-50 text-emerald-500',
+  crucero: 'bg-cyan-50 text-cyan-500',
+  tren: 'bg-pink-50 text-pink-500',
+  dmc: 'bg-indigo-50 text-indigo-500',
+  otro: 'bg-stone-100 text-stone-500'
+};
+
+// Reparto: el agente siempre recibe 50%. Nomad recibe 35% si fue bookeado por
+// Montecito (15% para Montecito) y 50% si fue con IATA Nomad.
+const AGENT_RATE = 0.5;
+const splitFor = (service) => {
+  const bookedBy = service.booked_by || service.metadata?.booked_by;
+  const commission = service.commission || 0;
+  const agent = commission * AGENT_RATE;
+  if (bookedBy === 'montecito') {
+    return { agent, nomad: commission * 0.35, montecito: commission * 0.15, bookedBy };
+  }
+  return { agent, nomad: commission * 0.5, montecito: 0, bookedBy };
+};
+
+// Niveles del split del agente (informativo)
+const TIERS = [
+  { threshold: 0, rate: 50, label: 'Base' },
+  { threshold: 75000, rate: 55, label: '$75,000' },
+];
+
+const money = (n) => `$${Math.round(n).toLocaleString()}`;
+
+const getServiceName = (service) => {
+  const m = service.metadata || {};
+  switch (service.service_type) {
+    case 'hotel':
+      return service.hotel_name || m.hotel_name || service.service_name || service.hotel_chain || m.hotel_chain || 'Hotel';
+    case 'vuelo':
+      return service.airline || m.airline || service.service_name || 'Vuelo';
+    case 'traslado': {
+      const origin = service.transfer_origin || m.transfer_origin || '';
+      const dest = service.transfer_destination || m.transfer_destination || '';
+      return (origin || dest) ? `${origin} → ${dest}` : (service.service_name || 'Traslado');
+    }
+    case 'tour':
+      return service.tour_name || m.tour_name || service.service_name || 'Tour';
+    case 'crucero':
+      return service.cruise_ship || m.cruise_ship || service.cruise_line || m.cruise_line || service.service_name || 'Crucero';
+    case 'tren':
+      return `${service.train_operator || m.train_operator || 'Tren'} ${service.train_number || m.train_number || ''}`.trim() || service.service_name || 'Tren';
+    case 'dmc':
+      return service.dmc_name || m.dmc_name || service.service_name || 'DMC';
+    case 'otro':
+      return service.other_name || m.other_name || service.other_description || m.other_description || service.service_name || 'Servicio';
+    default:
+      return service.service_name || 'Servicio';
+  }
+};
+
+const getChannel = (service) => {
+  const label = RESERVED_BY_LABELS[service.reserved_by]
+    || service.flight_consolidator
+    || CRUISE_PROVIDER_LABELS[service.cruise_provider];
+  if (label && label !== 'Otro') return label;
+  const resNumber = service.reservation_number || service.flight_reservation_number
+    || service.tour_reservation_number || service.cruise_reservation_number
+    || service.dmc_reservation_number || service.train_reservation_number;
+  return resNumber ? `#${resNumber}` : '—';
+};
+
+const getReservedSubtitle = (service) => {
+  return RESERVED_BY_LABELS[service.reserved_by]
+    || service.flight_consolidator
+    || CRUISE_PROVIDER_LABELS[service.cruise_provider]
+    || getServiceName(service);
+};
+
 export default function Commissions() {
   const { viewMode, isActualAdmin } = useContext(ViewModeContext);
   const { user: clerkUser } = useSpoofableUser();
 
-  // Convert Clerk user to app user format
   const user = clerkUser ? {
     id: clerkUser.id,
     email: clerkUser.primaryEmailAddress?.emailAddress,
     full_name: clerkUser.fullName || clerkUser.username,
-    custom_role: clerkUser.publicMetadata?.custom_role
   } : null;
 
   const [search, setSearch] = useState('');
-  const [filterBookedBy, setFilterBookedBy] = useState('all');
+  const [activeTab, setActiveTab] = useState('proximas');
+  const [expandedTrips, setExpandedTrips] = useState(() => new Set());
+  const [tierOpen, setTierOpen] = useState(false);
   const [invoiceDialogOpen, setInvoiceDialogOpen] = useState(false);
-  const [selectedServices, setSelectedServices] = useState([]);
-  const [activeTab, setActiveTab] = useState('pendientes');
-  const [deleteConfirm, setDeleteConfirm] = useState(null);
-  const [editingService, setEditingService] = useState(null);
-  const [editValues, setEditValues] = useState({});
 
   const queryClient = useQueryClient();
 
@@ -105,7 +147,7 @@ export default function Commissions() {
     refetchOnWindowFocus: true
   });
 
-  const { data: allSoldTrips = [], isLoading: tripsLoading } = useQuery({
+  const { data: soldTrips = [], isLoading: tripsLoading } = useQuery({
     queryKey: ['soldTrips', user?.email, isAdmin],
     queryFn: async () => {
       if (!user) return [];
@@ -116,159 +158,132 @@ export default function Commissions() {
     refetchOnWindowFocus: true
   });
 
-  const soldTrips = allSoldTrips;
-  const services = allServices;
-
   const updateServiceMutation = useMutation({
     mutationFn: ({ id, data }) => supabaseAPI.entities.TripService.update(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['allServices'] });
-    }
+    },
+    onError: () => toast.error('No se pudo actualizar la comisión')
   });
 
-  const deleteServiceMutation = useMutation({
-    mutationFn: (service) => supabaseAPI.entities.TripService.delete(service.id),
-    onSuccess: async (_, service) => {
-      // El total del viaje (precio/comisión) depende de los servicios: recalcular
-      if (service?.sold_trip_id) {
-        await updateSoldTripTotalsFromServices(service.sold_trip_id, queryClient);
+  // Agente reporta que el proveedor ya pagó a la agencia.
+  // commission_paid se mantiene en sincronía porque Comisiones Internas deriva el estado de ahí.
+  const markPaidToAgency = (service) => {
+    updateServiceMutation.mutate({
+      id: service.id,
+      data: {
+        paid_to_agency: true,
+        commission_paid: true,
+        paid_to_agency_date: service.paid_to_agency_date || new Date().toISOString().split('T')[0]
       }
-      queryClient.invalidateQueries({ queryKey: ['allServices'] });
-      queryClient.invalidateQueries({ queryKey: ['soldTrips'] });
-      setDeleteConfirm(null);
-    }
-  });
-
-  const togglePaid = (service, newValue) => {
-    // Pagar al agente implica que la agencia ya recibió la comisión:
-    // mantener commission_paid/paid_to_agency en sincronía con Comisiones Internas
-    const data = newValue
-      ? {
-          paid_to_agent: true,
-          commission_paid: true,
-          paid_to_agency: true,
-          paid_to_agency_date: service.paid_to_agency_date || new Date().toISOString().split('T')[0]
-        }
-      : { paid_to_agent: false };
-    updateServiceMutation.mutate({ id: service.id, data });
-  };
-
-  const startEditing = (service) => {
-    setEditingService(service.id);
-    setEditValues({
-      commission: service.commission || 0,
-      commission_payment_date: service.commission_payment_date || ''
     });
   };
 
-  const cancelEditing = () => {
-    setEditingService(null);
-    setEditValues({});
-  };
-
-  const saveEditing = (service) => {
-    const commission = parseFloat(editValues.commission);
-    if (isNaN(commission) || commission < 0) {
-      toast.error('El monto debe ser un número válido mayor o igual a cero');
-      return;
-    }
-
-    if (editValues.commission_payment_date && isNaN(new Date(editValues.commission_payment_date).getTime())) {
-      toast.error('La fecha no es válida');
-      return;
-    }
-
-    updateServiceMutation.mutate(
-      {
-        id: service.id,
-        data: {
-          commission: commission,
-          commission_payment_date: editValues.commission_payment_date || null
-        }
-      },
-      {
-        // El total de comisión del viaje depende de los servicios: recalcular
-        onSuccess: () => updateSoldTripTotalsFromServices(service.sold_trip_id, queryClient)
-      }
-    );
-
-    setEditingService(null);
-    setEditValues({});
-  };
-
-  // Create a map of sold trips for quick lookup
-  const tripsMap = soldTrips.reduce((acc, trip) => {
-    acc[trip.id] = trip;
-    return acc;
-  }, {});
-
-  const getServiceName = (service) => {
-    const m = service.metadata || {};
-    switch (service.service_type) {
-      case 'hotel':
-        return service.hotel_name || m.hotel_name || service.service_name || service.hotel_chain || m.hotel_chain || 'Hotel';
-      case 'vuelo':
-        return service.airline || m.airline || service.service_name || 'Vuelo';
-      case 'traslado': {
-        const origin = service.transfer_origin || m.transfer_origin || '';
-        const dest = service.transfer_destination || m.transfer_destination || '';
-        return (origin || dest) ? `${origin} → ${dest}` : (service.service_name || 'Traslado');
-      }
-      case 'tour':
-        return service.tour_name || m.tour_name || service.service_name || 'Tour';
-      case 'crucero':
-        return service.cruise_ship || m.cruise_ship || service.cruise_line || m.cruise_line || service.service_name || 'Crucero';
-      case 'tren':
-        return `${service.train_operator || m.train_operator || 'Tren'} ${service.train_number || m.train_number || ''}`.trim() || service.service_name || 'Tren';
-      case 'dmc':
-        return service.dmc_name || m.dmc_name || service.service_name || 'DMC';
-      case 'otro':
-        return service.other_name || m.other_name || service.other_description || m.other_description || service.service_name || 'Servicio';
-      default:
-        return service.service_name || 'Servicio';
-    }
-  };
-
-  // Filter and sort services
-  const allFilteredServices = services
-    .filter(s => s.commission > 0) // Only show services with commission
-    .filter(s => {
-      const trip = tripsMap[s.sold_trip_id];
-      const clientName = trip?.client_name || '';
-      const q = search.toLowerCase();
-      const matchesSearch = clientName.toLowerCase().includes(q) ||
-                           getServiceName(s).toLowerCase().includes(q);
-      const matchesBookedBy = filterBookedBy === 'all' || (s.booked_by || s.metadata?.booked_by) === filterBookedBy;
-      return matchesSearch && matchesBookedBy;
-    })
-    .sort((a, b) => {
-      const dateA = a.commission_payment_date ? new Date(a.commission_payment_date) : new Date(0);
-      const dateB = b.commission_payment_date ? new Date(b.commission_payment_date) : new Date(0);
-      return dateA - dateB;
+  const undoPaidToAgency = (service) => {
+    updateServiceMutation.mutate({
+      id: service.id,
+      data: { paid_to_agency: false, commission_paid: false, paid_to_agency_date: null }
     });
+  };
 
-  // Filter by tab (pendientes/confirmadas/pagadas)
-  const filteredServices = allFilteredServices.filter(s => {
-    if (activeTab === 'pendientes') {
-      return !s.paid_to_agency;
-    } else if (activeTab === 'confirmadas') {
-      return s.paid_to_agency && !s.paid_to_agent;
-    } else if (activeTab === 'pagadas') {
-      return s.paid_to_agent;
-    }
-    return true;
+  const tripsMap = soldTrips.reduce((acc, trip) => { acc[trip.id] = trip; return acc; }, {});
+
+  // ¿El viaje ya terminó? (las comisiones pasan automáticamente a "Por cobrar")
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const tripEnded = (trip) => {
+    if (!trip) return false;
+    const ref = trip.end_date || trip.start_date;
+    const d = parseLocalDate(ref);
+    return d ? d < today : false;
+  };
+
+  // Clasificación de cada comisión en su etapa del ciclo de vida
+  const bucketOf = (service) => {
+    if (service.paid_to_agent) return 'cobradas';
+    if (service.paid_to_agency || service.commission_paid) return 'pagadas_agencia';
+    return tripEnded(tripsMap[service.sold_trip_id]) ? 'por_cobrar' : 'proximas';
+  };
+
+  const commissionServices = allServices.filter(s => (s.commission || 0) > 0);
+
+  const buckets = { proximas: [], por_cobrar: [], pagadas_agencia: [], cobradas: [] };
+  commissionServices.forEach(s => buckets[bucketOf(s)].push(s));
+
+  // ---- Stats globales (no cambian con búsqueda ni pestaña) ----
+  const sumCommission = (list) => list.reduce((sum, s) => sum + (s.commission || 0), 0);
+  const totalComisiones = sumCommission(commissionServices);
+  const miParteTotal = totalComisiones * AGENT_RATE;
+  const porCobrarTotal = (sumCommission(buckets.por_cobrar) + sumCommission(buckets.pagadas_agencia)) * AGENT_RATE;
+  const cobradasTotal = sumCommission(buckets.cobradas) * AGENT_RATE;
+
+  // Nivel actual del agente según lo cobrado
+  const tierProgress = cobradasTotal;
+  const currentTier = [...TIERS].reverse().find(t => tierProgress >= t.threshold) || TIERS[0];
+  const nextTier = TIERS.find(t => t.threshold > tierProgress);
+
+  // ---- Stats de la pestaña activa ----
+  const proximasTotal = sumCommission(buckets.proximas);
+  const futureTrips = new Set(buckets.proximas.map(s => s.sold_trip_id));
+  const bestMonth = (() => {
+    const byMonth = {};
+    buckets.proximas.forEach(s => {
+      const ref = s.commission_payment_date || tripsMap[s.sold_trip_id]?.end_date || tripsMap[s.sold_trip_id]?.start_date;
+      const d = parseLocalDate(ref);
+      if (!d) return;
+      const key = `${d.getFullYear()}-${d.getMonth()}`;
+      byMonth[key] = (byMonth[key] || 0) + (s.commission || 0);
+    });
+    const top = Object.entries(byMonth).sort((a, b) => b[1] - a[1])[0];
+    if (!top) return '—';
+    const [year, month] = top[0].split('-').map(Number);
+    const label = formatDate(new Date(year, month, 1), 'MMM yyyy', { locale: es });
+    return label.charAt(0).toUpperCase() + label.slice(1);
+  })();
+  const porCobrarNeto = sumCommission(buckets.por_cobrar.filter(s => s.payment_type === 'neto')) * AGENT_RATE;
+  const porCobrarBruto = sumCommission(buckets.por_cobrar.filter(s => s.payment_type !== 'neto')) * AGENT_RATE;
+
+  // ---- Búsqueda + agrupación por viaje ----
+  const q = search.toLowerCase();
+  const matchesSearch = (service) => {
+    if (!q) return true;
+    const trip = tripsMap[service.sold_trip_id];
+    return (trip?.client_name || '').toLowerCase().includes(q)
+      || (trip?.destination || '').toLowerCase().includes(q)
+      || (trip?.trip_name || '').toLowerCase().includes(q)
+      || getServiceName(service).toLowerCase().includes(q);
+  };
+
+  const visibleServices = buckets[activeTab].filter(matchesSearch);
+
+  const tripGroups = Object.values(
+    visibleServices.reduce((acc, s) => {
+      if (!acc[s.sold_trip_id]) {
+        acc[s.sold_trip_id] = { trip: tripsMap[s.sold_trip_id], services: [] };
+      }
+      acc[s.sold_trip_id].services.push(s);
+      return acc;
+    }, {})
+  ).sort((a, b) => {
+    const da = parseLocalDate(a.trip?.end_date || a.trip?.start_date) || new Date(0);
+    const db = parseLocalDate(b.trip?.end_date || b.trip?.start_date) || new Date(0);
+    return da - db;
   });
 
-  // Calculate commissions
-  const totalCommissionsFull = allFilteredServices.reduce((sum, s) => sum + (s.commission || 0), 0); // 100% comisiones totales
-  const agentCommissionRate = 0.5; // 50% para el agente
-  const agentCommissionTotal = totalCommissionsFull * agentCommissionRate; // Comisión a pagar al agente
-  const paidCommissions = allFilteredServices.filter(s => s.paid_to_agent).reduce((sum, s) => sum + ((s.commission || 0) * agentCommissionRate), 0);
-  const confirmedCommissions = allFilteredServices.filter(s => s.paid_to_agency && !s.paid_to_agent).reduce((sum, s) => sum + ((s.commission || 0) * agentCommissionRate), 0);
-  const pendingCommissions = allFilteredServices.filter(s => !s.paid_to_agency).reduce((sum, s) => sum + ((s.commission || 0) * agentCommissionRate), 0);
+  const toggleTrip = (tripId) => {
+    setExpandedTrips(prev => {
+      const next = new Set(prev);
+      if (next.has(tripId)) next.delete(tripId); else next.add(tripId);
+      return next;
+    });
+  };
 
-  // Solo los seleccionados visibles entran a la factura (la búsqueda/pestaña puede ocultar otros)
-  const selectedVisibleServices = filteredServices.filter(s => selectedServices.includes(s.id));
+  const TABS = [
+    { key: 'proximas', label: 'Próximas' },
+    { key: 'por_cobrar', label: 'Por cobrar' },
+    { key: 'pagadas_agencia', label: 'Pagadas a agencia' },
+    { key: 'cobradas', label: 'Cobradas' },
+  ];
 
   const isLoading = servicesLoading || tripsLoading;
 
@@ -280,364 +295,300 @@ export default function Commissions() {
     );
   }
 
+  const StatCard = ({ label, value, sub, valueClass = 'text-stone-800' }) => (
+    <div className="bg-white rounded-xl p-4 border border-stone-100">
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-stone-400">{label}</p>
+      <p className={`text-2xl font-bold mt-1 ${valueClass}`}>{value}</p>
+      <p className="text-xs text-stone-400 mt-0.5">{sub}</p>
+    </div>
+  );
+
+  const renderServiceRow = (service) => {
+    const Icon = SERVICE_ICONS[service.service_type] || Package;
+    const iconColors = SERVICE_ICON_COLORS[service.service_type] || SERVICE_ICON_COLORS.otro;
+    const split = splitFor(service);
+    const isNeto = service.payment_type === 'neto';
+    const bucket = bucketOf(service);
+
+    return (
+      <div key={service.id} className="flex items-center gap-3 pl-12 pr-4 py-3 border-t border-stone-100 bg-stone-50/40">
+        <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${iconColors}`}>
+          <Icon className="w-4 h-4" />
+        </div>
+
+        {/* Nombre */}
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-stone-800 truncate">{getServiceName(service)}</p>
+          <p className="text-xs text-stone-400 truncate">{getReservedSubtitle(service)}</p>
+        </div>
+
+        {/* Tipo */}
+        <div className="w-16 hidden md:block">
+          <span className={`text-[10px] font-bold tracking-wider ${isNeto ? 'text-green-600' : 'text-orange-500'}`}>
+            {isNeto ? 'NETO' : 'BRUTO'}
+          </span>
+        </div>
+
+        {/* Comisión */}
+        <div className="w-20 text-right hidden sm:block">
+          <span className="text-sm font-semibold text-stone-700">{money(service.commission || 0)}</span>
+        </div>
+
+        {/* Mi parte + desglose */}
+        <div className="w-36 text-right">
+          <p className="text-sm font-bold text-stone-800">{money(split.agent)}</p>
+          <p className="text-[10px] text-stone-400 leading-tight">
+            50% · Nomad {money(split.nomad)}{split.montecito > 0 && <> · <span className="text-amber-600">Mtcto {money(split.montecito)}</span></>}
+          </p>
+        </div>
+
+        {/* IATA */}
+        <div className="w-20 hidden lg:block">
+          <span className="text-xs font-medium text-stone-600">
+            {split.bookedBy === 'montecito' ? 'Montecito' : 'Nomad'}
+          </span>
+        </div>
+
+        {/* Canal */}
+        <div className="w-24 hidden lg:block">
+          <span className="text-xs text-stone-500 font-mono">{getChannel(service)}</span>
+        </div>
+
+        {/* Acción */}
+        <div className="w-32 flex justify-end">
+          {bucket === 'proximas' && (
+            <span className="text-[10px] font-bold tracking-wider px-2.5 py-1 rounded-md bg-violet-50 text-violet-500">ESTIMADA</span>
+          )}
+          {bucket === 'por_cobrar' && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => markPaidToAgency(service)}
+              disabled={updateServiceMutation.isPending}
+              className="h-7 rounded-lg text-xs border-stone-300"
+            >
+              <Check className="w-3 h-3 mr-1" /> Pagado a agencia
+            </Button>
+          )}
+          {bucket === 'pagadas_agencia' && (
+            <div className="flex items-center gap-1">
+              <span className="text-[10px] font-bold tracking-wider px-2.5 py-1 rounded-md bg-amber-50 text-amber-600">POR CONCILIAR</span>
+              <button
+                onClick={() => undoPaidToAgency(service)}
+                title="Deshacer"
+                className="p-1 rounded text-stone-300 hover:text-stone-500"
+              >
+                <Undo2 className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+          {bucket === 'cobradas' && (
+            <span className="text-[10px] font-bold tracking-wider px-2.5 py-1 rounded-md bg-green-50 text-green-600">COBRADA</span>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-stone-800">Comisiones</h1>
-          <p className="text-stone-500 text-sm mt-1">Control de comisiones por servicio</p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-baseline gap-3 flex-wrap">
+          <h1 className="text-2xl font-bold text-stone-800">Mis comisiones</h1>
+          <p className="text-stone-400 text-sm">Seguimiento por servicio · 50% del total</p>
         </div>
-        <Button
-          onClick={() => setInvoiceDialogOpen(true)}
-          disabled={selectedVisibleServices.length === 0}
-          className="text-white"
-          style={{ backgroundColor: '#2E442A' }}
-        >
-          <FileText className="w-4 h-4 mr-2" />
-          Generar Factura ({selectedVisibleServices.length})
-        </Button>
-      </div>
-
-      {/* Instructions Box */}
-      <div className="bg-blue-50 rounded-xl p-5 border border-blue-200">
-        <h3 className="font-bold text-stone-800 mb-3 flex items-center gap-2">
-          <span className="text-blue-600">ℹ️</span> Cómo Funcionan las Comisiones
-        </h3>
-        <div className="space-y-3 text-sm text-stone-700">
-          <div className="bg-white rounded-lg p-3">
-            <p className="font-semibold text-green-700 mb-1">✓ Comisiones Netas:</p>
-            <p>Se pagan a la agencia en cuanto termina el viaje.</p>
-          </div>
-          <div className="bg-white rounded-lg p-3">
-            <p className="font-semibold text-amber-700 mb-1">⏱ Comisiones Brutas:</p>
-            <p>Normalmente tardan <span className="font-bold">2 a 3 meses</span> en ser pagadas por el proveedor después de finalizado el viaje.</p>
-          </div>
-          <div className="bg-white rounded-lg p-3 border-l-4 border-blue-500">
-            <p className="font-semibold text-blue-700 mb-1">📋 Proceso de Facturación:</p>
-            <ul className="list-disc list-inside space-y-1 ml-2">
-              <li>Usa el <span className="font-semibold">check mark</span> para seleccionar comisiones</li>
-              <li>Haz clic en <span className="font-semibold">"Generar Factura"</span> para crear tu factura</li>
-              <li>Entrega la factura a <span className="font-semibold">Administración Nomad</span></li>
-              <li>Administración se encarga de pagar la comisión al agente</li>
-            </ul>
-          </div>
-        </div>
-      </div>
-
-      {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        <div className="bg-white rounded-xl p-4 shadow-sm border border-stone-100">
-          <p className="text-xs text-stone-400">Comisiones Totales</p>
-          <p className="text-xl font-bold text-stone-700">${totalCommissionsFull.toLocaleString()}</p>
-          <p className="text-xs text-stone-400 mt-1">100%</p>
-        </div>
-        <div className="bg-white rounded-xl p-4 shadow-sm border border-stone-100">
-          <p className="text-xs text-stone-400">Total Agente</p>
-          <p className="text-xl font-bold" style={{ color: '#2E442A' }}>${agentCommissionTotal.toLocaleString()}</p>
-          <p className="text-xs text-stone-400 mt-1">{agentCommissionRate * 100}% del total</p>
-        </div>
-        <div className="bg-white rounded-xl p-4 shadow-sm border border-stone-100">
-          <p className="text-xs text-stone-400">Pendientes</p>
-          <p className="text-xl font-bold text-orange-500">${pendingCommissions.toLocaleString()}</p>
-          <p className="text-xs text-stone-400 mt-1">Por confirmar</p>
-        </div>
-        <div className="bg-white rounded-xl p-4 shadow-sm border border-stone-100">
-          <p className="text-xs text-stone-400">Confirmadas por Admin</p>
-          <p className="text-xl font-bold text-blue-600">${confirmedCommissions.toLocaleString()}</p>
-          <p className="text-xs text-stone-400 mt-1">Por pagar</p>
-        </div>
-        <div className="bg-white rounded-xl p-4 shadow-sm border border-stone-100">
-          <p className="text-xs text-stone-400">Pagadas a Agente</p>
-          <p className="text-xl font-bold text-green-600">${paidCommissions.toLocaleString()}</p>
-          <p className="text-xs text-stone-400 mt-1">Ya cobrado</p>
-        </div>
-      </div>
-
-      {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-1">
+        <div className="relative w-full sm:w-64">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
           <Input
-            placeholder="Buscar por cliente o servicio..."
+            placeholder="Cliente o destino..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-10 rounded-xl"
           />
         </div>
-        <Select value={filterBookedBy} onValueChange={setFilterBookedBy}>
-          <SelectTrigger className="w-40 rounded-xl">
-            <SelectValue placeholder="Bookeado por" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Todos</SelectItem>
-            <SelectItem value="montecito">Montecito</SelectItem>
-            <SelectItem value="iata_nomad">IATA Nomad</SelectItem>
-          </SelectContent>
-        </Select>
+      </div>
+
+      {/* Stats globales */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <StatCard label="Total comisiones" value={money(totalComisiones)} sub="Realizadas + próximas" />
+        <StatCard label="Mi parte (50%)" value={money(miParteTotal)} sub="Lo que me corresponde" valueClass="text-stone-800" />
+        <StatCard label="Por cobrar" value={money(porCobrarTotal)} sub="Pendientes de pago" valueClass="text-orange-500" />
+        <StatCard label="Ya cobradas" value={money(cobradasTotal)} sub="Pagadas a mí" valueClass="text-green-600" />
       </div>
 
       {/* Tabs */}
-      <Tabs
-        value={activeTab}
-        onValueChange={(tab) => {
-          setActiveTab(tab);
-          // La selección es por pestaña: evitar facturar servicios que ya no se ven
-          setSelectedServices([]);
-        }}
-        className="space-y-4"
-      >
-        <TabsList className="grid w-full max-w-2xl grid-cols-3">
-          <TabsTrigger value="pendientes">
-            Pendientes ({allFilteredServices.filter(s => !s.paid_to_agency).length})
-          </TabsTrigger>
-          <TabsTrigger value="confirmadas">
-            Pagado a agencia ({allFilteredServices.filter(s => s.paid_to_agency && !s.paid_to_agent).length})
-          </TabsTrigger>
-          <TabsTrigger value="pagadas">
-            Pagadas a agente ({allFilteredServices.filter(s => s.paid_to_agent).length})
-          </TabsTrigger>
-        </TabsList>
+      <div className="border-b border-stone-200 flex gap-6 overflow-x-auto">
+        {TABS.map(tab => {
+          const count = buckets[tab.key].length;
+          const active = activeTab === tab.key;
+          return (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={`pb-2.5 text-sm font-medium whitespace-nowrap border-b-2 transition-colors flex items-center gap-2 ${
+                active ? 'border-stone-800 text-stone-800' : 'border-transparent text-stone-400 hover:text-stone-600'
+              }`}
+            >
+              {tab.label}
+              {count > 0 ? (
+                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                  tab.key === 'por_cobrar' ? 'bg-orange-100 text-orange-600' : 'bg-stone-100 text-stone-500'
+                }`}>{count}</span>
+              ) : (
+                <span className="text-stone-300">—</span>
+              )}
+            </button>
+          );
+        })}
+      </div>
 
-        <TabsContent value={activeTab} className="space-y-4">
-          {/* Table */}
-          <div className="bg-white rounded-2xl shadow-sm border border-stone-100 overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-            <thead className="bg-stone-50 border-b border-stone-100">
-              <tr>
-                <th className="text-left p-3 font-semibold text-stone-600 w-12">
-                  <Checkbox
-                    checked={selectedVisibleServices.length === filteredServices.length && filteredServices.length > 0}
-                    onCheckedChange={(checked) => {
-                      if (checked) {
-                        setSelectedServices(filteredServices.map(s => s.id));
-                      } else {
-                        setSelectedServices([]);
-                      }
-                    }}
-                  />
-                </th>
-                <th className="text-left p-3 font-semibold text-stone-600 w-24">Pagada a agente</th>
-                <th className="text-left p-3 font-semibold text-stone-600 w-32">Pagado a agencia</th>
-                <th className="text-left p-3 font-semibold text-stone-600">Cliente</th>
-                <th className="text-left p-3 font-semibold text-stone-600">Servicio</th>
-                <th className="text-left p-3 font-semibold text-stone-600">Tipo</th>
-                <th className="text-left p-3 font-semibold text-stone-600">Bookeado por</th>
-                <th className="text-left p-3 font-semibold text-stone-600">Reservado por</th>
-                <th className="text-left p-3 font-semibold text-stone-600 w-32">Fecha Estimada Pago</th>
-                <th className="text-right p-3 font-semibold text-stone-600 w-32">Comisión</th>
-                <th className="text-center p-3 font-semibold text-stone-600 w-24">Acciones</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-stone-100">
-              {filteredServices.map((service) => {
-              const trip = tripsMap[service.sold_trip_id];
-              const isEditing = editingService === service.id;
-              const isPaid = service.paid_to_agent || false;
-              const canEdit = isAdmin || !isPaid;
-              
-              return (
-                <tr key={service.id} className="hover:bg-stone-50 transition-colors">
-                  <td className="p-3">
-                    <Checkbox
-                      checked={selectedServices.includes(service.id)}
-                      onCheckedChange={(checked) => {
-                        if (checked) {
-                          setSelectedServices([...selectedServices, service.id]);
-                        } else {
-                          setSelectedServices(selectedServices.filter(id => id !== service.id));
-                        }
-                      }}
-                    />
-                  </td>
-                  <td className="p-3">
-                    <Select
-                      value={isPaid ? 'yes' : 'no'}
-                      onValueChange={(value) => togglePaid(service, value === 'yes')}
-                    >
-                      <SelectTrigger className={`h-8 w-20 text-xs ${isPaid ? 'bg-green-50 text-green-700 border-green-200' : 'bg-stone-50'}`}>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="no">No</SelectItem>
-                        <SelectItem value="yes">Sí</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </td>
-                  <td className="p-3">
-                    <div className="space-y-1">
-                      <Select
-                        value={service.paid_to_agency ? 'yes' : 'no'}
-                        onValueChange={(value) => {
-                          const newValue = value === 'yes';
-                          updateServiceMutation.mutate({
-                            id: service.id,
-                            data: {
-                              paid_to_agency: newValue,
-                              // Comisiones Internas deriva el estado de commission_paid: mantener ambos en sincronía
-                              commission_paid: newValue,
-                              paid_to_agency_date: newValue ? (service.paid_to_agency_date || new Date().toISOString().split('T')[0]) : null
-                            }
-                          });
-                        }}
-                      >
-                        <SelectTrigger className={`h-8 w-20 text-xs ${service.paid_to_agency ? 'bg-green-50 text-green-700 border-green-200' : 'bg-stone-50'}`}>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="no">No</SelectItem>
-                          <SelectItem value="yes">Sí</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      {service.paid_to_agency && service.paid_to_agency_date && (
-                        <p className="text-xs text-green-600 font-medium">
-                          {formatDate(service.paid_to_agency_date, 'd MMM yy', { locale: es })}
-                        </p>
-                      )}
-                    </div>
-                  </td>
-                    <td className="p-3">
-                      <span className="font-medium text-stone-800">{trip?.client_name || '-'}</span>
-                    </td>
-                    <td className="p-3">
-                      <span className="text-stone-700">{getServiceName(service)}</span>
-                    </td>
-                    <td className="p-3">
-                      <Badge variant="outline" className="text-xs">
-                        {SERVICE_TYPE_LABELS[service.service_type] || service.service_type}
-                      </Badge>
-                    </td>
-                    <td className="p-3">
-                      <span className="text-stone-600">
-                        {BOOKED_BY_LABELS[service.booked_by || service.metadata?.booked_by] || '-'}
-                      </span>
-                    </td>
-                    <td className="p-3">
-                      <span className="text-stone-600">
-                        {RESERVED_BY_LABELS[service.reserved_by] || service.flight_consolidator || CRUISE_PROVIDER_LABELS[service.cruise_provider] || '-'}
-                      </span>
-                    </td>
-                    <td className="p-3">
-                      {isEditing ? (
-                        <Input
-                          type="date"
-                          value={editValues.commission_payment_date || ''}
-                          onChange={(e) => setEditValues({...editValues, commission_payment_date: e.target.value})}
-                          className="h-8 text-xs"
-                        />
-                      ) : (
-                        <div className="space-y-1">
-                          <span 
-                            className={`text-stone-500 block ${canEdit ? 'cursor-pointer hover:text-blue-600' : 'cursor-not-allowed opacity-60'}`}
-                            onClick={() => canEdit && startEditing(service)}
-                          >
-                            {formatDate(service.commission_payment_date, 'd MMM yy', { locale: es })}
-                          </span>
-                          {service.commission_payment_date && service.payment_type === 'bruto' && (
-                            <p className="text-xs text-amber-600">
-                              (~2-3 meses)
-                            </p>
-                          )}
-                        </div>
-                      )}
-                    </td>
-                    <td className="p-3 text-right">
-                      {isEditing ? (
-                        <Input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          value={editValues.commission || 0}
-                          onChange={(e) => setEditValues({...editValues, commission: e.target.value})}
-                          className="h-8 text-xs text-right"
-                        />
-                      ) : (
-                        <span 
-                          className={`font-semibold ${service.paid_to_agent ? 'text-green-600' : 'text-stone-800'} ${canEdit ? 'cursor-pointer hover:text-blue-600' : 'cursor-not-allowed opacity-60'}`}
-                          onClick={() => canEdit && startEditing(service)}
-                        >
-                          ${(service.commission || 0).toLocaleString()}
-                        </span>
-                      )}
-                    </td>
-                    <td className="p-3 text-center">
-                      {isEditing ? (
-                        <div className="flex gap-1 justify-center">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => saveEditing(service)}
-                            className="h-8 w-8 text-green-600 hover:bg-green-50"
-                          >
-                            <Check className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={cancelEditing}
-                            className="h-8 w-8 text-red-600 hover:bg-red-50"
-                          >
-                            <X className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      ) : (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => setDeleteConfirm(service)}
-                          className="h-8 w-8 text-stone-400 hover:text-red-600"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-
-        {filteredServices.length === 0 && (
-          <div className="p-8 text-center text-stone-500">
-            <DollarSign className="w-12 h-12 mx-auto mb-3 text-stone-300" />
-            <p>No hay comisiones que mostrar</p>
+      {/* Barra de nivel */}
+      <div className="bg-white rounded-xl border border-stone-100 px-4 py-3">
+        <button onClick={() => setTierOpen(o => !o)} className="w-full flex items-center gap-3 text-left">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-stone-500">{currentTier.label} · {currentTier.rate}%</span>
+          <span className="text-sm font-bold text-stone-700">{money(tierProgress)} USD</span>
+          {nextTier && (
+            <span className="text-xs text-stone-400">— faltan {money(nextTier.threshold - tierProgress)} para {nextTier.rate}%</span>
+          )}
+          <span className="flex-1" />
+          <div className="w-32 h-1.5 rounded-full bg-stone-100 overflow-hidden hidden sm:block">
+            <div
+              className="h-full rounded-full"
+              style={{
+                width: `${nextTier ? Math.min(100, (tierProgress / nextTier.threshold) * 100) : 100}%`,
+                background: '#C9A84C'
+              }}
+            />
+          </div>
+          {tierOpen ? <ChevronUp className="w-4 h-4 text-stone-300" /> : <ChevronDown className="w-4 h-4 text-stone-300" />}
+        </button>
+        {tierOpen && (
+          <div className="mt-3 pt-3 border-t border-stone-100 flex gap-6">
+            {TIERS.map((t, i) => (
+              <div key={i} className={`text-xs ${tierProgress >= t.threshold ? 'text-stone-700 font-semibold' : 'text-stone-400'}`}>
+                {t.label}: {t.rate}% {tierProgress >= t.threshold && '✓'}
+              </div>
+            ))}
           </div>
         )}
-          </div>
-        </TabsContent>
-      </Tabs>
+      </div>
 
-      {/* Invoice Generator Dialog */}
+      {/* Stats de pestaña */}
+      {activeTab === 'proximas' && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <StatCard label="Estimadas" value={money(proximasTotal)} sub="Total servicios futuros" valueClass="text-violet-600" />
+          <StatCard label="Mi parte estimada" value={money(proximasTotal * AGENT_RATE)} sub="50% del total" />
+          <StatCard label="Viajes futuros" value={futureTrips.size} sub="Con comisiones registradas" />
+          <StatCard label="Mejor mes" value={bestMonth} sub="Mayor comisión estimada" valueClass="text-amber-600" />
+        </div>
+      )}
+      {activeTab === 'por_cobrar' && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <StatCard label="Total a cobrar" value={money(sumCommission(buckets.por_cobrar))} sub="Comisión total de servicios" />
+          <StatCard label="Mi parte pendiente" value={money(sumCommission(buckets.por_cobrar) * AGENT_RATE)} sub="50% del total" valueClass="text-orange-500" />
+          <StatCard label="Neto (disponible)" value={money(porCobrarNeto)} sub="Ya en poder de la agencia" valueClass="text-green-600" />
+          <StatCard label="Bruto (en espera)" value={money(porCobrarBruto)} sub="Pendiente de proveedor" valueClass="text-orange-500" />
+        </div>
+      )}
+      {activeTab === 'pagadas_agencia' && (
+        <div className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+          <p className="text-sm text-amber-800">
+            <strong>{buckets.pagadas_agencia.length}</strong> comisión{buckets.pagadas_agencia.length !== 1 ? 'es' : ''} en conciliación con administración
+            · Mi parte: <strong>{money(sumCommission(buckets.pagadas_agencia) * AGENT_RATE)}</strong>
+          </p>
+          {visibleServices.length > 0 && (
+            <Button
+              size="sm"
+              onClick={() => setInvoiceDialogOpen(true)}
+              className="text-white rounded-lg"
+              style={{ backgroundColor: '#2E442A' }}
+            >
+              <FileText className="w-4 h-4 mr-1.5" /> Generar Factura ({visibleServices.length})
+            </Button>
+          )}
+        </div>
+      )}
+      {activeTab === 'cobradas' && buckets.cobradas.length > 0 && (
+        <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3">
+          <p className="text-sm text-green-800">
+            <strong>{buckets.cobradas.length}</strong> comisión{buckets.cobradas.length !== 1 ? 'es' : ''} cobrada{buckets.cobradas.length !== 1 ? 's' : ''}
+            · Total recibido: <strong>{money(sumCommission(buckets.cobradas) * AGENT_RATE)}</strong>
+          </p>
+        </div>
+      )}
+
+      {/* Lista agrupada por viaje */}
+      <div className="bg-white rounded-2xl border border-stone-100 overflow-hidden">
+        {/* Encabezado de columnas */}
+        <div className="flex items-center gap-3 px-4 py-2.5 border-b border-stone-100">
+          <span className="w-7" />
+          <span className="flex-1 text-[10px] font-bold uppercase tracking-wider text-stone-400">Servicio</span>
+          <span className="w-16 hidden md:block text-[10px] font-bold uppercase tracking-wider text-stone-400">Tipo</span>
+          <span className="w-20 hidden sm:block text-right text-[10px] font-bold uppercase tracking-wider text-stone-400">Comisión</span>
+          <span className="w-36 text-right text-[10px] font-bold uppercase tracking-wider text-stone-400">Mi parte</span>
+          <span className="w-20 hidden lg:block text-[10px] font-bold uppercase tracking-wider text-stone-400">IATA</span>
+          <span className="w-24 hidden lg:block text-[10px] font-bold uppercase tracking-wider text-stone-400">Canal</span>
+          <span className="w-32 text-right text-[10px] font-bold uppercase tracking-wider text-stone-400">Acción</span>
+        </div>
+
+        {tripGroups.map(({ trip, services: tripServices }) => {
+          const tripId = trip?.id || tripServices[0].sold_trip_id;
+          const expanded = expandedTrips.has(tripId);
+          const total = sumCommission(tripServices);
+          const refDate = trip?.end_date || trip?.start_date;
+
+          return (
+            <div key={tripId} className="border-b border-stone-100 last:border-0">
+              {/* Fila del viaje (contraída por default) */}
+              <button
+                onClick={() => toggleTrip(tripId)}
+                className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-stone-50 transition-colors text-left"
+              >
+                <span className="w-7 flex justify-center text-stone-300">
+                  {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold text-stone-800 truncate">
+                    {trip ? `${trip.client_name} ${trip.destination || ''}`.trim() : 'Viaje'}
+                    {trip?.trip_name ? ` — ${trip.trip_name}` : ''}
+                  </p>
+                  <p className="text-xs text-stone-400">
+                    {trip?.client_name}{refDate ? ` · ${formatDate(refDate, 'yyyy-MM-dd')}` : ''}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-stone-400">Total</p>
+                  <p className="text-sm font-bold text-stone-700">{money(total)}</p>
+                </div>
+                <div className="text-right w-24">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-stone-400">Mi parte</p>
+                  <p className="text-sm font-bold" style={{ color: '#2E442A' }}>{money(total * AGENT_RATE)}</p>
+                </div>
+              </button>
+
+              {/* Servicios del viaje */}
+              {expanded && tripServices.map(renderServiceRow)}
+            </div>
+          );
+        })}
+
+        {tripGroups.length === 0 && (
+          <div className="p-10 text-center text-stone-400">
+            <DollarSign className="w-10 h-10 mx-auto mb-3 text-stone-200" />
+            <p className="text-sm">No hay comisiones en esta etapa</p>
+          </div>
+        )}
+      </div>
+
+      {/* Generador de factura (comisiones pagadas a agencia, pendientes de pago al agente) */}
       <AgentInvoiceGenerator
         open={invoiceDialogOpen}
         onClose={() => setInvoiceDialogOpen(false)}
-        services={selectedVisibleServices}
+        services={activeTab === 'pagadas_agencia' ? visibleServices : []}
         soldTrips={soldTrips}
         currentUser={user}
       />
-
-      {/* Delete Confirmation */}
-      <AlertDialog open={!!deleteConfirm} onOpenChange={() => setDeleteConfirm(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>¿Eliminar comisión?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Esta acción no se puede deshacer. Se eliminará el servicio y su comisión asociada.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => deleteServiceMutation.mutate(deleteConfirm)}
-              className="bg-red-600 hover:bg-red-700"
-            >
-              Eliminar
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }
