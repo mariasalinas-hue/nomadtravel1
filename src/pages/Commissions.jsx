@@ -1,4 +1,4 @@
-import { useState, useContext } from 'react';
+import { useState, useContext, useMemo } from 'react';
 import { supabaseAPI } from '@/api/supabaseClient';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ViewModeContext } from '@/Layout';
@@ -186,6 +186,53 @@ export default function Commissions() {
     enabled: !!user,
     refetchOnWindowFocus: true
   });
+
+  // Pagos (de cliente y a proveedores) para calcular el saldo por viaje
+  const tripIdSet = new Set(soldTrips.map(t => t.id));
+  const { data: clientPayments = [] } = useQuery({
+    queryKey: ['allClientPayments', user?.email, isAdmin],
+    queryFn: async () => {
+      const all = await supabaseAPI.entities.ClientPayment.list();
+      return all.filter(p => tripIdSet.has(p.sold_trip_id));
+    },
+    enabled: !!user && soldTrips.length > 0,
+    refetchOnWindowFocus: true
+  });
+  const { data: supplierPayments = [] } = useQuery({
+    queryKey: ['allSupplierPayments', user?.email, isAdmin],
+    queryFn: async () => {
+      const all = await supabaseAPI.entities.SupplierPayment.list();
+      return all.filter(p => tripIdSet.has(p.sold_trip_id));
+    },
+    enabled: !!user && soldTrips.length > 0,
+    refetchOnWindowFocus: true
+  });
+
+  // Resumen financiero por viaje: comisión bruta/neta y saldo en cuenta.
+  // Saldo = lo que el cliente pagó a Nomad − lo que Nomad pagó a proveedores.
+  // Se EXCLUYE lo pagado con tarjeta del cliente (ese dinero no pasa por la cuenta de Nomad).
+  const tripFinancials = useMemo(() => {
+    const map = {};
+    const ensure = (id) => (map[id] = map[id] || { gross: 0, net: 0, clientIn: 0, nomadOut: 0 });
+
+    allServices.forEach(s => {
+      if (!(s.commission > 0)) return;
+      const e = ensure(s.sold_trip_id);
+      if (s.payment_type === 'neto') e.net += s.commission;
+      else e.gross += s.commission;
+    });
+    clientPayments.forEach(p => {
+      if (p.method === 'tarjeta_cliente') return; // no pasa por Nomad
+      ensure(p.sold_trip_id).clientIn += (p.amount_usd_fixed || p.amount || 0);
+    });
+    supplierPayments.forEach(p => {
+      if (p.method === 'tarjeta_cliente') return; // pagado con tarjeta del cliente, no sale de Nomad
+      ensure(p.sold_trip_id).nomadOut += (p.amount || 0);
+    });
+
+    Object.values(map).forEach(e => { e.saldo = e.clientIn - e.nomadOut; });
+    return map;
+  }, [allServices, clientPayments, supplierPayments]);
 
   const updateServiceMutation = useMutation({
     mutationFn: ({ id, data }) => supabaseAPI.entities.TripService.update(id, data),
@@ -648,6 +695,38 @@ export default function Commissions() {
 
               {/* Servicios del viaje */}
               {expanded && tripServices.map(renderServiceRow)}
+
+              {/* Resumen financiero del viaje */}
+              {expanded && (() => {
+                const fin = tripFinancials[tripId] || { gross: 0, net: 0, clientIn: 0, nomadOut: 0, saldo: 0 };
+                const matchesNet = Math.abs(fin.saldo - fin.net) < 1;
+                return (
+                  <div className="pl-12 pr-4 py-3 border-t border-stone-100 bg-white">
+                    <div className="flex flex-wrap items-stretch gap-2">
+                      <div className="flex-1 min-w-[130px] rounded-lg bg-orange-50 border border-orange-100 px-3 py-2">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-orange-400">Comisión bruta</p>
+                        <p className="text-sm font-bold text-orange-600">{money(fin.gross)}</p>
+                      </div>
+                      <div className="flex-1 min-w-[130px] rounded-lg bg-green-50 border border-green-100 px-3 py-2">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-green-500">Comisión neta</p>
+                        <p className="text-sm font-bold text-green-700">{money(fin.net)}</p>
+                      </div>
+                      <div className={`flex-1 min-w-[180px] rounded-lg border px-3 py-2 ${matchesNet ? 'bg-emerald-50 border-emerald-200' : 'bg-stone-50 border-stone-200'}`}>
+                        <div className="flex items-center justify-between">
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-stone-500">Saldo en cuenta</p>
+                          {matchesNet
+                            ? <Check className="w-3.5 h-3.5 text-emerald-500" />
+                            : <span className="text-[10px] text-stone-400">vs neto {money(fin.net)}</span>}
+                        </div>
+                        <p className={`text-sm font-bold ${fin.saldo < 0 ? 'text-red-600' : 'text-stone-800'}`}>{money(fin.saldo)}</p>
+                        <p className="text-[10px] text-stone-400 leading-tight mt-0.5">
+                          Cliente pagó {money(fin.clientIn)} − Nomad pagó {money(fin.nomadOut)}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           );
         })}
