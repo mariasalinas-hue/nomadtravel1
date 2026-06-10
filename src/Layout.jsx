@@ -1,10 +1,10 @@
-import React, { useState, useEffect, createContext, useContext, useMemo, useCallback, memo } from 'react';
+import { useState, useEffect, createContext, useMemo, useCallback, memo } from 'react';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from './utils';
 import {
   LayoutDashboard, Users, Plane, CheckCircle, Menu, X, MapPin,
-  DollarSign, Loader2, Building2, BarChart3, BookOpen, Key, Wallet,
-  Lock, Eye, ShieldCheck, Upload, CreditCard, ChevronLeft, ChevronRight,
+  DollarSign, Building2, BarChart3, BookOpen, Key, Wallet,
+  Lock, Eye, ShieldCheck, CreditCard, ChevronLeft, ChevronRight,
   Database, Search, UserCheck, ListChecks
 } from 'lucide-react';
 import QuickPaymentFAB from '@/components/ui/QuickPaymentFAB';
@@ -13,7 +13,6 @@ import CommissionInfoModal from '@/components/ui/CommissionInfoModal';
 import CheatSheetBar from '@/components/ui/CheatSheetBar';
 import ErrorReportButton from '@/components/ui/ErrorReportButton';
 import { Switch } from "@/components/ui/switch";
-import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { base44 } from '@/api/base44Client';
 import { useUser, useClerk, UserButton } from '@clerk/clerk-react';
