@@ -93,22 +93,49 @@ const getServiceName = (service) => {
   }
 };
 
-const getChannel = (service) => {
-  const label = RESERVED_BY_LABELS[service.reserved_by]
-    || service.flight_consolidator
-    || CRUISE_PROVIDER_LABELS[service.cruise_provider];
-  if (label && label !== 'Otro') return label;
-  const resNumber = service.reservation_number || service.flight_reservation_number
-    || service.tour_reservation_number || service.cruise_reservation_number
-    || service.dmc_reservation_number || service.train_reservation_number;
-  return resNumber ? `#${resNumber}` : '—';
+// Etiquetas de todos los canales de reservación (hoteles, consolidadores de
+// vuelo, proveedores de crucero/tren) para que TODA comisión muestre su canal.
+const CHANNEL_LABELS = {
+  ...RESERVED_BY_LABELS,
+  ...CRUISE_PROVIDER_LABELS,
+  ytc: 'YTC',
+  directo: 'Directo',
+  ez_travel: 'EZ Travel',
+  lozano_travel: 'Lozano Travel',
+  consofly: 'Consofly',
 };
 
-const getReservedSubtitle = (service) => {
-  return RESERVED_BY_LABELS[service.reserved_by]
-    || service.flight_consolidator
-    || CRUISE_PROVIDER_LABELS[service.cruise_provider]
-    || getServiceName(service);
+const getChannel = (service) => {
+  const m = service.metadata || {};
+  const raw = service.reserved_by || m.reserved_by
+    || service.flight_consolidator || m.flight_consolidator
+    || service.cruise_provider || m.cruise_provider
+    || service.train_provider || m.train_provider;
+  if (!raw) return '—';
+  return CHANNEL_LABELS[raw] || raw;
+};
+
+// Subtítulo descriptivo del servicio (sin duplicar el canal)
+const getSubtitle = (service) => {
+  const m = service.metadata || {};
+  switch (service.service_type) {
+    case 'hotel':
+      return [service.hotel_chain || m.hotel_chain, service.hotel_brand || m.hotel_brand].filter(Boolean).join(' · ') || 'Hotel';
+    case 'vuelo':
+      return service.route || m.route || 'Vuelo';
+    case 'traslado':
+      return service.transfer_type === 'privado' ? 'Traslado privado' : 'Traslado';
+    case 'tour':
+      return service.tour_city || m.tour_city || 'Tour';
+    case 'crucero':
+      return service.cruise_line || m.cruise_line || service.cruise_itinerary || m.cruise_itinerary || 'Crucero';
+    case 'tren':
+      return service.train_route || m.train_route || 'Tren';
+    case 'dmc':
+      return service.dmc_destination || m.dmc_destination || 'DMC';
+    default:
+      return service.other_description || m.other_description || 'Servicio';
+  }
 };
 
 export default function Commissions() {
@@ -310,8 +337,11 @@ export default function Commissions() {
     const isNeto = service.payment_type === 'neto';
     const bucket = bucketOf(service);
 
+    const channel = getChannel(service);
+
     return (
-      <div key={service.id} className="flex items-center gap-3 pl-12 pr-4 py-3 border-t border-stone-100 bg-stone-50/40">
+      <div key={service.id} className="flex items-center gap-3 px-4 py-3 border-t border-stone-100 bg-stone-50/40">
+        <span className="w-7 flex-shrink-0" />
         <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${iconColors}`}>
           <Icon className="w-4 h-4" />
         </div>
@@ -319,43 +349,43 @@ export default function Commissions() {
         {/* Nombre */}
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-stone-800 truncate">{getServiceName(service)}</p>
-          <p className="text-xs text-stone-400 truncate">{getReservedSubtitle(service)}</p>
+          <p className="text-xs text-stone-400 truncate">{getSubtitle(service)}</p>
         </div>
 
         {/* Tipo */}
-        <div className="w-16 hidden md:block">
+        <div className="w-14 flex-shrink-0 hidden md:block">
           <span className={`text-[10px] font-bold tracking-wider ${isNeto ? 'text-green-600' : 'text-orange-500'}`}>
             {isNeto ? 'NETO' : 'BRUTO'}
           </span>
         </div>
 
         {/* Comisión */}
-        <div className="w-20 text-right hidden sm:block">
+        <div className="w-20 flex-shrink-0 text-right hidden sm:block">
           <span className="text-sm font-semibold text-stone-700">{money(service.commission || 0)}</span>
         </div>
 
         {/* Mi parte + desglose */}
-        <div className="w-36 text-right">
+        <div className="w-36 flex-shrink-0 text-right">
           <p className="text-sm font-bold text-stone-800">{money(split.agent)}</p>
-          <p className="text-[10px] text-stone-400 leading-tight">
+          <p className="text-[10px] text-stone-400 leading-tight whitespace-nowrap">
             50% · Nomad {money(split.nomad)}{split.montecito > 0 && <> · <span className="text-amber-600">Mtcto {money(split.montecito)}</span></>}
           </p>
         </div>
 
         {/* IATA */}
-        <div className="w-20 hidden lg:block">
+        <div className="w-20 flex-shrink-0 hidden lg:block">
           <span className="text-xs font-medium text-stone-600">
             {split.bookedBy === 'montecito' ? 'Montecito' : 'Nomad'}
           </span>
         </div>
 
         {/* Canal */}
-        <div className="w-24 hidden lg:block">
-          <span className="text-xs text-stone-500 font-mono">{getChannel(service)}</span>
+        <div className="w-28 flex-shrink-0 hidden lg:block min-w-0">
+          <span className="text-xs text-stone-500 block truncate" title={channel}>{channel}</span>
         </div>
 
         {/* Acción */}
-        <div className="w-32 flex justify-end">
+        <div className="w-36 flex-shrink-0 flex justify-end">
           {bucket === 'proximas' && (
             <span className="text-[10px] font-bold tracking-wider px-2.5 py-1 rounded-md bg-violet-50 text-violet-500">ESTIMADA</span>
           )}
@@ -365,7 +395,7 @@ export default function Commissions() {
               size="sm"
               onClick={() => markPaidToAgency(service)}
               disabled={updateServiceMutation.isPending}
-              className="h-7 rounded-lg text-xs border-stone-300"
+              className="h-7 rounded-lg text-xs border-stone-300 px-2 whitespace-nowrap"
             >
               <Check className="w-3 h-3 mr-1" /> Pagado a agencia
             </Button>
@@ -520,16 +550,17 @@ export default function Commissions() {
 
       {/* Lista agrupada por viaje */}
       <div className="bg-white rounded-2xl border border-stone-100 overflow-hidden">
-        {/* Encabezado de columnas */}
+        {/* Encabezado de columnas (misma estructura que las filas de servicio) */}
         <div className="flex items-center gap-3 px-4 py-2.5 border-b border-stone-100">
-          <span className="w-7" />
-          <span className="flex-1 text-[10px] font-bold uppercase tracking-wider text-stone-400">Servicio</span>
-          <span className="w-16 hidden md:block text-[10px] font-bold uppercase tracking-wider text-stone-400">Tipo</span>
-          <span className="w-20 hidden sm:block text-right text-[10px] font-bold uppercase tracking-wider text-stone-400">Comisión</span>
-          <span className="w-36 text-right text-[10px] font-bold uppercase tracking-wider text-stone-400">Mi parte</span>
-          <span className="w-20 hidden lg:block text-[10px] font-bold uppercase tracking-wider text-stone-400">IATA</span>
-          <span className="w-24 hidden lg:block text-[10px] font-bold uppercase tracking-wider text-stone-400">Canal</span>
-          <span className="w-32 text-right text-[10px] font-bold uppercase tracking-wider text-stone-400">Acción</span>
+          <span className="w-7 flex-shrink-0" />
+          <span className="w-8 flex-shrink-0" />
+          <span className="flex-1 min-w-0 text-[10px] font-bold uppercase tracking-wider text-stone-400">Servicio</span>
+          <span className="w-14 flex-shrink-0 hidden md:block text-[10px] font-bold uppercase tracking-wider text-stone-400">Tipo</span>
+          <span className="w-20 flex-shrink-0 hidden sm:block text-right text-[10px] font-bold uppercase tracking-wider text-stone-400">Comisión</span>
+          <span className="w-36 flex-shrink-0 text-right text-[10px] font-bold uppercase tracking-wider text-stone-400">Mi parte</span>
+          <span className="w-20 flex-shrink-0 hidden lg:block text-[10px] font-bold uppercase tracking-wider text-stone-400">IATA</span>
+          <span className="w-28 flex-shrink-0 hidden lg:block text-[10px] font-bold uppercase tracking-wider text-stone-400">Canal</span>
+          <span className="w-36 flex-shrink-0 text-right text-[10px] font-bold uppercase tracking-wider text-stone-400">Acción</span>
         </div>
 
         {tripGroups.map(({ trip, services: tripServices }) => {
