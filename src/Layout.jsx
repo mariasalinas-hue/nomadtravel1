@@ -207,6 +207,7 @@ export default function Layout({ children, currentPageName }) {
     { name: 'FAM Trips', page: 'FamTrips', icon: Plane },
     { name: 'Ferias', page: 'IndustryFairs', icon: LayoutDashboard },
     { name: 'Herramientas Admin', divider: true },
+    { name: 'Buscador Global', page: 'AdminSearch', icon: Search },
     { name: 'Spoof de Usuarios', page: 'AdminSpoof', icon: UserCheck },
     { name: 'Opciones de Servicios', page: 'AdminServiceOptions', icon: ListChecks },
     { name: 'Exportar Datos', page: 'AdminExport', icon: Database },

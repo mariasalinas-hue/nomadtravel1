@@ -1,5 +1,6 @@
 import AdminClients from './pages/AdminClients';
 import AdminDashboard from './pages/AdminDashboard';
+import AdminSearch from './pages/AdminSearch';
 import AdminExport from './pages/AdminExport';
 import AdminSoldTrips from './pages/AdminSoldTrips';
 import AdminServiceOptions from './pages/AdminServiceOptions';
@@ -36,6 +37,7 @@ export const PAGES = {
     "AdminClients": AdminClients,
     "AdminServiceOptions": AdminServiceOptions,
     "AdminDashboard": AdminDashboard,
+    "AdminSearch": AdminSearch,
     "AdminExport": AdminExport,
     "AdminSoldTrips": AdminSoldTrips,
     "AdminSpoof": AdminSpoof,
