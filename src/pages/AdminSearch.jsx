@@ -81,6 +81,20 @@ const getReservationNumber = (s) =>
   s.reservation_number || s.flight_reservation_number || s.tour_reservation_number
   || s.cruise_reservation_number || s.dmc_reservation_number || s.train_reservation_number || '';
 
+// Ciudad/ubicación específica del servicio
+const getServiceCity = (s) => {
+  const m = s.metadata || {};
+  switch (s.service_type) {
+    case 'hotel': return s.hotel_city || m.hotel_city || '';
+    case 'tour': return s.tour_city || m.tour_city || '';
+    case 'traslado': return s.transfer_destination || s.transfer_origin || '';
+    case 'crucero': return s.cruise_departure_port || s.cruise_arrival_port || '';
+    case 'tren': return s.train_route || '';
+    case 'dmc': return s.dmc_destination || '';
+    default: return s.other_city || m.other_city || '';
+  }
+};
+
 export default function AdminSearch() {
   const [query, setQuery] = useState('');
   const [kind, setKind] = useState('all');
@@ -91,6 +105,7 @@ export default function AdminSearch() {
   const [method, setMethod] = useState('all');
   const [agent, setAgent] = useState('all');
   const [serviceType, setServiceType] = useState('all');
+  const [city, setCity] = useState('all');
 
   const { data, isLoading } = useQuery({
     queryKey: ['adminGlobalSearch'],
@@ -128,7 +143,7 @@ export default function AdminSearch() {
         agent: trip?.created_by || s.created_by || '—',
         tripId: s.sold_trip_id,
         destination: trip?.destination || '',
-        searchBlob: '',
+        city: getServiceCity(s) || trip?.destination || '',
         notes: s.notes || '',
       });
     });
@@ -148,6 +163,7 @@ export default function AdminSearch() {
         agent: trip?.created_by || p.created_by || '—',
         tripId: p.sold_trip_id,
         destination: trip?.destination || '',
+        city: trip?.destination || '',
         notes: p.notes || '',
       });
     });
@@ -172,6 +188,7 @@ export default function AdminSearch() {
         agent: trip?.created_by || p.created_by || '—',
         tripId: p.sold_trip_id,
         destination: trip?.destination || '',
+        city: trip?.destination || '',
         notes: p.notes || '',
       });
     });
@@ -182,6 +199,11 @@ export default function AdminSearch() {
   const agents = useMemo(() => {
     const set = new Set(rows.map(r => r.agent).filter(a => a && a !== '—'));
     return [...set].sort();
+  }, [rows]);
+
+  const cities = useMemo(() => {
+    const set = new Set(rows.map(r => (r.city || '').trim()).filter(Boolean));
+    return [...set].sort((a, b) => a.localeCompare(b));
   }, [rows]);
 
   // Aplicar filtros
@@ -197,6 +219,7 @@ export default function AdminSearch() {
       if (agent !== 'all' && r.agent !== agent) return false;
       if (method !== 'all' && r.method !== method) return false;
       if (serviceType !== 'all' && (r.kind !== 'servicio' || r.serviceType !== serviceType)) return false;
+      if (city !== 'all' && (r.city || '').trim() !== city) return false;
 
       if (from || to) {
         const d = parseLocalDate(r.date);
@@ -220,14 +243,14 @@ export default function AdminSearch() {
       const db = parseLocalDate(b.date) || new Date(0);
       return db - da;
     });
-  }, [rows, query, kind, agent, method, serviceType, dateFrom, dateTo, amount, tolerance]);
+  }, [rows, query, kind, agent, method, serviceType, city, dateFrom, dateTo, amount, tolerance]);
 
   const totalShown = filtered.reduce((sum, r) => sum + r.amount, 0);
-  const hasActiveFilters = query || kind !== 'all' || dateFrom || dateTo || amount || method !== 'all' || agent !== 'all' || serviceType !== 'all';
+  const hasActiveFilters = query || kind !== 'all' || dateFrom || dateTo || amount || method !== 'all' || agent !== 'all' || serviceType !== 'all' || city !== 'all';
 
   const clearFilters = () => {
     setQuery(''); setKind('all'); setDateFrom(''); setDateTo('');
-    setAmount(''); setTolerance('5'); setMethod('all'); setAgent('all'); setServiceType('all');
+    setAmount(''); setTolerance('5'); setMethod('all'); setAgent('all'); setServiceType('all'); setCity('all');
   };
 
   if (isLoading) {
@@ -320,6 +343,14 @@ export default function AdminSearch() {
               {Object.entries(SERVICE_TYPE_LABELS).map(([value, label]) => (
                 <SelectItem key={value} value={value}>{label}</SelectItem>
               ))}
+            </SelectContent>
+          </Select>
+
+          <Select value={city} onValueChange={setCity}>
+            <SelectTrigger className="rounded-xl text-xs h-9"><SelectValue placeholder="Ciudad" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Toda ciudad</SelectItem>
+              {cities.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
             </SelectContent>
           </Select>
         </div>
