@@ -240,6 +240,19 @@ export default function Layout({ children, currentPageName }) {
     return navigation.filter(item => !item.divider && item.name.toLowerCase().includes(q));
   }, [navigation, searchQuery]);
 
+  // Accesos directos de la barra inferior móvil (4 + botón "Menú")
+  const bottomNavItems = useMemo(() => isAdmin ? [
+    { label: 'Inicio', page: 'AdminDashboard', icon: LayoutDashboard },
+    { label: 'Clientes', page: 'AdminClients', icon: Users },
+    { label: 'Viajes', page: 'AdminSoldTrips', icon: CheckCircle },
+    { label: 'Buscar', page: 'AdminSearch', icon: Search },
+  ] : [
+    { label: 'Inicio', page: 'Dashboard', icon: LayoutDashboard },
+    { label: 'Clientes', page: 'Clients', icon: Users },
+    { label: 'Viajes', page: 'SoldTrips', icon: CheckCircle },
+    { label: 'Comisiones', page: 'Commissions', icon: DollarSign },
+  ], [isAdmin]);
+
   const handleSidebarClose = useCallback(() => setSidebarOpen(false), []);
   const handleSidebarToggle = useCallback(() => setSidebarOpen(p => !p), []);
   const handleCollapsedToggle = useCallback(() => setSidebarCollapsed(p => !p), []);
@@ -581,7 +594,7 @@ export default function Layout({ children, currentPageName }) {
 
       {/* ── Main Content ── */}
       <main className={cn(
-        "pt-16 lg:pt-0 min-h-screen transition-all duration-300",
+        "pt-16 lg:pt-0 pb-24 lg:pb-0 min-h-screen transition-all duration-300",
         sidebarCollapsed ? "lg:pl-[72px]" : "lg:pl-72"
       )}>
         {/* Spoof banner */}
@@ -613,6 +626,38 @@ export default function Layout({ children, currentPageName }) {
           </ViewModeContext.Provider>
         </div>
       </main>
+
+      {/* ── Mobile bottom navigation ── */}
+      <nav
+        className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur border-t border-stone-200"
+        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+      >
+        <div className="grid grid-cols-5">
+          {bottomNavItems.map((item) => {
+            const active = currentPageName === item.page;
+            return (
+              <Link
+                key={item.page}
+                to={createPageUrl(item.page)}
+                onClick={handleSidebarClose}
+                className="flex flex-col items-center justify-center gap-0.5 py-2 transition-colors"
+                style={{ color: active ? 'var(--nomad-green)' : '#9CA3AF' }}
+              >
+                <item.icon className="w-5 h-5" strokeWidth={active ? 2.4 : 1.8} />
+                <span className="text-[10px] font-medium tracking-tight">{item.label}</span>
+              </Link>
+            );
+          })}
+          <button
+            onClick={handleSidebarToggle}
+            className="flex flex-col items-center justify-center gap-0.5 py-2 transition-colors"
+            style={{ color: sidebarOpen ? 'var(--nomad-green)' : '#9CA3AF' }}
+          >
+            <Menu className="w-5 h-5" strokeWidth={1.8} />
+            <span className="text-[10px] font-medium tracking-tight">Menú</span>
+          </button>
+        </div>
+      </nav>
 
       <CheatSheetBar />
       <QuickPaymentFAB />

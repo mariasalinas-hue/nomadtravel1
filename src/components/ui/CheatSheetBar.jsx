@@ -21,15 +21,15 @@ export default function CheatSheetBar() {
 
   return (
     <>
-      {/* Hover Detection Zone */}
-      <div 
-        className="fixed top-0 left-0 right-0 h-12 z-40 pointer-events-auto"
+      {/* Hover Detection Zone (solo escritorio; en móvil no hay hover y tapa el header) */}
+      <div
+        className="hidden lg:block fixed top-0 left-0 right-0 h-12 z-40 pointer-events-auto"
         onMouseEnter={() => setIsVisible(true)}
       />
 
       {/* Floating Cheat Sheet Bar */}
-      <div 
-        className={`fixed top-0 left-1/2 transform -translate-x-1/2 z-50 transition-transform duration-300 ${
+      <div
+        className={`hidden lg:block fixed top-0 left-1/2 transform -translate-x-1/2 z-50 transition-transform duration-300 ${
           isVisible ? 'translate-y-0' : '-translate-y-full'
         }`}
         onMouseLeave={() => setIsVisible(false)}

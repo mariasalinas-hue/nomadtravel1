@@ -1,4 +1,4 @@
-import React, { useState, useContext, useMemo } from 'react';
+import { useState, useContext, useMemo } from 'react';
 import { supabaseAPI } from '@/api/supabaseClient';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ViewModeContext } from '@/Layout';
@@ -272,7 +272,77 @@ export default function Clients() {
           onAction={!search && sourceFilter === 'all' ? () => setFormOpen(true) : undefined}
         />
       ) : (
-        <div className="bg-white rounded-2xl shadow-sm border border-stone-100 overflow-hidden">
+        <>
+          {/* Mobile: tarjetas */}
+          <div className="md:hidden space-y-3">
+            {sortedClients.map((client) => {
+              const stats = getStats(client.id);
+              const bdays = daysUntilBirthday(client.birth_date);
+              const bdaySoon = bdays !== null && bdays <= 30;
+              return (
+                <div key={client.id} className="bg-white rounded-2xl border border-stone-100 shadow-sm p-4">
+                  <div className="flex items-start gap-3">
+                    <div
+                      className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-semibold text-sm flex-shrink-0"
+                      style={{ backgroundColor: '#2E442A' }}
+                    >
+                      {client.first_name?.[0]}{client.last_name?.[0]}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="font-semibold text-stone-800 truncate">{client.first_name} {client.last_name}</p>
+                      {client.email && <p className="text-xs text-stone-400 truncate">{client.email}</p>}
+                      {client.phone && <p className="text-xs text-stone-500 mt-0.5">{client.phone}</p>}
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <p className="text-sm font-bold" style={{ color: stats.total > 0 ? '#16A34A' : '#D6D3D1' }}>
+                        ${stats.total.toLocaleString()}
+                      </p>
+                      <p className="text-[10px] text-stone-400 uppercase tracking-wide">vendido</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3 mt-3 text-xs text-stone-600 flex-wrap">
+                    <span className="inline-flex items-center gap-1">
+                      <Plane className="w-3 h-3" style={{ color: '#2E442A' }} />
+                      {stats.count > 0 ? `${stats.count} viaje${stats.count !== 1 ? 's' : ''}` : 'Sin viajes'}
+                    </span>
+                    {client.birth_date && (
+                      <span className="inline-flex items-center gap-1 text-stone-500">
+                        <Cake className="w-3 h-3" />
+                        {formatDate(client.birth_date, 'd MMM', { locale: es })}
+                      </span>
+                    )}
+                    {bdaySoon && (
+                      <span
+                        className="inline-flex items-center gap-1 text-[11px] font-semibold px-1.5 py-0.5 rounded-full"
+                        style={{ color: '#BE185D', background: 'rgba(219,39,119,0.1)' }}
+                      >
+                        {bdays === 0 ? '¡Hoy!' : bdays === 1 ? 'Mañana' : `en ${bdays} días`}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex justify-end gap-1 mt-3 pt-3 border-t border-stone-100">
+                    <Button variant="ghost" size="icon" className="h-9 w-9" title="Enviar formulario" onClick={() => setTripFormClient(client)}>
+                      <Send className="w-4 h-4" style={{ color: '#2E442A' }} />
+                    </Button>
+                    <Link to={createPageUrl(`ClientDetail?id=${client.id}`)}>
+                      <Button variant="ghost" size="icon" className="h-9 w-9"><Eye className="w-4 h-4 text-stone-400" /></Button>
+                    </Link>
+                    <Button variant="ghost" size="icon" className="h-9 w-9" onClick={() => { setEditingClient(client); setFormOpen(true); }}>
+                      <Edit2 className="w-4 h-4 text-stone-400" />
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-9 w-9" onClick={() => setDeleteConfirm(client)}>
+                      <Trash2 className="w-4 h-4 text-stone-400 hover:text-red-500" />
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Desktop: tabla */}
+          <div className="hidden md:block bg-white rounded-2xl shadow-sm border border-stone-100 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-stone-50 border-b border-stone-100">
@@ -385,7 +455,8 @@ export default function Clients() {
               </tbody>
             </table>
           </div>
-        </div>
+          </div>
+        </>
       )}
 
       {/* Share client intake form */}
