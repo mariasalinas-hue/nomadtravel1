@@ -1,4 +1,4 @@
-import { Edit2, Trash2, MoreVertical, TrendingUp, TrendingDown, StickyNote } from 'lucide-react';
+import { Edit2, Trash2, Copy, MoreVertical, TrendingUp, TrendingDown, StickyNote } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
@@ -29,7 +29,7 @@ function resolveProvider(raw) {
 }
 
 export default function ServiceCard({
-  service, supplierPayments, currentExchangeRates, onEdit, onDelete, onUpdateStatus
+  service, supplierPayments, currentExchangeRates, onEdit, onDelete, onDuplicate, onUpdateStatus
 }) {
   const Icon = SERVICE_ICONS[service.service_type] || SERVICE_ICONS.otro;
   const colors = SERVICE_COLORS[service.service_type] || SERVICE_COLORS.otro;
@@ -160,6 +160,11 @@ export default function ServiceCard({
             <DropdownMenuItem onClick={onEdit}>
               <Edit2 className="w-3.5 h-3.5 mr-2" /> Editar
             </DropdownMenuItem>
+            {onDuplicate && (
+              <DropdownMenuItem onClick={onDuplicate}>
+                <Copy className="w-3.5 h-3.5 mr-2" /> Duplicar
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem className="text-red-600" onClick={onDelete}>
               <Trash2 className="w-3.5 h-3.5 mr-2" /> Eliminar
             </DropdownMenuItem>

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import { toast } from 'sonner';
 import { createPageUrl } from '@/utils';
 import { Loader2, StickyNote, FolderOpen, Bell } from 'lucide-react';
 import { Button } from "@/components/ui/button";
@@ -129,6 +130,25 @@ export default function SoldTripDetail() {
 
   const handleDeleteService = (service) => {
     setDeleteConfirm({ type: 'service', item: service, sold_trip_id: service.sold_trip_id });
+  };
+
+  const handleDuplicateService = (service) => {
+    // Copia el servicio dentro del mismo viaje; arranca limpio (sin pagos ni estado de pago)
+    const copy = { ...service };
+    ['id', 'created_date', 'created_by', 'updated_date', 'updated_by'].forEach(k => delete copy[k]);
+    Object.assign(copy, {
+      amount_paid_to_supplier: 0,
+      paid_to_agent: false,
+      paid_to_agency: false,
+      paid_to_agency_date: null,
+      commission_paid: false,
+      reservation_status: 'reservado',
+      metadata: { ...(service.metadata || {}), reservation_status: 'reservado' },
+    });
+    mutations.createServiceMutation.mutate(copy, {
+      onSuccess: () => toast.success('Servicio duplicado'),
+      onError: () => toast.error('No se pudo duplicar el servicio'),
+    });
   };
 
   const handleUpdateServiceStatus = (serviceId, status) => {
@@ -282,6 +302,7 @@ export default function SoldTripDetail() {
             onAddService={handleAddService}
             onEditService={handleEditService}
             onDeleteService={handleDeleteService}
+            onDuplicateService={handleDuplicateService}
             onUpdateServiceStatus={handleUpdateServiceStatus}
           />
         </TabsContent>

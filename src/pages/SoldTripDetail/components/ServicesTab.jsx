@@ -1,11 +1,11 @@
-import React, { memo } from 'react';
+import { memo } from 'react';
 import { Plus, Package } from 'lucide-react';
 import { AnimatePresence } from 'framer-motion';
 import EmptyState from '@/components/ui/EmptyState';
 import ServiceCard from './ServiceCard';
 import { SERVICE_ICONS, SERVICE_LABELS, SERVICE_COLORS } from '../constants/serviceConstants';
 
-const ServiceTypeSection = memo(({ type, typeServices, supplierPayments, currentExchangeRates, onEditService, onDeleteService, onUpdateServiceStatus }) => {
+const ServiceTypeSection = memo(({ type, typeServices, supplierPayments, currentExchangeRates, onEditService, onDeleteService, onDuplicateService, onUpdateServiceStatus }) => {
   const Icon = SERVICE_ICONS[type] || Package;
   const colors = SERVICE_COLORS[type] || SERVICE_COLORS.otro;
 
@@ -37,6 +37,7 @@ const ServiceTypeSection = memo(({ type, typeServices, supplierPayments, current
               currentExchangeRates={currentExchangeRates}
               onEdit={() => onEditService(service)}
               onDelete={() => onDeleteService(service)}
+              onDuplicate={() => onDuplicateService(service)}
               onUpdateStatus={onUpdateServiceStatus}
             />
           ))}
@@ -50,7 +51,7 @@ ServiceTypeSection.displayName = 'ServiceTypeSection';
 
 export default function ServicesTab({
   services, servicesByType, supplierPayments, currentExchangeRates,
-  totalServices, totalCommissions, onAddService, onEditService, onDeleteService, onUpdateServiceStatus
+  totalServices, totalCommissions, onAddService, onEditService, onDeleteService, onDuplicateService, onUpdateServiceStatus
 }) {
   return (
     <div className="bg-white rounded-2xl overflow-hidden"
@@ -99,6 +100,7 @@ export default function ServicesTab({
               currentExchangeRates={currentExchangeRates}
               onEditService={onEditService}
               onDeleteService={onDeleteService}
+              onDuplicateService={onDuplicateService}
               onUpdateServiceStatus={onUpdateServiceStatus}
             />
           ))}
