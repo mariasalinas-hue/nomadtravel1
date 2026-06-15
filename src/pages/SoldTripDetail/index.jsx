@@ -133,9 +133,18 @@ export default function SoldTripDetail() {
   };
 
   const handleDuplicateService = (service) => {
-    // Copia el servicio dentro del mismo viaje; arranca limpio (sin pagos ni estado de pago)
+    // Copia el servicio dentro del mismo viaje; arranca limpio (sin pagos, estado ni reservación)
     const copy = { ...service };
-    ['id', 'created_date', 'created_by', 'updated_date', 'updated_by'].forEach(k => delete copy[k]);
+    [
+      'id', 'created_date', 'created_by', 'updated_date', 'updated_by',
+      // El número de reservación es único de cada reserva: la copia arranca sin él
+      'reservation_number', 'flight_reservation_number', 'tour_reservation_number',
+      'cruise_reservation_number', 'dmc_reservation_number', 'train_reservation_number',
+    ].forEach(k => delete copy[k]);
+
+    const cleanMetadata = { ...(service.metadata || {}), reservation_status: 'reservado' };
+    delete cleanMetadata.reservation_number;
+
     Object.assign(copy, {
       amount_paid_to_supplier: 0,
       paid_to_agent: false,
@@ -143,11 +152,15 @@ export default function SoldTripDetail() {
       paid_to_agency_date: null,
       commission_paid: false,
       reservation_status: 'reservado',
-      metadata: { ...(service.metadata || {}), reservation_status: 'reservado' },
+      metadata: cleanMetadata,
     });
+
     mutations.createServiceMutation.mutate(copy, {
       onSuccess: () => toast.success('Servicio duplicado'),
-      onError: () => toast.error('No se pudo duplicar el servicio'),
+      onError: (e) => {
+        console.error('Error duplicando servicio:', e);
+        toast.error(`No se pudo duplicar: ${e?.message || 'error desconocido'}`);
+      },
     });
   };
 
