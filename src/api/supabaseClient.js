@@ -21,65 +21,70 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 
 // Helper functions para interactuar con las tablas de manera similar a base44
 
+// Supabase devuelve máximo 1000 filas por petición. Esta función pagina con
+// .range() hasta traer TODAS las filas (evita que se "pierdan" registros en
+// páginas que listan tablas grandes como trip_services).
+const PAGE_SIZE = 1000;
+async function fetchAllRows(buildQuery, label) {
+  let from = 0;
+  let all = [];
+  for (;;) {
+    const { data, error } = await buildQuery().range(from, from + PAGE_SIZE - 1);
+    if (error) {
+      console.error(`Error listing ${label}:`, error.message || error);
+      throw error;
+    }
+    const batch = data || [];
+    all = all.concat(batch);
+    if (batch.length < PAGE_SIZE) break;
+    from += PAGE_SIZE;
+  }
+  return all;
+}
+
 export const createSupabaseAPI = () => {
   // Función helper genérica para crear métodos CRUD para cualquier tabla
   const createEntityMethods = (tableName, options = {}) => ({
     // Listar todos los registros (excluye eliminados)
     list: async (orderBy = null) => {
-      let query = supabase.from(tableName).select('*');
-
-      // Solo aplicar filtro is_deleted si la tabla lo soporta
-      if (options.hasIsDeleted !== false) {
-        query = query.eq('is_deleted', false);
-      }
-
-      // Ordenamiento personalizado o por defecto
-      if (orderBy) {
-        // Si orderBy empieza con '-', ordenar descendente
-        const isDescending = orderBy.startsWith('-');
-        const field = isDescending ? orderBy.substring(1) : orderBy;
-        query = query.order(field, { ascending: !isDescending });
-      } else if (options.hasCreatedDate !== false) {
-        // Solo ordenar por created_date si la tabla tiene esa columna y no se especificó otro orden
-        query = query.order('created_date', { ascending: false });
-      }
-
-      const { data, error } = await query;
-
-      if (error) {
-        console.error(`Error listing ${tableName}:`, error.message || error);
-        console.error('Full error details:', error);
-        throw error;
-      }
-      return data || [];
+      const buildQuery = () => {
+        let query = supabase.from(tableName).select('*');
+        if (options.hasIsDeleted !== false) {
+          query = query.eq('is_deleted', false);
+        }
+        if (orderBy) {
+          const isDescending = orderBy.startsWith('-');
+          const field = isDescending ? orderBy.substring(1) : orderBy;
+          query = query.order(field, { ascending: !isDescending });
+        } else if (options.hasCreatedDate !== false) {
+          query = query.order('created_date', { ascending: false });
+        } else {
+          // Orden estable para que la paginación no repita/omita filas
+          query = query.order('id', { ascending: true });
+        }
+        return query;
+      };
+      return fetchAllRows(buildQuery, tableName);
     },
 
     // Filtrar registros (excluye eliminados por defecto)
     filter: async (filters = {}) => {
-      let query = supabase.from(tableName).select('*');
-
-      // Excluir eliminados por defecto solo si la tabla soporta is_deleted
-      if (options.hasIsDeleted !== false && !filters.hasOwnProperty('is_deleted')) {
-        query = query.eq('is_deleted', false);
-      }
-
-      // Aplicar cada filtro
-      Object.entries(filters).forEach(([key, value]) => {
-        query = query.eq(key, value);
-      });
-
-      // Solo ordenar por created_date si la tabla lo soporta
-      if (options.hasCreatedDate !== false) {
-        query = query.order('created_date', { ascending: false });
-      }
-
-      const { data, error } = await query;
-
-      if (error) {
-        console.error(`Error filtering ${tableName}:`, error);
-        throw error;
-      }
-      return data || [];
+      const buildQuery = () => {
+        let query = supabase.from(tableName).select('*');
+        if (options.hasIsDeleted !== false && !filters.hasOwnProperty('is_deleted')) {
+          query = query.eq('is_deleted', false);
+        }
+        Object.entries(filters).forEach(([key, value]) => {
+          query = query.eq(key, value);
+        });
+        if (options.hasCreatedDate !== false) {
+          query = query.order('created_date', { ascending: false });
+        } else {
+          query = query.order('id', { ascending: true });
+        }
+        return query;
+      };
+      return fetchAllRows(buildQuery, tableName);
     },
 
     // Obtener un registro por ID
