@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,6 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, X, ChevronDown, Search, Users } from 'lucide-react';
 import { Badge } from "@/components/ui/badge";
+import { COUNTRIES } from '@/lib/countries';
 
 /**
  * Normaliza una fecha a formato YYYY-MM-DD sin conversiones de timezone.
@@ -64,39 +65,15 @@ export default function TripForm({ open, onClose, trip, clients = [], onSave, is
 
   const [destinationSearch, setDestinationSearch] = useState('');
   const [showDestinationDropdown, setShowDestinationDropdown] = useState(false);
-  const [countries, setCountries] = useState([]);
-  const [loadingCountries, setLoadingCountries] = useState(true);
+  // Lista de países integrada (sin depender de APIs externas)
+  const countries = COUNTRIES;
+  const loadingCountries = false;
   const destinationInputRef = useRef(null);
 
   // Estado para el buscador de clientes
   const [clientSearch, setClientSearch] = useState('');
   const [showClientDropdown, setShowClientDropdown] = useState(false);
   const clientInputRef = useRef(null);
-
-  useEffect(() => {
-    const fetchCountries = async () => {
-      if (open) {
-        try {
-          setLoadingCountries(true);
-          const response = await fetch('https://restcountries.com/v3.1/all?fields=name,region,subregion,cca2');
-          const data = await response.json();
-          const formattedCountries = data.map(country => ({
-            code: country.cca2,
-            name: country.name.common,
-            region: country.region || '',
-            subregion: country.subregion || ''
-          })).sort((a, b) => a.name.localeCompare(b.name, 'es'));
-          setCountries(formattedCountries);
-        } catch (error) {
-          console.error('Error loading countries:', error);
-          setCountries([]);
-        } finally {
-          setLoadingCountries(false);
-        }
-      }
-    };
-    fetchCountries();
-  }, [open]);
 
   useEffect(() => {
     if (trip) {

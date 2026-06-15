@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,6 +7,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
+import CountryMultiSelect from '@/components/ui/CountryMultiSelect';
 
 export default function SoldTripForm({ open, onClose, soldTrip, onSave, isLoading }) {
   const [formData, setFormData] = useState({
@@ -35,6 +37,10 @@ export default function SoldTripForm({ open, onClose, soldTrip, onSave, isLoadin
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    if (!formData.destination) {
+      toast.error('Selecciona al menos un país de destino');
+      return;
+    }
     onSave(formData);
   };
 
@@ -52,13 +58,11 @@ export default function SoldTripForm({ open, onClose, soldTrip, onSave, isLoadin
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="destination">Destino *</Label>
-            <Input
-              id="destination"
+            <Label>Destino (países) *</Label>
+            <CountryMultiSelect
               value={formData.destination}
-              onChange={(e) => setFormData({ ...formData, destination: e.target.value })}
-              className="rounded-xl"
-              required
+              onChange={(v) => setFormData({ ...formData, destination: v })}
+              placeholder="Buscar y agregar países..."
             />
           </div>
 
