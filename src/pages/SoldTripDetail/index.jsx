@@ -133,27 +133,36 @@ export default function SoldTripDetail() {
   };
 
   const handleDuplicateService = (service) => {
-    // Copia el servicio dentro del mismo viaje; arranca limpio (sin pagos, estado ni reservación)
-    const copy = { ...service };
-    [
-      'id', 'created_date', 'created_by', 'updated_date', 'updated_by',
-      // El número de reservación es único de cada reserva: la copia arranca sin él
+    // OJO: la UI maneja el servicio "aplanado" (metadata fusionada al objeto + total_price).
+    // La tabla real solo tiene columnas base + metadata; reconstruimos la copia con esa
+    // forma (igual que el formulario) para que el insert no falle por columnas inexistentes.
+    const RES_FIELDS = [
       'reservation_number', 'flight_reservation_number', 'tour_reservation_number',
       'cruise_reservation_number', 'dmc_reservation_number', 'train_reservation_number',
-    ].forEach(k => delete copy[k]);
+    ];
 
-    const cleanMetadata = { ...(service.metadata || {}), reservation_status: 'reservado' };
-    delete cleanMetadata.reservation_number;
+    const metadata = { ...(service.metadata || {}) };
+    RES_FIELDS.forEach(k => delete metadata[k]);
+    metadata.reservation_status = 'reservado';
 
-    Object.assign(copy, {
+    const copy = {
+      service_type: service.service_type,
+      service_name: service.service_name,
+      sold_trip_id: service.sold_trip_id,
+      price: service.price ?? service.total_price ?? 0,
+      commission: service.commission || 0,
+      notes: service.notes || '',
+      payment_date: service.payment_date || null,
+      start_date: service.start_date || null,
+      end_date: service.end_date || null,
+      reservation_status: 'reservado',
       amount_paid_to_supplier: 0,
       paid_to_agent: false,
       paid_to_agency: false,
       paid_to_agency_date: null,
       commission_paid: false,
-      reservation_status: 'reservado',
-      metadata: cleanMetadata,
-    });
+      metadata,
+    };
 
     mutations.createServiceMutation.mutate(copy, {
       onSuccess: () => toast.success('Servicio duplicado'),
