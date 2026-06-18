@@ -56,6 +56,39 @@ const PAYMENT_METHOD_LABELS = { efectivo: 'Efectivo', transferencia: 'Transferen
 const TYPE_ORDER = ['hotel', 'vuelo', 'tren', 'traslado', 'crucero', 'tour', 'dmc', 'otro'];
 
 /* Builds a compact {title, tag, detail, price} row for any service type */
+// Fecha principal del servicio (resaltada debajo del nombre)
+function getServiceDateLabel(service) {
+  switch (service.service_type) {
+    case 'hotel':
+      if (service.check_in && service.check_out) return `${fmt(service.check_in, 'd MMM')} → ${fmt(service.check_out, 'd MMM yyyy')}`;
+      return service.check_in ? fmt(service.check_in) : '';
+    case 'vuelo':
+      return [service.flight_date && fmt(service.flight_date), (service.departure_time || service.arrival_time) && `${service.departure_time || '--'} → ${service.arrival_time || '--'}`].filter(Boolean).join('  ·  ');
+    case 'traslado':
+      return service.transfer_datetime ? format(parseDateTimeSafe(service.transfer_datetime), "d MMM yyyy · HH:mm", { locale: es }) : '';
+    case 'tren':
+      return [service.train_date && fmt(service.train_date), (service.train_departure_time || service.train_arrival_time) && `${service.train_departure_time || '--'} → ${service.train_arrival_time || '--'}`].filter(Boolean).join('  ·  ');
+    case 'crucero':
+      if (service.cruise_departure_date && service.cruise_arrival_date) return `${fmt(service.cruise_departure_date, 'd MMM')} → ${fmt(service.cruise_arrival_date, 'd MMM yyyy')}`;
+      return service.cruise_departure_date ? fmt(service.cruise_departure_date) : '';
+    case 'tour':
+      return service.tour_date ? fmt(service.tour_date) : '';
+    case 'dmc':
+      return service.dmc_date ? fmt(service.dmc_date) : '';
+    default:
+      return service.other_date ? fmt(service.other_date) : '';
+  }
+}
+
+// Momento (timestamp) para ordenar cronológicamente dentro de cada tipo
+function getServiceSortTime(service) {
+  const raw = service.check_in || service.flight_date || service.train_date
+    || service.transfer_datetime || service.cruise_departure_date || service.tour_date
+    || service.dmc_date || service.other_date;
+  const d = raw ? parseDateTimeSafe(raw) : null;
+  return d && !isNaN(d.getTime()) ? d.getTime() : Number.POSITIVE_INFINITY;
+}
+
 function buildRow(service) {
   const join = (arr) => arr.filter(Boolean).join('  ·  ');
   const price = service.total_price || 0;
@@ -68,7 +101,6 @@ function buildRow(service) {
           service.room_type,
           service.nights && `${service.nights} noche${service.nights > 1 ? 's' : ''}`,
           service.num_rooms && `${service.num_rooms} hab`,
-          service.check_in && service.check_out && `${fmt(service.check_in, 'd MMM')} → ${fmt(service.check_out, 'd MMM yyyy')}`,
           service.meal_plan && (MEAL_PLAN_LABELS[service.meal_plan] || service.meal_plan),
           service.reservation_number && `Res. ${service.reservation_number}`,
         ]), price,
@@ -79,8 +111,6 @@ function buildRow(service) {
         tag: service.route || '',
         detail: join([
           service.flight_number && `Vuelo #${service.flight_number}`,
-          service.flight_date && fmt(service.flight_date),
-          (service.departure_time || service.arrival_time) && `${service.departure_time || '--'} → ${service.arrival_time || '--'}`,
           service.flight_class,
           service.baggage_included && `Equipaje: ${service.baggage_included}`,
           service.passengers && `${service.passengers} pax`,
@@ -92,7 +122,6 @@ function buildRow(service) {
         title: `${service.transfer_origin || 'Origen'} → ${service.transfer_destination || 'Destino'}`,
         tag: service.transfer_type ? (service.transfer_type === 'privado' ? 'Privado' : 'Compartido') : '',
         detail: join([
-          service.transfer_datetime && format(parseDateTimeSafe(service.transfer_datetime), "d MMM yyyy · HH:mm", { locale: es }),
           service.vehicle,
           service.transfer_passengers && `${service.transfer_passengers} pax`,
         ]), price,
@@ -103,8 +132,6 @@ function buildRow(service) {
         tag: service.train_route || '',
         detail: join([
           service.train_number && `Tren #${service.train_number}`,
-          service.train_date && fmt(service.train_date),
-          (service.train_departure_time || service.train_arrival_time) && `${service.train_departure_time || '--'} → ${service.train_arrival_time || '--'}`,
           service.train_class,
           service.train_passengers && `${service.train_passengers} pax`,
           service.train_reservation_number && `Res. ${service.train_reservation_number}`,
@@ -117,7 +144,6 @@ function buildRow(service) {
         detail: join([
           service.cruise_itinerary,
           service.cruise_departure_port && service.cruise_arrival_port && `${service.cruise_departure_port} → ${service.cruise_arrival_port}`,
-          service.cruise_departure_date && service.cruise_arrival_date && `${fmt(service.cruise_departure_date, 'd MMM')} → ${fmt(service.cruise_arrival_date, 'd MMM yyyy')}`,
           service.cruise_nights && `${service.cruise_nights} noches`,
           service.cruise_cabin_type,
           service.cruise_passengers && `${service.cruise_passengers} pax`,
@@ -128,7 +154,6 @@ function buildRow(service) {
         title: service.tour_name || 'Experiencia',
         tag: service.tour_city || '',
         detail: join([
-          service.tour_date && fmt(service.tour_date),
           service.tour_duration,
           service.tour_people && `${service.tour_people} pax`,
           service.tour_includes,
@@ -140,7 +165,6 @@ function buildRow(service) {
         tag: service.dmc_destination || '',
         detail: join([
           service.dmc_services,
-          service.dmc_date && fmt(service.dmc_date),
           service.dmc_passengers && `${service.dmc_passengers} pax`,
           service.dmc_reservation_number && `Res. ${service.dmc_reservation_number}`,
         ]), price,
@@ -149,11 +173,16 @@ function buildRow(service) {
       return {
         title: service.other_name || 'Servicio',
         tag: '',
-        detail: join([service.other_description, service.other_date && fmt(service.other_date)]),
+        detail: service.other_description || '',
         price,
       };
   }
 }
+
+const SERVICE_GROUP_LABELS = {
+  hotel: 'Hospedaje', vuelo: 'Vuelos', tren: 'Trenes', traslado: 'Traslados',
+  crucero: 'Cruceros', tour: 'Experiencias', dmc: 'Servicios en Destino', otro: 'Otros Servicios',
+};
 
 /* Bank accounts — kept in sync with PaymentInfoModal */
 const BANK_ACCOUNTS = [
@@ -221,10 +250,25 @@ export default function InvoiceView({ open, onClose, soldTrip, services = [], cl
     (acc[s.service_type] = acc[s.service_type] || []).push(s);
     return acc;
   }, {});
-  const orderedServices = [
-    ...TYPE_ORDER.flatMap(t => servicesByType[t] || []),
-    ...Object.keys(servicesByType).filter(t => !TYPE_ORDER.includes(t)).flatMap(t => servicesByType[t]),
-  ];
+  // Servicios agrupados por tipo, cada grupo ordenado cronológicamente (hoteles por check-in)
+  const typeGroups = [
+    ...TYPE_ORDER,
+    ...Object.keys(servicesByType).filter(t => !TYPE_ORDER.includes(t)),
+  ]
+    .filter(t => servicesByType[t]?.length)
+    .map(t => ({
+      type: t,
+      label: SERVICE_GROUP_LABELS[t] || t,
+      list: [...servicesByType[t]].sort((a, b) => getServiceSortTime(a) - getServiceSortTime(b)),
+      subtotal: servicesByType[t].reduce((sum, s) => sum + (s.total_price || 0), 0),
+    }));
+
+  // Parte cada grupo en sub-bloques para que el PDF no corte filas a la mitad
+  const chunk = (arr, n) => {
+    const out = [];
+    for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n));
+    return out;
+  };
 
   const tripNights = (soldTrip.start_date && soldTrip.end_date)
     ? differenceInCalendarDays(parseDateOnlyLocal(soldTrip.end_date), parseDateOnlyLocal(soldTrip.start_date))
@@ -434,36 +478,55 @@ export default function InvoiceView({ open, onClose, soldTrip, services = [], cl
             </div>
           </div>
 
-          {/* Services table + totals */}
-          <div className="pdf-block">
-            <div style={{ padding: pad, paddingTop: 22 }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
-                <thead>
-                  <tr style={{ background: C.green }}>
-                    <th style={{ ...headCell, width: '38%' }}>Servicio / Descripción</th>
-                    <th style={{ ...headCell, width: '47%' }}>Detalle</th>
-                    <th style={{ ...headCell, width: '15%', textAlign: 'right' }}>Precio (USD)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {orderedServices.map((s, i) => {
+          {/* Servicios agrupados por tipo (cada sub-bloque pagina sin cortar filas) */}
+          {typeGroups.map((group) => (
+            chunk(group.list, 7).map((rows, ci) => (
+              <div className="pdf-block" key={`${group.type}-${ci}`}>
+                <div style={{ padding: pad, paddingTop: ci === 0 ? 24 : 0 }}>
+                  {/* Encabezado del tipo (solo en el primer sub-bloque) */}
+                  {ci === 0 && (
+                    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', borderBottom: `2px solid ${C.green}`, paddingBottom: 6 }}>
+                      <span style={{ fontFamily: SANS, fontSize: 11, fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', color: C.green }}>
+                        {group.label} · {group.list.length}
+                      </span>
+                      <span style={{ fontFamily: SANS, fontSize: 10, color: C.muted }}>
+                        Subtotal {money(group.subtotal)} USD
+                      </span>
+                    </div>
+                  )}
+
+                  {rows.map((s) => {
                     const row = buildRow(s);
+                    const dateLabel = getServiceDateLabel(s);
                     return (
-                      <tr key={i} style={{ background: i % 2 ? C.cream : C.white }}>
-                        <td style={cell}>
-                          <span style={{ fontFamily: SERIF, fontSize: 13, fontWeight: 600, color: C.ink }}>{row.title}</span>
-                          {row.tag && <span style={{ display: 'block', fontFamily: SANS, fontSize: 10, color: C.gold, marginTop: 2 }}>{row.tag}</span>}
-                        </td>
-                        <td style={{ ...cell, color: C.body, fontSize: 10.5, lineHeight: 1.5 }}>{row.detail || '—'}</td>
-                        <td style={{ ...cell, textAlign: 'right', fontWeight: 700, color: C.green, whiteSpace: 'nowrap' }}>{money(row.price)}</td>
-                      </tr>
+                      <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 16, padding: '11px 0', borderBottom: `1px solid ${C.line}` }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <p style={{ fontFamily: SERIF, fontSize: 14, fontWeight: 600, color: C.ink, margin: 0 }}>{row.title}</p>
+                          {dateLabel && (
+                            <p style={{ fontFamily: SANS, fontSize: 11, fontWeight: 600, color: C.green, margin: '3px 0 0' }}>{dateLabel}</p>
+                          )}
+                          {row.tag && (
+                            <p style={{ fontFamily: SANS, fontSize: 10.5, color: C.gold, margin: '2px 0 0' }}>{row.tag}</p>
+                          )}
+                          {row.detail && (
+                            <p style={{ fontFamily: SANS, fontSize: 10.5, color: C.body, margin: '2px 0 0', lineHeight: 1.5 }}>{row.detail}</p>
+                          )}
+                        </div>
+                        <p style={{ fontFamily: SANS, fontSize: 13.5, fontWeight: 700, color: C.green, margin: 0, whiteSpace: 'nowrap' }}>
+                          {money(row.price)} <span style={{ fontSize: 9, fontWeight: 500, color: C.muted }}>USD</span>
+                        </p>
+                      </div>
                     );
                   })}
-                </tbody>
-              </table>
+                </div>
+              </div>
+            ))
+          ))}
 
-              {/* Totals */}
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
+          {/* Totales */}
+          <div className="pdf-block">
+            <div style={{ padding: pad, paddingTop: 20 }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                 <div style={{ width: 280 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: SANS, fontSize: 12, color: C.body, padding: '6px 0' }}>
                     <span>Subtotal</span><span style={{ fontWeight: 600 }}>{money(total)} USD</span>
