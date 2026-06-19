@@ -242,14 +242,14 @@ export default function Commissions() {
     onError: () => toast.error('No se pudo actualizar la comisión')
   });
 
-  // Agente reporta que el proveedor ya pagó a la agencia.
-  // commission_paid se mantiene en sincronía porque Comisiones Internas deriva el estado de ahí.
+  // Agente reporta que el proveedor ya pagó a la agencia. Solo marca paid_to_agency;
+  // la confirmación de que el dinero llegó la hace el admin en Comisiones Internas
+  // (commission_paid), y el pago final al agente también (paid_to_agent).
   const markPaidToAgency = (service) => {
     updateServiceMutation.mutate({
       id: service.id,
       data: {
         paid_to_agency: true,
-        commission_paid: true,
         paid_to_agency_date: service.paid_to_agency_date || new Date().toISOString().split('T')[0]
       }
     });
@@ -258,7 +258,7 @@ export default function Commissions() {
   const undoPaidToAgency = (service) => {
     updateServiceMutation.mutate({
       id: service.id,
-      data: { paid_to_agency: false, commission_paid: false, paid_to_agency_date: null }
+      data: { paid_to_agency: false, paid_to_agency_date: null }
     });
   };
 
@@ -294,23 +294,24 @@ export default function Commissions() {
     return d ? d < today : false;
   };
 
-  // Clasificación de cada comisión en su etapa del ciclo de vida
+  // Clasificación de cada comisión en su etapa del ciclo de vida (5 etapas)
   const bucketOf = (service) => {
     if (service.paid_to_agent) return 'cobradas';
-    if (service.paid_to_agency || service.commission_paid) return 'pagadas_agencia';
+    if (service.commission_paid) return 'confirmadas';     // admin confirmó que la agencia recibió
+    if (service.paid_to_agency) return 'pagadas_agencia';  // el agente reportó, falta confirmar
     return tripEnded(tripsMap[service.sold_trip_id]) ? 'por_cobrar' : 'proximas';
   };
 
   const commissionServices = allServices.filter(s => (s.commission || 0) > 0);
 
-  const buckets = { proximas: [], por_cobrar: [], pagadas_agencia: [], cobradas: [] };
+  const buckets = { proximas: [], por_cobrar: [], pagadas_agencia: [], confirmadas: [], cobradas: [] };
   commissionServices.forEach(s => buckets[bucketOf(s)].push(s));
 
   // ---- Stats globales (no cambian con búsqueda ni pestaña) ----
   const sumCommission = (list) => list.reduce((sum, s) => sum + (s.commission || 0), 0);
   const totalComisiones = sumCommission(commissionServices);
   const miParteTotal = totalComisiones * AGENT_RATE;
-  const porCobrarTotal = (sumCommission(buckets.por_cobrar) + sumCommission(buckets.pagadas_agencia)) * AGENT_RATE;
+  const porCobrarTotal = (sumCommission(buckets.por_cobrar) + sumCommission(buckets.pagadas_agencia) + sumCommission(buckets.confirmadas)) * AGENT_RATE;
   const cobradasTotal = sumCommission(buckets.cobradas) * AGENT_RATE;
 
   // Nivel actual del agente según lo cobrado
@@ -378,6 +379,7 @@ export default function Commissions() {
     { key: 'proximas', label: 'Próximas' },
     { key: 'por_cobrar', label: 'Por cobrar' },
     { key: 'pagadas_agencia', label: 'Pagadas a agencia' },
+    { key: 'confirmadas', label: 'Confirmadas' },
     { key: 'cobradas', label: 'Cobradas' },
   ];
 
@@ -497,7 +499,7 @@ export default function Commissions() {
           )}
           {bucket === 'pagadas_agencia' && (
             <div className="flex items-center gap-1">
-              <span className="text-[10px] font-bold tracking-wider px-2.5 py-1 rounded-md bg-amber-50 text-amber-600">POR CONCILIAR</span>
+              <span className="text-[10px] font-bold tracking-wider px-2.5 py-1 rounded-md bg-amber-50 text-amber-600">POR CONFIRMAR</span>
               <button
                 onClick={() => undoPaidToAgency(service)}
                 title="Deshacer"
@@ -506,6 +508,9 @@ export default function Commissions() {
                 <Undo2 className="w-3.5 h-3.5" />
               </button>
             </div>
+          )}
+          {bucket === 'confirmadas' && (
+            <span className="text-[10px] font-bold tracking-wider px-2.5 py-1 rounded-md bg-blue-50 text-blue-600">LISTA PARA PAGO</span>
           )}
           {bucket === 'cobradas' && (
             <span className="text-[10px] font-bold tracking-wider px-2.5 py-1 rounded-md bg-green-50 text-green-600">COBRADA</span>
@@ -617,10 +622,18 @@ export default function Commissions() {
         </div>
       )}
       {activeTab === 'pagadas_agencia' && (
-        <div className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+        <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
           <p className="text-sm text-amber-800">
-            <strong>{buckets.pagadas_agencia.length}</strong> comisión{buckets.pagadas_agencia.length !== 1 ? 'es' : ''} en conciliación con administración
+            <strong>{buckets.pagadas_agencia.length}</strong> comisión{buckets.pagadas_agencia.length !== 1 ? 'es' : ''} esperando que administración confirme la recepción del pago
             · Mi parte: <strong>{money(sumCommission(buckets.pagadas_agencia) * AGENT_RATE)}</strong>
+          </p>
+        </div>
+      )}
+      {activeTab === 'confirmadas' && (
+        <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-xl px-4 py-3">
+          <p className="text-sm text-blue-800">
+            <strong>{buckets.confirmadas.length}</strong> comisión{buckets.confirmadas.length !== 1 ? 'es' : ''} confirmada{buckets.confirmadas.length !== 1 ? 's' : ''} por administración, lista{buckets.confirmadas.length !== 1 ? 's' : ''} para cobro
+            · Mi parte: <strong>{money(sumCommission(buckets.confirmadas) * AGENT_RATE)}</strong>
           </p>
           {visibleServices.length > 0 && (
             <Button
@@ -743,7 +756,7 @@ export default function Commissions() {
       <AgentInvoiceGenerator
         open={invoiceDialogOpen}
         onClose={() => setInvoiceDialogOpen(false)}
-        services={activeTab === 'pagadas_agencia' ? visibleServices : []}
+        services={activeTab === 'confirmadas' ? visibleServices : []}
         soldTrips={soldTrips}
         currentUser={user}
       />
