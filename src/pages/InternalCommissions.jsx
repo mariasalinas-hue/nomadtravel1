@@ -112,6 +112,7 @@ export default function InternalCommissions() {
   const [dateTo, setDateTo] = useState('');
   const [sortOrder, setSortOrder] = useState('asc');
   const [expanded, setExpanded] = useState(() => new Set());
+  const [expandedTrips, setExpandedTrips] = useState(() => new Set());
   const [selected, setSelected] = useState([]); // service ids (solo en "Por pagar")
   const [invoiceOpen, setInvoiceOpen] = useState(false);
 
@@ -130,10 +131,52 @@ export default function InternalCommissions() {
     queryFn: () => supabaseAPI.entities.User.list(),
   });
 
+  const tripIdSet = useMemo(() => new Set(soldTrips.map(t => t.id)), [soldTrips]);
+  const { data: clientPayments = [] } = useQuery({
+    queryKey: ['allClientPayments', 'internal'],
+    queryFn: async () => {
+      const all = await supabaseAPI.entities.ClientPayment.list();
+      return all.filter(p => tripIdSet.has(p.sold_trip_id));
+    },
+    enabled: soldTrips.length > 0,
+  });
+  const { data: supplierPayments = [] } = useQuery({
+    queryKey: ['allSupplierPayments', 'internal'],
+    queryFn: async () => {
+      const all = await supabaseAPI.entities.SupplierPayment.list();
+      return all.filter(p => tripIdSet.has(p.sold_trip_id));
+    },
+    enabled: soldTrips.length > 0,
+  });
+
   const isLoading = loadingTrips || loadingServices;
 
   const tripsMap = useMemo(() => soldTrips.reduce((a, t) => { a[t.id] = t; return a; }, {}), [soldTrips]);
   const usersByEmail = useMemo(() => users.reduce((a, u) => { a[(u.email || '').toLowerCase()] = u; return a; }, {}), [users]);
+
+  // Resumen financiero por viaje: comisión bruta/neta y saldo en cuenta.
+  // Saldo = lo que el cliente pagó a Nomad − lo que Nomad pagó a proveedores.
+  // Se EXCLUYE lo pagado con tarjeta del cliente (ese dinero no pasa por la cuenta de Nomad).
+  const tripFinancials = useMemo(() => {
+    const map = {};
+    const ensure = (id) => (map[id] = map[id] || { gross: 0, net: 0, clientIn: 0, nomadOut: 0 });
+    tripServices.forEach(s => {
+      if (!(s.commission > 0)) return;
+      const e = ensure(s.sold_trip_id);
+      if (s.payment_type === 'neto') e.net += s.commission;
+      else e.gross += s.commission;
+    });
+    clientPayments.forEach(p => {
+      if (p.method === 'tarjeta_cliente') return;
+      ensure(p.sold_trip_id).clientIn += (p.amount_usd_fixed || p.amount || 0);
+    });
+    supplierPayments.forEach(p => {
+      if (p.method === 'tarjeta_cliente') return;
+      ensure(p.sold_trip_id).nomadOut += (p.amount || 0);
+    });
+    Object.values(map).forEach(e => { e.saldo = e.clientIn - e.nomadOut; });
+    return map;
+  }, [tripServices, clientPayments, supplierPayments]);
 
   const updateServiceMutation = useMutation({
     mutationFn: ({ id, data }) => supabaseAPI.entities.TripService.update(id, data),
@@ -232,6 +275,23 @@ export default function InternalCommissions() {
 
   const toggleAgent = (agent) => setExpanded(prev => {
     const n = new Set(prev); n.has(agent) ? n.delete(agent) : n.add(agent); return n;
+  });
+  const toggleTrip = (tripId) => setExpandedTrips(prev => {
+    const n = new Set(prev); n.has(tripId) ? n.delete(tripId) : n.add(tripId); return n;
+  });
+
+  // Subagrupar las filas de un agente por viaje
+  const tripSubgroups = (list) => Object.values(
+    list.reduce((acc, r) => {
+      const id = r.trip?.id || r.service.sold_trip_id;
+      if (!acc[id]) acc[id] = { tripId: id, trip: r.trip, rows: [] };
+      acc[id].rows.push(r);
+      return acc;
+    }, {})
+  ).sort((a, b) => {
+    const da = a.trip ? (parseLocalDate(a.trip.end_date || a.trip.start_date) || new Date(0)) : new Date(0);
+    const db = b.trip ? (parseLocalDate(b.trip.end_date || b.trip.start_date) || new Date(0)) : new Date(0);
+    return sortOrder === 'asc' ? da - db : db - da;
   });
 
   const toggleSelect = (id) => setSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
@@ -492,7 +552,68 @@ export default function InternalCommissions() {
                   <p className="text-sm font-bold" style={{ color: '#2E442A' }}>{money(sumAgent(list))}</p>
                 </div>
               </button>
-              {isOpen && sortedRows(list).map(renderRow)}
+              {isOpen && tripSubgroups(list).map(({ tripId, trip, rows }) => {
+                const tripOpen = expandedTrips.has(tripId);
+                const tripTotal = sumTotal(rows);
+                const refDate = trip?.end_date || trip?.start_date;
+                const fin = tripFinancials[tripId] || { gross: 0, net: 0, clientIn: 0, nomadOut: 0, saldo: 0 };
+                const matchesNet = Math.abs(fin.saldo - fin.net) < 1;
+                return (
+                  <div key={tripId} className="border-t border-stone-100 bg-stone-50/30">
+                    <button onClick={() => toggleTrip(tripId)} className="w-full flex items-center gap-3 pl-10 pr-4 py-2.5 hover:bg-stone-100/60 transition-colors text-left">
+                      <span className="w-5 flex justify-center text-stone-300">
+                        {tripOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-stone-700 truncate">
+                          {trip ? `${trip.client_name} ${trip.destination || ''}`.trim() : 'Viaje'}
+                          {trip?.trip_name ? ` — ${trip.trip_name}` : ''}
+                        </p>
+                        <p className="text-xs text-stone-400">
+                          {rows.length} comisión{rows.length !== 1 ? 'es' : ''}{refDate ? ` · ${formatDate(refDate, 'yyyy-MM-dd')}` : ''}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-stone-400">Total</p>
+                        <p className="text-sm font-bold text-stone-700">{money(tripTotal)}</p>
+                      </div>
+                      <div className="text-right w-24">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-stone-400">Parte agente</p>
+                        <p className="text-sm font-bold" style={{ color: '#2E442A' }}>{money(sumAgent(rows))}</p>
+                      </div>
+                    </button>
+
+                    {tripOpen && sortedRows(rows).map(renderRow)}
+
+                    {tripOpen && (
+                      <div className="pl-12 pr-4 py-3 border-t border-stone-100 bg-white">
+                        <div className="flex flex-wrap items-stretch gap-2">
+                          <div className="flex-1 min-w-[130px] rounded-lg bg-orange-50 border border-orange-100 px-3 py-2">
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-orange-400">Comisión bruta</p>
+                            <p className="text-sm font-bold text-orange-600">{money(fin.gross)}</p>
+                          </div>
+                          <div className="flex-1 min-w-[130px] rounded-lg bg-green-50 border border-green-100 px-3 py-2">
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-green-500">Comisión neta</p>
+                            <p className="text-sm font-bold text-green-700">{money(fin.net)}</p>
+                          </div>
+                          <div className={`flex-1 min-w-[180px] rounded-lg border px-3 py-2 ${matchesNet ? 'bg-emerald-50 border-emerald-200' : 'bg-stone-50 border-stone-200'}`}>
+                            <div className="flex items-center justify-between">
+                              <p className="text-[10px] font-bold uppercase tracking-wider text-stone-500">Saldo en cuenta</p>
+                              {matchesNet
+                                ? <Check className="w-3.5 h-3.5 text-emerald-500" />
+                                : <span className="text-[10px] text-stone-400">vs neto {money(fin.net)}</span>}
+                            </div>
+                            <p className={`text-sm font-bold ${fin.saldo < 0 ? 'text-red-600' : 'text-stone-800'}`}>{money(fin.saldo)}</p>
+                            <p className="text-[10px] text-stone-400 leading-tight mt-0.5">
+                              Cliente pagó {money(fin.clientIn)} − Nomad pagó {money(fin.nomadOut)}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           );
         })}
