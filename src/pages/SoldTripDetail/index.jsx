@@ -24,6 +24,7 @@ import SupplierPaymentForm from '@/components/soldtrips/SupplierPaymentForm';
 import PaymentPlanForm from '@/components/soldtrips/PaymentPlanForm';
 import EditPaymentPlanItem from '@/components/soldtrips/EditPaymentPlanItem';
 import InvoiceView from '@/components/soldtrips/InvoiceView';
+import ShareTripModal from '@/components/soldtrips/ShareTripModal';
 import SoldTripForm from '@/components/soldtrips/SoldTripForm';
 import TripNotesList from '@/components/soldtrips/TripNotesList';
 import TripDocumentsList from '@/components/soldtrips/TripDocumentsList';
@@ -56,6 +57,7 @@ export default function SoldTripDetail() {
   const [editingSupplierPayment, setEditingSupplierPayment] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [invoiceOpen, setInvoiceOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('services');
   const [paymentPlanOpen, setPaymentPlanOpen] = useState(false);
   const [editingPlanItem, setEditingPlanItem] = useState(null);
@@ -255,6 +257,7 @@ export default function SoldTripDetail() {
         onEditTrip={() => setEditTripOpen(true)}
         onCreatePaymentPlan={() => setPaymentPlanOpen(true)}
         onOpenInvoice={() => setInvoiceOpen(true)}
+        onShare={() => setShareOpen(true)}
         onUpdateStatus={(status) => mutations.updateTripMutation.mutate({ status })}
       />
 
@@ -533,6 +536,19 @@ export default function SoldTripDetail() {
         soldTrip={soldTrip}
         services={services}
         clientPayments={clientPayments}
+      />
+
+      <ShareTripModal
+        open={shareOpen}
+        onClose={() => setShareOpen(false)}
+        soldTrip={soldTrip}
+        isLoading={mutations.updateTripMutation.isPending}
+        onSave={(sharedEmails) => {
+          mutations.updateTripMutation.mutate(
+            { metadata: { ...(soldTrip?.metadata || {}), shared_with: sharedEmails } },
+            { onSuccess: () => { setShareOpen(false); toast.success('Acceso actualizado'); } }
+          );
+        }}
       />
 
       <SoldTripForm

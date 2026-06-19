@@ -1,13 +1,10 @@
-import React, { memo } from 'react';
+import { memo } from 'react';
 import { Link } from 'react-router-dom';
 import { es } from 'date-fns/locale';
-import { ArrowLeft, MapPin, Calendar, Users, Edit2, FileText, Clock, Hash } from 'lucide-react';
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { ArrowLeft, MapPin, Calendar, Users, Edit2, FileText, Clock, Hash, Share2 } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { createPageUrl } from '@/utils';
 import { formatDate } from '@/components/utils/dateHelpers';
-import { STATUS_CONFIG } from '../constants/serviceConstants';
 
 const STATUS_LUXURY = {
   pendiente: { label: 'Pendiente',   bg: '#FEF3C7', color: '#92400E', dot: '#F59E0B' },
@@ -59,8 +56,9 @@ DaysUntilBadge.displayName = 'DaysUntilBadge';
 
 export default function TripHeader({
   soldTrip, paymentPlan, daysUntilTrip, isTripPast,
-  onEditTrip, onCreatePaymentPlan, onOpenInvoice, onUpdateStatus
+  onEditTrip, onCreatePaymentPlan, onOpenInvoice, onUpdateStatus, onShare
 }) {
+  const sharedCount = Array.isArray(soldTrip.metadata?.shared_with) ? soldTrip.metadata.shared_with.length : 0;
   const clientNames = soldTrip.metadata?.clients?.length > 1
     ? soldTrip.metadata.clients.map(c => c.name).join(' & ')
     : soldTrip.client_name;
@@ -165,6 +163,16 @@ export default function TripHeader({
               <FileText className="w-3.5 h-3.5" /> Invoice
             </button>
 
+            <button
+              onClick={onShare}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors"
+              style={{ background: '#F5F5F7', color: '#3C3C43', border: '1px solid rgba(0,0,0,0.06)' }}
+              onMouseEnter={e => e.currentTarget.style.background = '#EBEBED'}
+              onMouseLeave={e => e.currentTarget.style.background = '#F5F5F7'}
+            >
+              <Share2 className="w-3.5 h-3.5" /> Compartir{sharedCount > 0 ? ` (${sharedCount})` : ''}
+            </button>
+
             <Select value={soldTrip.status} onValueChange={onUpdateStatus}>
               <SelectTrigger className="h-8 w-36 text-xs rounded-lg"
                              style={{ border: '1px solid rgba(0,0,0,0.1)', background: '#FAFAFA' }}>
@@ -195,6 +203,13 @@ export default function TripHeader({
             style={{ background: '#F5F5F7', color: '#3C3C43', border: '1px solid rgba(0,0,0,0.06)' }}
           >
             <FileText className="w-3.5 h-3.5" /> Invoice
+          </button>
+          <button
+            onClick={onShare}
+            className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium"
+            style={{ background: '#F5F5F7', color: '#3C3C43', border: '1px solid rgba(0,0,0,0.06)' }}
+          >
+            <Share2 className="w-3.5 h-3.5" /> Compartir{sharedCount > 0 ? ` (${sharedCount})` : ''}
           </button>
           <Select value={soldTrip.status} onValueChange={onUpdateStatus}>
             <SelectTrigger className="flex-1 h-8 text-xs rounded-lg"

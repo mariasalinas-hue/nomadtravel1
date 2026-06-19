@@ -1,7 +1,7 @@
-import React, { useState, useContext } from 'react';
+import { useState, useContext } from 'react';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
-import { supabaseAPI } from '@/api/supabaseClient';
+import { supabaseAPI, supabase } from '@/api/supabaseClient';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ViewModeContext } from '@/Layout';
 import { useSpoofableUser } from '@/contexts/SpoofContext';
@@ -74,7 +74,18 @@ export default function SoldTrips() {
     queryFn: async () => {
       if (!user) return [];
       if (isAdmin) return supabaseAPI.entities.SoldTrip.list('-created_date');
-      return supabaseAPI.entities.SoldTrip.filter({ created_by: user.email });
+
+      // Viajes propios + viajes compartidos conmigo (metadata.shared_with contiene mi correo)
+      const email = (user.email || '').toLowerCase();
+      const owned = await supabaseAPI.entities.SoldTrip.filter({ created_by: user.email });
+      const { data: shared } = await supabase
+        .from('sold_trips')
+        .select('*')
+        .eq('is_deleted', false)
+        .contains('metadata', { shared_with: [email] });
+      const byId = new Map(owned.map(t => [t.id, t]));
+      (shared || []).forEach(t => { if (!byId.has(t.id)) byId.set(t.id, { ...t, __sharedWithMe: true }); });
+      return Array.from(byId.values());
     },
     enabled: !!user,
     staleTime: 0,
@@ -323,6 +334,11 @@ export default function SoldTrips() {
                                 <StatusIcon className="w-3 h-3 mr-1" />
                                 {statusConfig.label}
                               </Badge>
+                              {trip.created_by && user?.email && trip.created_by.toLowerCase() !== user.email.toLowerCase() && (
+                                <Badge className="bg-blue-100 text-blue-700 font-medium text-xs flex-shrink-0 rounded-full shadow-sm">
+                                  Compartido
+                                </Badge>
+                              )}
                             </div>
                             {trip.file_number && (
                               <div className="flex items-center gap-1 mb-1">
