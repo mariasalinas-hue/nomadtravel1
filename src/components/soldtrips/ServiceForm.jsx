@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Check, ChevronsUpDown } from 'lucide-react';
+import { Loader2, Check, ChevronsUpDown, Sparkles, Upload } from 'lucide-react';
 import { differenceInDays } from 'date-fns';
 import { formatDate } from '@/lib/dateUtils';
 import { es } from 'date-fns/locale';
@@ -13,6 +13,8 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { useServiceDropdownOptions } from '@/hooks/useServiceDropdownOptions';
+import { supabaseAPI, supabase } from '@/api/supabaseClient';
+import { toast } from 'sonner';
 
 const SERVICE_TYPES = [
   { value: 'hotel', label: 'Hotel' },
@@ -356,6 +358,7 @@ export default function ServiceForm({ open, onClose, service, soldTripId, onSave
     local_amount: 0
   });
   const [convertingCurrency, setConvertingCurrency] = useState(false);
+  const [aiLoading, setAiLoading] = useState(false);
 
   useEffect(() => {
     if (service) {
@@ -527,6 +530,47 @@ export default function ServiceForm({ open, onClose, service, soldTripId, onSave
 
   const updateField = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  // Autollenar el formulario a partir de una foto/PDF (confirmación, voucher, etc.)
+  const handleAIExtract = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // permite re-subir el mismo archivo
+    if (!file) return;
+
+    setAiLoading(true);
+    try {
+      const { file_url } = await supabaseAPI.storage.uploadFile(file, 'documents');
+      const { data, error } = await supabase.functions.invoke('extractServiceData', {
+        body: { file_urls: [file_url] },
+      });
+      if (error) throw error;
+      const svc = data?.service;
+      if (!svc || typeof svc !== 'object') {
+        toast.error('No se pudieron extraer datos del archivo');
+        return;
+      }
+
+      // Solo aplicamos llaves con valor; el agente revisa y ajusta antes de guardar.
+      const cleaned = {};
+      Object.entries(svc).forEach(([k, v]) => {
+        if (v !== null && v !== undefined && v !== '') cleaned[k] = v;
+      });
+      ['total_price', 'commission', 'local_amount'].forEach((k) => {
+        if (cleaned[k] !== undefined) cleaned[k] = parseFloat(cleaned[k]) || 0;
+      });
+      if (cleaned.local_currency && cleaned.local_currency !== 'USD') {
+        cleaned.local_amount = cleaned.local_amount ?? cleaned.total_price ?? 0;
+      }
+
+      setFormData(prev => ({ ...prev, ...cleaned }));
+      toast.success('Datos extraídos — revísalos antes de guardar');
+    } catch (err) {
+      console.error('Error extracting service data:', err);
+      toast.error('Error al analizar el archivo');
+    } finally {
+      setAiLoading(false);
+    }
   };
 
   const handleChainChange = (chain) => {
@@ -1592,6 +1636,33 @@ export default function ServiceForm({ open, onClose, service, soldTripId, onSave
             {service ? 'Editar Servicio' : 'Nuevo Servicio'}
           </DialogTitle>
         </DialogHeader>
+
+        {/* Autollenar con AI desde foto o PDF */}
+        <label
+          className={`mt-4 flex items-center gap-3 px-4 py-3 rounded-xl border border-dashed cursor-pointer transition-colors ${aiLoading ? 'opacity-70 pointer-events-none' : 'hover:bg-stone-50'}`}
+          style={{ borderColor: 'rgba(201,168,76,0.6)', background: 'rgba(201,168,76,0.06)' }}
+        >
+          <input
+            type="file"
+            accept="image/*,application/pdf"
+            className="hidden"
+            onChange={handleAIExtract}
+            disabled={aiLoading}
+          />
+          <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
+               style={{ background: 'linear-gradient(135deg, #C9A84C, #DFC078)' }}>
+            {aiLoading ? <Loader2 className="w-4 h-4 text-white animate-spin" /> : <Sparkles className="w-4 h-4 text-white" />}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-stone-800">
+              {aiLoading ? 'Analizando archivo…' : 'Autollenar con AI'}
+            </p>
+            <p className="text-xs text-stone-500">
+              Sube una foto o PDF (confirmación, voucher, factura) y completamos los campos por ti.
+            </p>
+          </div>
+          {!aiLoading && <Upload className="w-4 h-4 text-stone-400 flex-shrink-0" />}
+        </label>
 
         <form onSubmit={handleSubmit} className="space-y-5 mt-4">
           {/* Service Type */}
