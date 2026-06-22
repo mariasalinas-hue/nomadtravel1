@@ -256,6 +256,13 @@ export function useTripMutations(tripId, services, clientPayments, supplierPayme
     }
   });
 
+  const updateDocumentMutation = useMutation({
+    mutationFn: ({ id, data }) => supabaseAPI.entities.TripDocumentFile.update(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tripDocuments', tripId] });
+    }
+  });
+
   // Reminders Mutations
   const createRemindersMutation = useMutation({
     mutationFn: (reminders) => {
@@ -295,6 +302,7 @@ export function useTripMutations(tripId, services, clientPayments, supplierPayme
     deleteNoteMutation,
     createDocumentMutation,
     deleteDocumentMutation,
+    updateDocumentMutation,
     createRemindersMutation,
     updateReminderMutation
   };

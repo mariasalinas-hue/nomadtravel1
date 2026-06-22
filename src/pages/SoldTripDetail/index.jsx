@@ -417,6 +417,7 @@ export default function SoldTripDetail() {
               soldTripId={tripId}
               onCreate={(data) => mutations.createDocumentMutation.mutate(data)}
               onDelete={(id) => mutations.deleteDocumentMutation.mutate(id)}
+              onUpdate={(id, data) => mutations.updateDocumentMutation.mutate({ id, data })}
               isLoading={mutations.createDocumentMutation.isPending}
             />
           </div>
