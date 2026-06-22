@@ -201,6 +201,13 @@ export default function InternalCommissions() {
   const payAgent = (s) => setFlags(s, { paid_to_agency: true, commission_paid: true, paid_to_agent: true }, 'Pagada al agente');
   const undoPay = (s) => setFlags(s, { paid_to_agent: false });
 
+  // Corregir el tipo de comisión (neto / bruto) servicio por servicio
+  const setPaymentType = (s, value) => setFlags(
+    s,
+    { payment_type: value === 'sin' ? null : value },
+    value === 'neto' ? 'Marcada como NETA' : value === 'bruto' ? 'Marcada como BRUTA' : 'Tipo quitado'
+  );
+
   // ---- Filas derivadas de los servicios ----
   const rows = useMemo(() => {
     return tripServices
@@ -339,7 +346,6 @@ export default function InternalCommissions() {
     const s = r.service;
     const Icon = SERVICE_ICONS[s.service_type] || Package;
     const iconColors = SERVICE_ICON_COLORS[s.service_type] || SERVICE_ICON_COLORS.otro;
-    const isNeto = s.payment_type === 'neto';
     const channel = getChannel(s);
 
     return (
@@ -362,10 +368,26 @@ export default function InternalCommissions() {
           </p>
         </div>
 
-        <div className="w-14 flex-shrink-0 hidden md:block">
-          <span className={`text-[10px] font-bold tracking-wider ${isNeto ? 'text-green-600' : 'text-orange-500'}`}>
-            {isNeto ? 'NETO' : 'BRUTO'}
-          </span>
+        <div className="w-24 flex-shrink-0 hidden md:block" onClick={(e) => e.stopPropagation()}>
+          <Select value={s.payment_type || 'sin'} onValueChange={(v) => setPaymentType(s, v)}>
+            <SelectTrigger
+              className={`h-6 px-2 rounded-md text-[10px] font-bold tracking-wider ${
+                s.payment_type === 'neto'
+                  ? 'border-green-200 bg-green-50 text-green-600'
+                  : s.payment_type === 'bruto'
+                    ? 'border-orange-200 bg-orange-50 text-orange-600'
+                    : 'border-amber-200 bg-amber-50 text-amber-600'
+              }`}
+              title="Tipo de comisión"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="neto">NETO</SelectItem>
+              <SelectItem value="bruto">BRUTO</SelectItem>
+              <SelectItem value="sin">Sin tipo</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
         <div className="w-20 flex-shrink-0 hidden lg:block">
@@ -520,7 +542,7 @@ export default function InternalCommissions() {
           <span className="w-7 flex-shrink-0" />
           <span className="w-8 flex-shrink-0" />
           <span className="flex-1 min-w-0 text-[10px] font-bold uppercase tracking-wider text-stone-400">Servicio · Viaje</span>
-          <span className="w-14 flex-shrink-0 hidden md:block text-[10px] font-bold uppercase tracking-wider text-stone-400">Tipo</span>
+          <span className="w-24 flex-shrink-0 hidden md:block text-[10px] font-bold uppercase tracking-wider text-stone-400">Tipo</span>
           <span className="w-20 flex-shrink-0 hidden lg:block text-[10px] font-bold uppercase tracking-wider text-stone-400">IATA</span>
           <span className="w-24 flex-shrink-0 hidden lg:block text-[10px] font-bold uppercase tracking-wider text-stone-400">Canal</span>
           <span className="w-20 flex-shrink-0 hidden sm:block text-right text-[10px] font-bold uppercase tracking-wider text-stone-400">Comisión</span>
