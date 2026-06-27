@@ -7,13 +7,14 @@ import { updateSoldTripTotalsFromServices } from '@/components/utils/soldTripRec
 import { toast } from 'sonner';
 import {
   Loader2, Search, DollarSign, Users, Calendar, ArrowUpDown, Check, Undo2,
-  ChevronDown, ChevronUp, FileText,
+  ChevronDown, ChevronUp, FileText, Save,
   Hotel, Plane, Car, Compass, Ship, Train, Briefcase, Package,
 } from 'lucide-react';
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
+import { useServiceDropdownOptions } from '@/hooks/useServiceDropdownOptions';
 import AgentCommissionInvoice from '@/components/commissions/AgentCommissionInvoice';
 
 // ---- Misma lógica de cálculo y etiquetas que "Mis Comisiones" (fuente única) ----
@@ -30,7 +31,61 @@ const splitFor = (service) => {
 
 const money = (n) => `$${Math.round(n).toLocaleString()}`;
 
-const IATA_LABELS = { montecito: 'Montecito', iata_nomad: 'IATA Nomad', nomad: 'IATA Nomad' };
+// ---- Opciones editables de IATA y Canal (espejo de ServiceForm) ----
+const IATA_OPTIONS = [
+  { value: 'iata_nomad', label: 'Nomad' },
+  { value: 'montecito', label: 'Montecito' },
+];
+
+const FLIGHT_CONSOLIDATOR_OPTIONS = {
+  montecito: [{ value: 'ytc', label: 'YTC' }],
+  iata_nomad: [
+    { value: 'directo', label: 'Directo' },
+    { value: 'ez_travel', label: 'EZ Travel' },
+    { value: 'lozano_travel', label: 'Lozano Travel' },
+    { value: 'consofly', label: 'Consofly' },
+  ],
+};
+const RESERVED_BY_OPTIONS = [
+  { value: 'virtuoso', label: 'Virtuoso' },
+  { value: 'preferred_partner', label: 'Preferred Partner' },
+  { value: 'tbo', label: 'TBO' },
+  { value: 'expedia_taap', label: 'Expedia TAAP' },
+  { value: 'ratehawk', label: 'RateHawk' },
+  { value: 'tablet_hotels', label: 'Tablet Hotels' },
+  { value: 'dmc', label: 'DMC' },
+  { value: 'otro', label: 'Otro' },
+];
+const CRUISE_PROVIDER_OPTIONS = [
+  { value: 'creative_travel', label: 'Creative Travel' },
+  { value: 'directo', label: 'Directo' },
+  { value: 'international_cruises', label: 'International Cruises' },
+  { value: 'cruceros_57', label: 'Cruceros 57' },
+  { value: 'pema', label: 'PeMA' },
+];
+const TRAIN_PROVIDER_OPTIONS = [
+  { value: 'rail_europe', label: 'Rail Europe' },
+  { value: 'omio', label: 'Omio' },
+  { value: 'klook', label: 'Klook' },
+];
+
+// Campo donde se guarda el "canal" según el tipo de servicio.
+const CHANNEL_FIELD_BY_TYPE = {
+  hotel: 'reserved_by', vuelo: 'flight_consolidator', crucero: 'cruise_provider', tren: 'train_provider',
+};
+const channelFieldFor = (service) => CHANNEL_FIELD_BY_TYPE[service.service_type] || null;
+const channelValueOf = (service) => {
+  const field = channelFieldFor(service);
+  if (!field) return '';
+  return service[field] || service.metadata?.[field] || '';
+};
+// 'nomad' es un alias histórico de 'iata_nomad'.
+const normIata = (v) => (v === 'nomad' ? 'iata_nomad' : (v || 'iata_nomad'));
+// Combina opciones estáticas con las personalizadas, deduplicando por value.
+const mergeOpts = (staticList, custom = []) => {
+  const seen = new Set(staticList.map(o => o.value));
+  return [...staticList, ...custom.filter(o => o.value && !seen.has(o.value))];
+};
 
 const RESERVED_BY_LABELS = {
   virtuoso: 'Virtuoso', preferred_partner: 'Preferred Partner', tbo: 'TBO',
@@ -71,16 +126,6 @@ const getServiceName = (service) => {
   }
 };
 
-const getChannel = (service) => {
-  const m = service.metadata || {};
-  const raw = service.reserved_by || m.reserved_by
-    || service.flight_consolidator || m.flight_consolidator
-    || service.cruise_provider || m.cruise_provider
-    || service.train_provider || m.train_provider;
-  if (!raw) return '—';
-  return CHANNEL_LABELS[raw] || raw;
-};
-
 // 5 etapas del ciclo de vida — idéntico a Mis Comisiones
 const today = new Date();
 today.setHours(0, 0, 0, 0);
@@ -115,8 +160,11 @@ export default function InternalCommissions() {
   const [expandedTrips, setExpandedTrips] = useState(() => new Set());
   const [selected, setSelected] = useState([]); // service ids (solo en "Por pagar")
   const [invoiceOpen, setInvoiceOpen] = useState(false);
+  const [edits, setEdits] = useState({}); // { [serviceId]: { booked_by?, channel? } } — IATA / Canal pendientes
 
   const queryClient = useQueryClient();
+
+  const { data: customOptions = [] } = useServiceDropdownOptions();
 
   const { data: soldTrips = [], isLoading: loadingTrips } = useQuery({
     queryKey: ['soldTrips'],
@@ -153,6 +201,78 @@ export default function InternalCommissions() {
 
   const tripsMap = useMemo(() => soldTrips.reduce((a, t) => { a[t.id] = t; return a; }, {}), [soldTrips]);
   const usersByEmail = useMemo(() => users.reduce((a, u) => { a[(u.email || '').toLowerCase()] = u; return a; }, {}), [users]);
+
+  // Opciones de Canal: estáticas + personalizadas (ServiceDropdownOption), agrupadas por categoría.
+  const customByCat = useMemo(() => {
+    const m = {};
+    customOptions.filter(o => o.is_active).forEach(o => {
+      if (!m[o.category]) m[o.category] = [];
+      m[o.category].push({ value: o.value, label: o.label });
+    });
+    return m;
+  }, [customOptions]);
+  const mergedReservedBy = useMemo(() => mergeOpts(RESERVED_BY_OPTIONS, customByCat.hotel_reserved_by), [customByCat]);
+  const mergedCruiseProviders = useMemo(() => mergeOpts(CRUISE_PROVIDER_OPTIONS, customByCat.cruise_provider), [customByCat]);
+  const mergedTrainProviders = useMemo(() => mergeOpts(TRAIN_PROVIDER_OPTIONS, customByCat.train_provider), [customByCat]);
+  const mergedConsolidators = useMemo(() => ({
+    montecito: FLIGHT_CONSOLIDATOR_OPTIONS.montecito,
+    iata_nomad: mergeOpts(FLIGHT_CONSOLIDATOR_OPTIONS.iata_nomad, customByCat.flight_consolidator_nomad),
+  }), [customByCat]);
+
+  const channelOptionsFor = (service, bookedBy) => {
+    switch (service.service_type) {
+      case 'hotel': return mergedReservedBy;
+      case 'vuelo': return mergedConsolidators[normIata(bookedBy)] || [];
+      case 'crucero': return mergedCruiseProviders;
+      case 'tren': return mergedTrainProviders;
+      default: return [];
+    }
+  };
+
+  // Valores efectivos (pendientes si los hay, si no los guardados) y estado "sucio".
+  const effBookedBy = (s) => normIata(edits[s.id]?.booked_by ?? (s.booked_by || s.metadata?.booked_by));
+  const effChannel = (s) => edits[s.id]?.channel ?? channelValueOf(s);
+  const isRowDirty = (s) => {
+    if (!edits[s.id]) return false;
+    const curIata = normIata(s.booked_by || s.metadata?.booked_by);
+    const channelChanged = channelFieldFor(s) && effChannel(s) !== channelValueOf(s);
+    return effBookedBy(s) !== curIata || channelChanged;
+  };
+
+  const changeIata = (s, value) => setEdits(prev => {
+    const cur = prev[s.id] || {};
+    const next = { ...cur, booked_by: value };
+    // Espejo de ServiceForm: en vuelos, Montecito usa YTC y al salir de Montecito se limpia.
+    if (s.service_type === 'vuelo') {
+      if (value === 'montecito') next.channel = 'ytc';
+      else if ((cur.channel ?? channelValueOf(s)) === 'ytc') next.channel = '';
+    }
+    return { ...prev, [s.id]: next };
+  });
+  const changeChannel = (s, value) =>
+    setEdits(prev => ({ ...prev, [s.id]: { ...(prev[s.id] || {}), channel: value } }));
+  const cancelRowEdits = (id) => setEdits(prev => { const n = { ...prev }; delete n[id]; return n; });
+
+  // Guardar IATA / Canal en el servicio original (columna + espejo en metadata para consistencia).
+  const saveRowEdits = (s) => {
+    const field = channelFieldFor(s);
+    const booked_by = effBookedBy(s);
+    let channel = field ? effChannel(s) : undefined;
+    if (s.service_type === 'vuelo' && booked_by === 'montecito') channel = 'ytc';
+
+    const meta = { ...(s.metadata || {}), booked_by };
+    const data = { booked_by };
+    if (field) {
+      const val = channel || null;
+      data[field] = val;
+      meta[field] = val;
+    }
+    data.metadata = meta;
+
+    updateServiceMutation.mutate({ id: s.id, data }, {
+      onSuccess: () => { toast.success('Servicio actualizado'); cancelRowEdits(s.id); },
+    });
+  };
 
   // Resumen financiero por viaje: comisión bruta/neta y saldo en cuenta.
   // Saldo = lo que el cliente pagó a Nomad − lo que Nomad pagó a proveedores.
@@ -346,7 +466,15 @@ export default function InternalCommissions() {
     const s = r.service;
     const Icon = SERVICE_ICONS[s.service_type] || Package;
     const iconColors = SERVICE_ICON_COLORS[s.service_type] || SERVICE_ICON_COLORS.otro;
-    const channel = getChannel(s);
+    const channelField = channelFieldFor(s);
+    const effIata = effBookedBy(s);
+    const effChan = effChannel(s);
+    const dirty = isRowDirty(s);
+    const chOptions = channelOptionsFor(s, effIata);
+    // Asegura que el valor actual aparezca aunque no esté en la lista estática.
+    const chOptionsFull = (effChan && !chOptions.some(o => o.value === effChan))
+      ? [...chOptions, { value: effChan, label: CHANNEL_LABELS[effChan] || effChan }]
+      : chOptions;
 
     return (
       <div key={s.id} className="flex items-center gap-3 px-4 py-3 border-t border-stone-100 bg-stone-50/40">
@@ -390,12 +518,49 @@ export default function InternalCommissions() {
           </Select>
         </div>
 
-        <div className="w-20 flex-shrink-0 hidden lg:block">
-          <span className="text-xs font-medium text-stone-600">{IATA_LABELS[r.iata] || r.iata}</span>
+        <div className="w-20 flex-shrink-0 hidden lg:block" onClick={(e) => e.stopPropagation()}>
+          <Select value={effIata} onValueChange={(v) => changeIata(s, v)}>
+            <SelectTrigger className="h-6 px-2 rounded-md text-[10px] font-medium border-stone-200 text-stone-600" title="Agencia (IATA)">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {IATA_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+            </SelectContent>
+          </Select>
         </div>
 
-        <div className="w-24 flex-shrink-0 hidden lg:block min-w-0">
-          <span className="text-xs text-stone-500 block truncate" title={channel}>{channel}</span>
+        <div className="w-24 flex-shrink-0 hidden lg:block min-w-0" onClick={(e) => e.stopPropagation()}>
+          {channelField ? (
+            <Select value={effChan || ''} onValueChange={(v) => changeChannel(s, v)}>
+              <SelectTrigger className="h-6 px-2 rounded-md text-[10px] border-stone-200 text-stone-600" title="Canal">
+                <SelectValue placeholder="—" />
+              </SelectTrigger>
+              <SelectContent>
+                {chOptionsFull.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          ) : (
+            <span className="text-xs text-stone-300">—</span>
+          )}
+        </div>
+
+        <div className="w-14 flex-shrink-0 hidden lg:flex items-center justify-center gap-1">
+          {dirty && (
+            <>
+              <button
+                onClick={() => saveRowEdits(s)}
+                disabled={updateServiceMutation.isPending}
+                title="Guardar cambios"
+                className="h-6 w-6 flex items-center justify-center rounded-md text-white"
+                style={{ backgroundColor: '#2E442A' }}
+              >
+                <Save className="w-3.5 h-3.5" />
+              </button>
+              <button onClick={() => cancelRowEdits(s.id)} title="Descartar" className="p-1 rounded text-stone-300 hover:text-stone-500">
+                <Undo2 className="w-3.5 h-3.5" />
+              </button>
+            </>
+          )}
         </div>
 
         <div className="w-20 flex-shrink-0 text-right hidden sm:block">
@@ -545,6 +710,7 @@ export default function InternalCommissions() {
           <span className="w-24 flex-shrink-0 hidden md:block text-[10px] font-bold uppercase tracking-wider text-stone-400">Tipo</span>
           <span className="w-20 flex-shrink-0 hidden lg:block text-[10px] font-bold uppercase tracking-wider text-stone-400">IATA</span>
           <span className="w-24 flex-shrink-0 hidden lg:block text-[10px] font-bold uppercase tracking-wider text-stone-400">Canal</span>
+          <span className="w-14 flex-shrink-0 hidden lg:block" />
           <span className="w-20 flex-shrink-0 hidden sm:block text-right text-[10px] font-bold uppercase tracking-wider text-stone-400">Comisión</span>
           <span className="w-32 flex-shrink-0 text-right text-[10px] font-bold uppercase tracking-wider text-stone-400">Agente (50%)</span>
           <span className="w-52 flex-shrink-0 text-right text-[10px] font-bold uppercase tracking-wider text-stone-400">Acción</span>
