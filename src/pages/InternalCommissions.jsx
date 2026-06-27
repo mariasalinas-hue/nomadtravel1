@@ -144,11 +144,6 @@ const getReservationNumber = (service) => {
     || '';
 };
 
-// Costo que Nomad debe pagar al proveedor por un servicio (neto descuenta la comisión).
-const supplierCostOf = (service) => {
-  const base = service.total_price || service.price || 0;
-  return service.payment_type === 'neto' ? Math.max(0, base - (service.commission || 0)) : base;
-};
 const reservationStatusOf = (service) => service.reservation_status || service.metadata?.reservation_status;
 
 // 5 etapas del ciclo de vida — idéntico a Mis Comisiones
@@ -306,12 +301,12 @@ export default function InternalCommissions() {
     const map = {};
     const ensure = (id) => (map[id] = map[id] || {
       gross: 0, net: 0, grossPaid: 0, netPaid: 0, agentPaid: 0,
-      clientIn: 0, nomadOut: 0, services: 0,
-      // Validación de pagos a proveedor (a nivel de viaje, robusta ante pagos sin enlazar)
-      expectedSupplier: 0, supplierAll: 0, servicesNeedingPayment: 0,
+      clientIn: 0, nomadOut: 0, services: 0, activeServices: 0,
     });
     tripServices.forEach(s => {
       const e = ensure(s.sold_trip_id);
+      const status = reservationStatusOf(s);
+      if (status !== 'cancelado') e.activeServices += 1;
 
       // Comisión bruta / neta (solo servicios con comisión)
       if (s.commission > 0) {
@@ -326,33 +321,23 @@ export default function InternalCommissions() {
           e.agentPaid += splitFor(s).agent; // parte que realmente salió de la cuenta
         }
       }
-
-      // Costo esperado a proveedor: cada servicio activo (no cancelado/pagado directo) debería tener su pago.
-      const status = reservationStatusOf(s);
-      if (status === 'cancelado' || status === 'pagado') return;
-      const cost = supplierCostOf(s);
-      if (cost <= 0) return;
-      e.expectedSupplier += cost;
-      e.servicesNeedingPayment += 1;
     });
     clientPayments.forEach(p => {
       if (p.method === 'tarjeta_cliente') return;
       ensure(p.sold_trip_id).clientIn += (p.amount_usd_fixed || p.amount || 0);
     });
     supplierPayments.forEach(p => {
-      const e = ensure(p.sold_trip_id);
-      e.supplierAll += (Number(p.amount) || 0); // todos los pagos registrados (cualquier método)
       if (p.method === 'tarjeta_cliente') return;
-      e.nomadOut += (p.amount || 0);
+      ensure(p.sold_trip_id).nomadOut += (p.amount || 0);
     });
     Object.values(map).forEach(e => {
       e.saldo = e.clientIn - e.nomadOut;
       e.grossPending = e.gross - e.grossPaid;
       e.netPending = e.net - e.netPaid;
       e.disponible = e.saldo - e.agentPaid; // saldo menos lo ya pagado a agentes
-      // Falta por registrar = costo esperado a proveedor − pagos registrados (con tolerancia).
-      e.missingSupplier = Math.max(0, e.expectedSupplier - e.supplierAll);
-      e.hasPaymentGap = e.servicesNeedingPayment > 0 && e.missingSupplier > 1;
+      // En teoría, una vez liquidado todo, el saldo debe quedar = comisión neta.
+      // Si el saldo es MAYOR, sobra dinero en cuenta → probablemente faltan pagos a proveedor por registrar.
+      e.reconcileDiff = e.saldo - e.net;
     });
     return map;
   }, [tripServices, clientPayments, supplierPayments]);
@@ -807,14 +792,16 @@ export default function InternalCommissions() {
                 const refDate = trip?.end_date || trip?.start_date;
                 const fin = tripFinancials[tripId] || {
                   gross: 0, net: 0, grossPaid: 0, netPaid: 0, agentPaid: 0,
-                  clientIn: 0, nomadOut: 0, saldo: 0, services: 0,
-                  grossPending: 0, netPending: 0, disponible: 0,
-                  expectedSupplier: 0, supplierAll: 0, servicesNeedingPayment: 0,
-                  missingSupplier: 0, hasPaymentGap: false,
+                  clientIn: 0, nomadOut: 0, saldo: 0, services: 0, activeServices: 0,
+                  grossPending: 0, netPending: 0, disponible: 0, reconcileDiff: 0,
                 };
-                const matchesNet = Math.abs(fin.saldo - fin.net) < 1;
+                const matchesNet = Math.abs(fin.reconcileDiff) < 1;
                 // ¿La tarjeta financiera abarca más servicios que los visibles en esta etapa?
                 const moreThanShown = fin.services > rows.length;
+                // Conciliación: una vez terminado el viaje, el saldo debería quedar = comisión neta.
+                // Si sobra dinero en cuenta (saldo > neta), es señal de pagos a proveedor sin registrar.
+                const tripIsEnded = tripEnded(trip);
+                const hasPaymentGap = tripIsEnded && fin.reconcileDiff > 1;
                 return (
                   <div key={tripId} className="border-t border-stone-100 bg-stone-50/30">
                     <button onClick={() => toggleTrip(tripId)} className="w-full flex items-center gap-3 pl-10 pr-4 py-2.5 hover:bg-stone-100/60 transition-colors text-left">
@@ -828,9 +815,9 @@ export default function InternalCommissions() {
                         </p>
                         <p className="text-xs text-stone-400">
                           {rows.length} comisión{rows.length !== 1 ? 'es' : ''}{refDate ? ` · ${formatDate(refDate, 'yyyy-MM-dd')}` : ''}
-                          {fin.hasPaymentGap && (
-                            <span className="ml-2 inline-flex items-center gap-0.5 text-red-500 font-semibold" title="Hay servicios sin pago a proveedor registrado">
-                              <AlertTriangle className="w-3 h-3" /> Pagos faltantes
+                          {hasPaymentGap && (
+                            <span className="ml-2 inline-flex items-center gap-0.5 text-red-500 font-semibold" title="El saldo en cuenta no coincide con la comisión neta: probablemente faltan pagos por registrar">
+                              <AlertTriangle className="w-3 h-3" /> No cuadra
                             </span>
                           )}
                         </p>
@@ -859,16 +846,15 @@ export default function InternalCommissions() {
                           </span>
                         </div>
 
-                        {/* Alerta: pagos a proveedor faltantes por registrar */}
-                        {fin.hasPaymentGap && (
+                        {/* Alerta: el saldo no cuadra con la comisión neta → faltan pagos por registrar */}
+                        {hasPaymentGap && (
                           <div className="mb-2 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2">
                             <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
                             <div className="text-[11px] leading-tight text-red-700">
-                              <p className="font-bold">Faltan pagos a proveedor por registrar</p>
+                              <p className="font-bold">El saldo en cuenta no cuadra con la comisión neta</p>
                               <p className="text-red-600 mt-0.5">
-                                Faltan ~{money(fin.missingSupplier)}: se esperan {money(fin.expectedSupplier)} en pagos a proveedor
-                                {' '}({fin.servicesNeedingPayment} servicio{fin.servicesNeedingPayment !== 1 ? 's' : ''}) y solo hay {money(fin.supplierAll)} registrados.
-                                {' '}Revísalo antes de procesar el pago de comisiones.
+                                Sobran {money(fin.reconcileDiff)} en cuenta: el saldo es {money(fin.saldo)} pero la comisión neta esperada es {money(fin.net)}.
+                                {' '}Probablemente faltan pagos a proveedor por registrar. Revísalo antes de procesar el pago de comisiones.
                               </p>
                             </div>
                           </div>
@@ -915,9 +901,9 @@ export default function InternalCommissions() {
                             <p className="text-[10px] text-stone-400 leading-tight mt-0.5">
                               Cliente pagó {money(fin.clientIn)} − Nomad pagó {money(fin.nomadOut)}
                             </p>
-                            {fin.expectedSupplier > 0 && (
-                              <p className={`text-[10px] leading-tight mt-0.5 ${fin.hasPaymentGap ? 'text-red-500 font-medium' : 'text-stone-400'}`}>
-                                Proveedor: registrado {money(fin.supplierAll)} de {money(fin.expectedSupplier)} esperado
+                            {hasPaymentGap && (
+                              <p className="text-[10px] leading-tight mt-0.5 text-red-500 font-medium">
+                                Debería quedar {money(fin.net)} (neta) · sobran {money(fin.reconcileDiff)} sin justificar
                               </p>
                             )}
                           </div>
