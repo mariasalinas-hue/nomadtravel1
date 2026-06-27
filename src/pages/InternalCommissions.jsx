@@ -376,10 +376,15 @@ export default function InternalCommissions() {
       e.saldo = e.clientIn - e.nomadOut;
       e.grossPending = e.gross - e.grossPaid;
       e.netPending = e.net - e.netPaid;
-      e.disponible = e.saldo - e.agentPaid; // saldo menos lo ya pagado a agentes
-      // En teoría, una vez liquidado todo, el saldo debe quedar = comisión neta.
-      // Si el saldo es MAYOR, sobra dinero en cuenta → probablemente faltan pagos a proveedor por registrar.
-      e.reconcileDiff = e.saldo - e.net;
+      // Comisión ya liquidada = comisión total de los servicios pagados al agente.
+      // Incluye AMBAS mitades: lo pagado al agente y lo que Nomad (y Montecito) ya retuvo.
+      e.settledCommission = e.grossPaid + e.netPaid;
+      e.nomadKept = Math.max(0, e.settledCommission - e.agentPaid); // parte retenida por Nomad/Montecito
+      // Disponible real = saldo menos TODA la comisión liquidada (agente + Nomad), no solo la del agente.
+      e.disponible = e.saldo - e.settledCommission;
+      // En teoría, lo que debe quedar en cuenta es la comisión neta aún pendiente.
+      // Si sobra más que eso, es señal de pagos a proveedor sin registrar.
+      e.unaccounted = e.disponible - e.netPending;
     });
     return map;
   }, [tripServices, clientPayments, supplierPayments]);
@@ -835,9 +840,10 @@ export default function InternalCommissions() {
                 const fin = tripFinancials[tripId] || {
                   gross: 0, net: 0, grossPaid: 0, netPaid: 0, agentPaid: 0,
                   clientIn: 0, nomadOut: 0, saldo: 0, services: 0,
-                  grossPending: 0, netPending: 0, disponible: 0, reconcileDiff: 0,
+                  grossPending: 0, netPending: 0, disponible: 0,
+                  settledCommission: 0, nomadKept: 0, unaccounted: 0,
                 };
-                const matchesNet = Math.abs(fin.reconcileDiff) < 1;
+                const matchesNet = Math.abs(fin.unaccounted) < 1;
                 // ¿La tarjeta financiera abarca más servicios que los visibles en esta etapa?
                 const moreThanShown = fin.services > rows.length;
                 const tripIsEnded = tripEnded(trip);
@@ -905,7 +911,7 @@ export default function InternalCommissions() {
                                 {missingCount > 0 && partialCount > 0 && ' y '}
                                 {partialCount > 0 && `${partialCount} con pago parcial`}.
                                 {' '}Revisa el detalle de abajo y registra los pagos faltantes antes de procesar las comisiones
-                                {fin.reconcileDiff > 1 ? ` (sobran ${money(fin.reconcileDiff)} en el saldo).` : '.'}
+                                {fin.unaccounted > 1 ? ` (sobran ${money(fin.unaccounted)} en el saldo sin justificar).` : '.'}
                               </p>
                             </div>
                           </div>
@@ -935,26 +941,26 @@ export default function InternalCommissions() {
                               <p className="text-[10px] font-bold uppercase tracking-wider text-stone-500">Saldo en cuenta</p>
                               {matchesNet
                                 ? <Check className="w-3.5 h-3.5 text-emerald-500" />
-                                : <span className="text-[10px] text-stone-400">vs neto {money(fin.net)}</span>}
+                                : <span className="text-[10px] text-stone-400">vs neta pend. {money(fin.netPending)}</span>}
                             </div>
                             <p className={`text-sm font-bold ${fin.saldo < 0 ? 'text-red-600' : 'text-stone-800'}`}>{money(fin.saldo)}</p>
-                            {fin.agentPaid > 0 && (
+                            {fin.settledCommission > 0 && (
                               <div className="mt-1 pt-1 border-t border-stone-200/70">
                                 <div className="flex items-center justify-between">
                                   <span className="text-[10px] font-bold uppercase tracking-wider text-stone-500">Disponible</span>
                                   <span className={`text-xs font-bold ${fin.disponible < 0 ? 'text-red-600' : 'text-emerald-700'}`}>{money(fin.disponible)}</span>
                                 </div>
                                 <p className="text-[10px] text-stone-400 leading-tight">
-                                  − pagado a agentes {money(fin.agentPaid)}
+                                  − pagado a agentes {money(fin.agentPaid)} − retenido por Nomad {money(fin.nomadKept)}
                                 </p>
                               </div>
                             )}
                             <p className="text-[10px] text-stone-400 leading-tight mt-0.5">
                               Cliente pagó {money(fin.clientIn)} − Nomad pagó {money(fin.nomadOut)}
                             </p>
-                            {hasPaymentGap && fin.reconcileDiff > 1 && (
+                            {hasPaymentGap && fin.unaccounted > 1 && (
                               <p className="text-[10px] leading-tight mt-0.5 text-red-500 font-medium">
-                                Debería quedar {money(fin.net)} (neta) · sobran {money(fin.reconcileDiff)} sin justificar
+                                Debería quedar {money(fin.netPending)} (neta pendiente) · sobran {money(fin.unaccounted)} sin justificar
                               </p>
                             )}
                           </div>
