@@ -409,7 +409,7 @@ export default function InternalCommissions() {
           </p>
         </div>
 
-        <div className="w-40 flex-shrink-0 flex justify-end">
+        <div className="w-52 flex-shrink-0 flex justify-end">
           {r.stage === 'proximas' && (
             <span className="text-[10px] font-bold tracking-wider px-2.5 py-1 rounded-md bg-violet-50 text-violet-500">ESTIMADA</span>
           )}
@@ -547,7 +547,7 @@ export default function InternalCommissions() {
           <span className="w-24 flex-shrink-0 hidden lg:block text-[10px] font-bold uppercase tracking-wider text-stone-400">Canal</span>
           <span className="w-20 flex-shrink-0 hidden sm:block text-right text-[10px] font-bold uppercase tracking-wider text-stone-400">Comisión</span>
           <span className="w-32 flex-shrink-0 text-right text-[10px] font-bold uppercase tracking-wider text-stone-400">Agente (50%)</span>
-          <span className="w-40 flex-shrink-0 text-right text-[10px] font-bold uppercase tracking-wider text-stone-400">Acción</span>
+          <span className="w-52 flex-shrink-0 text-right text-[10px] font-bold uppercase tracking-wider text-stone-400">Acción</span>
         </div>
 
         {groups.map(({ agent, list }) => {
