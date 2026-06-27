@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useServiceDropdownOptions } from '@/hooks/useServiceDropdownOptions';
+import { getSupplierCostToPay } from '@/components/utils/serviceCost';
 import AgentCommissionInvoice from '@/components/commissions/AgentCommissionInvoice';
 
 // ---- Misma lógica de cálculo y etiquetas que "Mis Comisiones" (fuente única) ----
@@ -145,6 +146,27 @@ const getReservationNumber = (service) => {
 };
 
 const reservationStatusOf = (service) => service.reservation_status || service.metadata?.reservation_status;
+
+// Estado del pago a proveedor de un servicio, comparando su costo contra los pagos enlazados.
+const PAY_TONE_CLASSES = {
+  green: 'bg-green-50 text-green-600',
+  amber: 'bg-amber-50 text-amber-600',
+  red: 'bg-red-50 text-red-500',
+  stone: 'bg-stone-100 text-stone-500',
+};
+const paymentStatusOf = (service, payInfo, tripIsEnded) => {
+  const status = reservationStatusOf(service);
+  if (status === 'cancelado') return null; // cancelado: no aplica
+  const paid = payInfo?.paid || 0;
+  const treatAsNeto = service.payment_type === 'neto' || !!payInfo?.hasNeto;
+  const cost = getSupplierCostToPay(service, treatAsNeto);
+  // 'pagado' marcado a mano sin pagos registrados = pago directo al proveedor.
+  if (status === 'pagado' && paid <= 0) return { key: 'directo', label: 'Pagado directo', cost, paid, tone: 'green' };
+  if (cost <= 0) return { key: 'sincosto', label: 'Sin costo', cost, paid, tone: 'stone' };
+  if (cost - paid < 1) return { key: 'pagado', label: 'Pagado', cost, paid, tone: 'green' };
+  if (paid > 0) return { key: 'parcial', label: 'Parcial', cost, paid, tone: 'amber' };
+  return { key: 'sinpago', label: tripIsEnded ? 'Falta pago' : 'Pendiente', cost, paid, tone: tripIsEnded ? 'red' : 'stone' };
+};
 
 // 5 etapas del ciclo de vida — idéntico a Mis Comisiones
 const today = new Date();
@@ -294,6 +316,28 @@ export default function InternalCommissions() {
     });
   };
 
+  // Pagos a proveedor enlazados a cada servicio (trip_service_id), para comparar con su costo.
+  const supplierByService = useMemo(() => {
+    const m = {};
+    supplierPayments.forEach(p => {
+      if (!p.trip_service_id) return;
+      if (!m[p.trip_service_id]) m[p.trip_service_id] = { paid: 0, hasNeto: false };
+      m[p.trip_service_id].paid += Number(p.amount) || 0;
+      if (p.payment_type === 'neto') m[p.trip_service_id].hasNeto = true;
+    });
+    return m;
+  }, [supplierPayments]);
+
+  // Servicios agrupados por viaje (todo el folio), para el checklist de pagos.
+  const servicesByTrip = useMemo(() => {
+    const m = {};
+    tripServices.forEach(s => {
+      if (!m[s.sold_trip_id]) m[s.sold_trip_id] = [];
+      m[s.sold_trip_id].push(s);
+    });
+    return m;
+  }, [tripServices]);
+
   // Resumen financiero por viaje: comisión bruta/neta y saldo en cuenta.
   // Saldo = lo que el cliente pagó a Nomad − lo que Nomad pagó a proveedores.
   // Se EXCLUYE lo pagado con tarjeta del cliente (ese dinero no pasa por la cuenta de Nomad).
@@ -301,12 +345,10 @@ export default function InternalCommissions() {
     const map = {};
     const ensure = (id) => (map[id] = map[id] || {
       gross: 0, net: 0, grossPaid: 0, netPaid: 0, agentPaid: 0,
-      clientIn: 0, nomadOut: 0, services: 0, activeServices: 0,
+      clientIn: 0, nomadOut: 0, services: 0,
     });
     tripServices.forEach(s => {
       const e = ensure(s.sold_trip_id);
-      const status = reservationStatusOf(s);
-      if (status !== 'cancelado') e.activeServices += 1;
 
       // Comisión bruta / neta (solo servicios con comisión)
       if (s.commission > 0) {
@@ -792,16 +834,21 @@ export default function InternalCommissions() {
                 const refDate = trip?.end_date || trip?.start_date;
                 const fin = tripFinancials[tripId] || {
                   gross: 0, net: 0, grossPaid: 0, netPaid: 0, agentPaid: 0,
-                  clientIn: 0, nomadOut: 0, saldo: 0, services: 0, activeServices: 0,
+                  clientIn: 0, nomadOut: 0, saldo: 0, services: 0,
                   grossPending: 0, netPending: 0, disponible: 0, reconcileDiff: 0,
                 };
                 const matchesNet = Math.abs(fin.reconcileDiff) < 1;
                 // ¿La tarjeta financiera abarca más servicios que los visibles en esta etapa?
                 const moreThanShown = fin.services > rows.length;
-                // Conciliación: una vez terminado el viaje, el saldo debería quedar = comisión neta.
-                // Si sobra dinero en cuenta (saldo > neta), es señal de pagos a proveedor sin registrar.
                 const tripIsEnded = tripEnded(trip);
-                const hasPaymentGap = tripIsEnded && fin.reconcileDiff > 1;
+                // Checklist de pagos: cada servicio del folio comparado con sus pagos a proveedor.
+                const payChecklist = (servicesByTrip[tripId] || [])
+                  .map(s => ({ s, st: paymentStatusOf(s, supplierByService[s.id], tripIsEnded) }))
+                  .filter(x => x.st);
+                const missingCount = payChecklist.filter(x => x.st.key === 'sinpago').length;
+                const partialCount = payChecklist.filter(x => x.st.key === 'parcial').length;
+                // Alerta solo en viajes terminados (donde los pagos ya deberían estar registrados).
+                const hasPaymentGap = tripIsEnded && (missingCount > 0 || partialCount > 0);
                 return (
                   <div key={tripId} className="border-t border-stone-100 bg-stone-50/30">
                     <button onClick={() => toggleTrip(tripId)} className="w-full flex items-center gap-3 pl-10 pr-4 py-2.5 hover:bg-stone-100/60 transition-colors text-left">
@@ -816,8 +863,9 @@ export default function InternalCommissions() {
                         <p className="text-xs text-stone-400">
                           {rows.length} comisión{rows.length !== 1 ? 'es' : ''}{refDate ? ` · ${formatDate(refDate, 'yyyy-MM-dd')}` : ''}
                           {hasPaymentGap && (
-                            <span className="ml-2 inline-flex items-center gap-0.5 text-red-500 font-semibold" title="El saldo en cuenta no coincide con la comisión neta: probablemente faltan pagos por registrar">
-                              <AlertTriangle className="w-3 h-3" /> No cuadra
+                            <span className="ml-2 inline-flex items-center gap-0.5 text-red-500 font-semibold" title="Hay servicios del folio sin su pago a proveedor registrado">
+                              <AlertTriangle className="w-3 h-3" />
+                              {missingCount > 0 ? `${missingCount} sin pago` : `${partialCount} parcial`}
                             </span>
                           )}
                         </p>
@@ -846,15 +894,18 @@ export default function InternalCommissions() {
                           </span>
                         </div>
 
-                        {/* Alerta: el saldo no cuadra con la comisión neta → faltan pagos por registrar */}
+                        {/* Alerta: servicios del folio sin su pago a proveedor registrado */}
                         {hasPaymentGap && (
                           <div className="mb-2 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2">
                             <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
                             <div className="text-[11px] leading-tight text-red-700">
-                              <p className="font-bold">El saldo en cuenta no cuadra con la comisión neta</p>
+                              <p className="font-bold">Faltan pagos a proveedor por registrar</p>
                               <p className="text-red-600 mt-0.5">
-                                Sobran {money(fin.reconcileDiff)} en cuenta: el saldo es {money(fin.saldo)} pero la comisión neta esperada es {money(fin.net)}.
-                                {' '}Probablemente faltan pagos a proveedor por registrar. Revísalo antes de procesar el pago de comisiones.
+                                {missingCount > 0 && `${missingCount} servicio(s) sin pago asociado`}
+                                {missingCount > 0 && partialCount > 0 && ' y '}
+                                {partialCount > 0 && `${partialCount} con pago parcial`}.
+                                {' '}Revisa el detalle de abajo y registra los pagos faltantes antes de procesar las comisiones
+                                {fin.reconcileDiff > 1 ? ` (sobran ${money(fin.reconcileDiff)} en el saldo).` : '.'}
                               </p>
                             </div>
                           </div>
@@ -901,13 +952,44 @@ export default function InternalCommissions() {
                             <p className="text-[10px] text-stone-400 leading-tight mt-0.5">
                               Cliente pagó {money(fin.clientIn)} − Nomad pagó {money(fin.nomadOut)}
                             </p>
-                            {hasPaymentGap && (
+                            {hasPaymentGap && fin.reconcileDiff > 1 && (
                               <p className="text-[10px] leading-tight mt-0.5 text-red-500 font-medium">
                                 Debería quedar {money(fin.net)} (neta) · sobran {money(fin.reconcileDiff)} sin justificar
                               </p>
                             )}
                           </div>
                         </div>
+
+                        {/* Checklist de pagos por servicio (todo el folio) */}
+                        {payChecklist.length > 0 && (
+                          <div className="mt-3 pt-3 border-t border-stone-100">
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-stone-400 mb-1.5">
+                              Pagos por servicio
+                            </p>
+                            <div className="space-y-1">
+                              {payChecklist.map(({ s, st }) => {
+                                const res = getReservationNumber(s);
+                                return (
+                                  <div key={s.id} className="flex items-center gap-2 text-[11px]">
+                                    {st.tone === 'green'
+                                      ? <Check className="w-3 h-3 text-green-500 flex-shrink-0" />
+                                      : <AlertTriangle className={`w-3 h-3 flex-shrink-0 ${st.tone === 'red' ? 'text-red-500' : st.tone === 'amber' ? 'text-amber-500' : 'text-stone-300'}`} />}
+                                    <span className="flex-1 min-w-0 truncate text-stone-600">
+                                      {getServiceName(s)}
+                                      {res && <span className="text-stone-400"> · Res: {res}</span>}
+                                    </span>
+                                    <span className="text-stone-400 whitespace-nowrap hidden sm:inline">
+                                      {money(st.paid)} / {money(st.cost)}
+                                    </span>
+                                    <span className={`flex-shrink-0 text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${PAY_TONE_CLASSES[st.tone]}`}>
+                                      {st.label}
+                                    </span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
