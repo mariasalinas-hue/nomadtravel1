@@ -279,13 +279,23 @@ export default function InternalCommissions() {
   // Se EXCLUYE lo pagado con tarjeta del cliente (ese dinero no pasa por la cuenta de Nomad).
   const tripFinancials = useMemo(() => {
     const map = {};
-    const ensure = (id) => (map[id] = map[id] || { gross: 0, net: 0, clientIn: 0, nomadOut: 0, services: 0 });
+    const ensure = (id) => (map[id] = map[id] || {
+      gross: 0, net: 0, grossPaid: 0, netPaid: 0, agentPaid: 0,
+      clientIn: 0, nomadOut: 0, services: 0,
+    });
     tripServices.forEach(s => {
       if (!(s.commission > 0)) return;
       const e = ensure(s.sold_trip_id);
       e.services += 1;
-      if (s.payment_type === 'neto') e.net += s.commission;
+      const isNet = s.payment_type === 'neto';
+      if (isNet) e.net += s.commission;
       else e.gross += s.commission;
+      // Comisiones ya liquidadas al agente: se descuentan de lo "pendiente".
+      if (s.paid_to_agent) {
+        if (isNet) e.netPaid += s.commission;
+        else e.grossPaid += s.commission;
+        e.agentPaid += splitFor(s).agent; // parte que realmente salió de la cuenta
+      }
     });
     clientPayments.forEach(p => {
       if (p.method === 'tarjeta_cliente') return;
@@ -295,7 +305,12 @@ export default function InternalCommissions() {
       if (p.method === 'tarjeta_cliente') return;
       ensure(p.sold_trip_id).nomadOut += (p.amount || 0);
     });
-    Object.values(map).forEach(e => { e.saldo = e.clientIn - e.nomadOut; });
+    Object.values(map).forEach(e => {
+      e.saldo = e.clientIn - e.nomadOut;
+      e.grossPending = e.gross - e.grossPaid;
+      e.netPending = e.net - e.netPaid;
+      e.disponible = e.saldo - e.agentPaid; // saldo menos lo ya pagado a agentes
+    });
     return map;
   }, [tripServices, clientPayments, supplierPayments]);
 
@@ -745,7 +760,11 @@ export default function InternalCommissions() {
                 const tripOpen = expandedTrips.has(tripId);
                 const tripTotal = sumTotal(rows);
                 const refDate = trip?.end_date || trip?.start_date;
-                const fin = tripFinancials[tripId] || { gross: 0, net: 0, clientIn: 0, nomadOut: 0, saldo: 0, services: 0 };
+                const fin = tripFinancials[tripId] || {
+                  gross: 0, net: 0, grossPaid: 0, netPaid: 0, agentPaid: 0,
+                  clientIn: 0, nomadOut: 0, saldo: 0, services: 0,
+                  grossPending: 0, netPending: 0, disponible: 0,
+                };
                 const matchesNet = Math.abs(fin.saldo - fin.net) < 1;
                 // ¿La tarjeta financiera abarca más servicios que los visibles en esta etapa?
                 const moreThanShown = fin.services > rows.length;
@@ -788,15 +807,25 @@ export default function InternalCommissions() {
                           </span>
                         </div>
                         <div className="flex flex-wrap items-stretch gap-2">
-                          <div className="flex-1 min-w-[130px] rounded-lg bg-orange-50 border border-orange-100 px-3 py-2">
-                            <p className="text-[10px] font-bold uppercase tracking-wider text-orange-400">Comisión bruta (viaje)</p>
-                            <p className="text-sm font-bold text-orange-600">{money(fin.gross)}</p>
+                          <div className="flex-1 min-w-[140px] rounded-lg bg-orange-50 border border-orange-100 px-3 py-2">
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-orange-400">Comisión bruta pendiente</p>
+                            <p className="text-sm font-bold text-orange-600">{money(fin.grossPending)}</p>
+                            {fin.grossPaid > 0 && (
+                              <p className="text-[10px] text-stone-400 leading-tight mt-0.5">
+                                de {money(fin.gross)} · pagado {money(fin.grossPaid)}
+                              </p>
+                            )}
                           </div>
-                          <div className="flex-1 min-w-[130px] rounded-lg bg-green-50 border border-green-100 px-3 py-2">
-                            <p className="text-[10px] font-bold uppercase tracking-wider text-green-500">Comisión neta (viaje)</p>
-                            <p className="text-sm font-bold text-green-700">{money(fin.net)}</p>
+                          <div className="flex-1 min-w-[140px] rounded-lg bg-green-50 border border-green-100 px-3 py-2">
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-green-500">Comisión neta pendiente</p>
+                            <p className="text-sm font-bold text-green-700">{money(fin.netPending)}</p>
+                            {fin.netPaid > 0 && (
+                              <p className="text-[10px] text-stone-400 leading-tight mt-0.5">
+                                de {money(fin.net)} · pagado {money(fin.netPaid)}
+                              </p>
+                            )}
                           </div>
-                          <div className={`flex-1 min-w-[180px] rounded-lg border px-3 py-2 ${matchesNet ? 'bg-emerald-50 border-emerald-200' : 'bg-stone-50 border-stone-200'}`}>
+                          <div className={`flex-1 min-w-[190px] rounded-lg border px-3 py-2 ${matchesNet ? 'bg-emerald-50 border-emerald-200' : 'bg-stone-50 border-stone-200'}`}>
                             <div className="flex items-center justify-between">
                               <p className="text-[10px] font-bold uppercase tracking-wider text-stone-500">Saldo en cuenta</p>
                               {matchesNet
@@ -804,6 +833,17 @@ export default function InternalCommissions() {
                                 : <span className="text-[10px] text-stone-400">vs neto {money(fin.net)}</span>}
                             </div>
                             <p className={`text-sm font-bold ${fin.saldo < 0 ? 'text-red-600' : 'text-stone-800'}`}>{money(fin.saldo)}</p>
+                            {fin.agentPaid > 0 && (
+                              <div className="mt-1 pt-1 border-t border-stone-200/70">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[10px] font-bold uppercase tracking-wider text-stone-500">Disponible</span>
+                                  <span className={`text-xs font-bold ${fin.disponible < 0 ? 'text-red-600' : 'text-emerald-700'}`}>{money(fin.disponible)}</span>
+                                </div>
+                                <p className="text-[10px] text-stone-400 leading-tight">
+                                  − pagado a agentes {money(fin.agentPaid)}
+                                </p>
+                              </div>
+                            )}
                             <p className="text-[10px] text-stone-400 leading-tight mt-0.5">
                               Cliente pagó {money(fin.clientIn)} − Nomad pagó {money(fin.nomadOut)}
                             </p>
