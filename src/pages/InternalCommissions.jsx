@@ -160,12 +160,12 @@ const paymentStatusOf = (service, payInfo, tripIsEnded) => {
   const paid = payInfo?.paid || 0;
   const treatAsNeto = service.payment_type === 'neto' || !!payInfo?.hasNeto;
   const cost = getSupplierCostToPay(service, treatAsNeto);
-  // 'pagado' marcado a mano sin pagos registrados = pago directo al proveedor.
-  if (status === 'pagado' && paid <= 0) return { key: 'directo', label: 'Pagado directo', cost, paid, tone: 'green' };
+  // La fuente de verdad es el pago a proveedor REGISTRADO, no el estado "pagado"
+  // (un servicio puede marcarse "pagado" sin haber registrado su pago: eso es justo lo que hay que detectar).
   if (cost <= 0) return { key: 'sincosto', label: 'Sin costo', cost, paid, tone: 'stone' };
   if (cost - paid < 1) return { key: 'pagado', label: 'Pagado', cost, paid, tone: 'green' };
   if (paid > 0) return { key: 'parcial', label: 'Parcial', cost, paid, tone: 'amber' };
-  return { key: 'sinpago', label: tripIsEnded ? 'Falta pago' : 'Pendiente', cost, paid, tone: tripIsEnded ? 'red' : 'stone' };
+  return { key: 'sinpago', label: tripIsEnded ? 'Falta registrar pago' : 'Pendiente', cost, paid, tone: tripIsEnded ? 'red' : 'stone' };
 };
 
 // 5 etapas del ciclo de vida — idéntico a Mis Comisiones
