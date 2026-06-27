@@ -279,10 +279,11 @@ export default function InternalCommissions() {
   // Se EXCLUYE lo pagado con tarjeta del cliente (ese dinero no pasa por la cuenta de Nomad).
   const tripFinancials = useMemo(() => {
     const map = {};
-    const ensure = (id) => (map[id] = map[id] || { gross: 0, net: 0, clientIn: 0, nomadOut: 0 });
+    const ensure = (id) => (map[id] = map[id] || { gross: 0, net: 0, clientIn: 0, nomadOut: 0, services: 0 });
     tripServices.forEach(s => {
       if (!(s.commission > 0)) return;
       const e = ensure(s.sold_trip_id);
+      e.services += 1;
       if (s.payment_type === 'neto') e.net += s.commission;
       else e.gross += s.commission;
     });
@@ -744,8 +745,10 @@ export default function InternalCommissions() {
                 const tripOpen = expandedTrips.has(tripId);
                 const tripTotal = sumTotal(rows);
                 const refDate = trip?.end_date || trip?.start_date;
-                const fin = tripFinancials[tripId] || { gross: 0, net: 0, clientIn: 0, nomadOut: 0, saldo: 0 };
+                const fin = tripFinancials[tripId] || { gross: 0, net: 0, clientIn: 0, nomadOut: 0, saldo: 0, services: 0 };
                 const matchesNet = Math.abs(fin.saldo - fin.net) < 1;
+                // ¿La tarjeta financiera abarca más servicios que los visibles en esta etapa?
+                const moreThanShown = fin.services > rows.length;
                 return (
                   <div key={tripId} className="border-t border-stone-100 bg-stone-50/30">
                     <button onClick={() => toggleTrip(tripId)} className="w-full flex items-center gap-3 pl-10 pr-4 py-2.5 hover:bg-stone-100/60 transition-colors text-left">
@@ -775,13 +778,22 @@ export default function InternalCommissions() {
 
                     {tripOpen && (
                       <div className="pl-12 pr-4 py-3 border-t border-stone-100 bg-white">
+                        <div className="flex items-center gap-1.5 mb-2">
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-stone-400">
+                            Resumen del viaje completo
+                          </p>
+                          <span className="text-[10px] text-stone-400">
+                            · {fin.services} servicio{fin.services !== 1 ? 's' : ''} con comisión
+                            {moreThanShown ? ` (incluye ${fin.services - rows.length} fuera de esta etapa)` : ''}
+                          </span>
+                        </div>
                         <div className="flex flex-wrap items-stretch gap-2">
                           <div className="flex-1 min-w-[130px] rounded-lg bg-orange-50 border border-orange-100 px-3 py-2">
-                            <p className="text-[10px] font-bold uppercase tracking-wider text-orange-400">Comisión bruta</p>
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-orange-400">Comisión bruta (viaje)</p>
                             <p className="text-sm font-bold text-orange-600">{money(fin.gross)}</p>
                           </div>
                           <div className="flex-1 min-w-[130px] rounded-lg bg-green-50 border border-green-100 px-3 py-2">
-                            <p className="text-[10px] font-bold uppercase tracking-wider text-green-500">Comisión neta</p>
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-green-500">Comisión neta (viaje)</p>
                             <p className="text-sm font-bold text-green-700">{money(fin.net)}</p>
                           </div>
                           <div className={`flex-1 min-w-[180px] rounded-lg border px-3 py-2 ${matchesNet ? 'bg-emerald-50 border-emerald-200' : 'bg-stone-50 border-stone-200'}`}>
