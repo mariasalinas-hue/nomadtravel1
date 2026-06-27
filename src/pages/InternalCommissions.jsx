@@ -7,13 +7,14 @@ import { updateSoldTripTotalsFromServices } from '@/components/utils/soldTripRec
 import { toast } from 'sonner';
 import {
   Loader2, Search, DollarSign, Users, Calendar, ArrowUpDown, Check, Undo2,
-  ChevronDown, ChevronUp, FileText, Save, AlertTriangle,
+  ChevronDown, ChevronUp, FileText, Save, AlertTriangle, Eye,
   Hotel, Plane, Car, Compass, Ship, Train, Briefcase, Package,
 } from 'lucide-react';
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useServiceDropdownOptions } from '@/hooks/useServiceDropdownOptions';
 import { getSupplierCostToPay } from '@/components/utils/serviceCost';
 import AgentCommissionInvoice from '@/components/commissions/AgentCommissionInvoice';
@@ -191,6 +192,15 @@ const TABS = [
   { key: 'pagadas', label: 'Pagadas' },
 ];
 
+// Etiqueta y color por etapa, para la vista completa del viaje.
+const STAGE_BADGE = {
+  proximas: { label: 'Estimada', cls: 'bg-violet-50 text-violet-500' },
+  por_cobrar: { label: 'Por cobrar', cls: 'bg-orange-50 text-orange-500' },
+  pagadas_agencia: { label: 'Por confirmar', cls: 'bg-amber-50 text-amber-600' },
+  confirmadas: { label: 'Por pagar', cls: 'bg-blue-50 text-blue-600' },
+  pagadas: { label: 'Pagada', cls: 'bg-green-50 text-green-600' },
+};
+
 export default function InternalCommissions() {
   const [search, setSearch] = useState('');
   const [filterAgent, setFilterAgent] = useState('all');
@@ -202,6 +212,7 @@ export default function InternalCommissions() {
   const [expandedTrips, setExpandedTrips] = useState(() => new Set());
   const [selected, setSelected] = useState([]); // service ids (solo en "Por pagar")
   const [invoiceOpen, setInvoiceOpen] = useState(false);
+  const [overviewTripId, setOverviewTripId] = useState(null); // viaje abierto en la vista completa
   const [edits, setEdits] = useState({}); // { [serviceId]: { booked_by?, channel? } } — IATA / Canal pendientes
 
   const queryClient = useQueryClient();
@@ -857,34 +868,44 @@ export default function InternalCommissions() {
                 const hasPaymentGap = tripIsEnded && (missingCount > 0 || partialCount > 0);
                 return (
                   <div key={tripId} className="border-t border-stone-100 bg-stone-50/30">
-                    <button onClick={() => toggleTrip(tripId)} className="w-full flex items-center gap-3 pl-10 pr-4 py-2.5 hover:bg-stone-100/60 transition-colors text-left">
-                      <span className="w-5 flex justify-center text-stone-300">
-                        {tripOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                      </span>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-stone-700 truncate">
-                          {trip ? `${trip.client_name} ${trip.destination || ''}`.trim() : 'Viaje'}
-                          {trip?.trip_name ? ` — ${trip.trip_name}` : ''}
-                        </p>
-                        <p className="text-xs text-stone-400">
-                          {rows.length} comisión{rows.length !== 1 ? 'es' : ''}{refDate ? ` · ${formatDate(refDate, 'yyyy-MM-dd')}` : ''}
-                          {hasPaymentGap && (
-                            <span className="ml-2 inline-flex items-center gap-0.5 text-red-500 font-semibold" title="Hay servicios del folio sin su pago a proveedor registrado">
-                              <AlertTriangle className="w-3 h-3" />
-                              {missingCount > 0 ? `${missingCount} sin pago` : `${partialCount} parcial`}
-                            </span>
-                          )}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-stone-400">Total</p>
-                        <p className="text-sm font-bold text-stone-700">{money(tripTotal)}</p>
-                      </div>
-                      <div className="text-right w-24">
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-stone-400">Parte agente</p>
-                        <p className="text-sm font-bold" style={{ color: '#2E442A' }}>{money(sumAgent(rows))}</p>
-                      </div>
-                    </button>
+                    <div className="flex items-stretch">
+                      <button onClick={() => toggleTrip(tripId)} className="flex-1 min-w-0 flex items-center gap-3 pl-10 pr-2 py-2.5 hover:bg-stone-100/60 transition-colors text-left">
+                        <span className="w-5 flex justify-center text-stone-300">
+                          {tripOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-stone-700 truncate">
+                            {trip ? `${trip.client_name} ${trip.destination || ''}`.trim() : 'Viaje'}
+                            {trip?.trip_name ? ` — ${trip.trip_name}` : ''}
+                          </p>
+                          <p className="text-xs text-stone-400">
+                            {rows.length} comisión{rows.length !== 1 ? 'es' : ''}{refDate ? ` · ${formatDate(refDate, 'yyyy-MM-dd')}` : ''}
+                            {hasPaymentGap && (
+                              <span className="ml-2 inline-flex items-center gap-0.5 text-red-500 font-semibold" title="Hay servicios del folio sin su pago a proveedor registrado">
+                                <AlertTriangle className="w-3 h-3" />
+                                {missingCount > 0 ? `${missingCount} sin pago` : `${partialCount} parcial`}
+                              </span>
+                            )}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-stone-400">Total</p>
+                          <p className="text-sm font-bold text-stone-700">{money(tripTotal)}</p>
+                        </div>
+                        <div className="text-right w-24">
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-stone-400">Parte agente</p>
+                          <p className="text-sm font-bold" style={{ color: '#2E442A' }}>{money(sumAgent(rows))}</p>
+                        </div>
+                      </button>
+                      <button
+                        onClick={() => setOverviewTripId(tripId)}
+                        title="Ver el viaje completo (todas las comisiones)"
+                        className="px-3 flex items-center gap-1.5 text-stone-400 hover:text-stone-700 hover:bg-stone-100/60 border-l border-stone-100 transition-colors"
+                      >
+                        <Eye className="w-4 h-4" />
+                        <span className="text-[11px] font-medium hidden sm:inline">Ver todo</span>
+                      </button>
+                    </div>
 
                     {tripOpen && sortedRows(rows).map(renderRow)}
 
@@ -1020,6 +1041,161 @@ export default function InternalCommissions() {
         commissions={invoiceCommissions}
         onMarkAsPaid={paySelected}
       />
+
+      {/* Vista completa del viaje: todas las comisiones (de todas las etapas) en una ventana */}
+      {overviewTripId && (() => {
+        const oTrip = tripsMap[overviewTripId];
+        const oFin = tripFinancials[overviewTripId] || {
+          gross: 0, net: 0, grossPaid: 0, netPaid: 0, agentPaid: 0, clientIn: 0, nomadOut: 0, services: 0,
+          saldo: 0, grossPending: 0, netPending: 0, disponible: 0, settledCommission: 0, nomadKept: 0, unaccounted: 0,
+        };
+        const oEnded = tripEnded(oTrip);
+        const oRows = rows
+          .filter(r => (r.trip?.id || r.service.sold_trip_id) === overviewTripId)
+          .sort((a, b) => {
+            const da = a.refDate ? parseLocalDate(a.refDate) : new Date(0);
+            const db = b.refDate ? parseLocalDate(b.refDate) : new Date(0);
+            return da - db;
+          });
+        const oChecklist = (servicesByTrip[overviewTripId] || [])
+          .map(s => ({ s, st: paymentStatusOf(s, supplierByService[s.id], oEnded) }))
+          .filter(x => x.st);
+        const oMissing = oChecklist.filter(x => x.st.key === 'sinpago').length;
+        const oPartial = oChecklist.filter(x => x.st.key === 'parcial').length;
+        const oGap = oEnded && (oMissing > 0 || oPartial > 0);
+        const oAgent = oRows[0]?.agentName || 'Sin asignar';
+        const oTotalComm = oRows.reduce((sum, r) => sum + (r.service.commission || 0), 0);
+        const oAgentPart = oRows.reduce((sum, r) => sum + r.split.agent, 0);
+        const oRefDate = oTrip?.end_date || oTrip?.start_date;
+
+        return (
+          <Dialog open onOpenChange={(o) => { if (!o) setOverviewTripId(null); }}>
+            <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle className="text-lg font-bold pr-6" style={{ color: '#2E442A' }}>
+                  {oTrip ? `${oTrip.client_name} ${oTrip.destination || ''}`.trim() : 'Viaje'}
+                  {oTrip?.trip_name ? ` — ${oTrip.trip_name}` : ''}
+                </DialogTitle>
+              </DialogHeader>
+
+              {/* Sub-encabezado */}
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-stone-500 -mt-2">
+                <span className="inline-flex items-center gap-1"><Users className="w-3.5 h-3.5" /> {oAgent}</span>
+                {oRefDate && <span className="inline-flex items-center gap-1"><Calendar className="w-3.5 h-3.5" /> {formatDate(oRefDate, 'd MMM yyyy', { locale: es })}</span>}
+                <span>{oRows.length} comisión{oRows.length !== 1 ? 'es' : ''}</span>
+                <span className="ml-auto">Comisión total <strong className="text-stone-700">{money(oTotalComm)}</strong> · Agente <strong style={{ color: '#2E442A' }}>{money(oAgentPart)}</strong></span>
+              </div>
+
+              {/* Alerta de pagos faltantes */}
+              {oGap && (
+                <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2">
+                  <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
+                  <div className="text-[11px] leading-tight text-red-700">
+                    <p className="font-bold">Faltan pagos a proveedor por registrar</p>
+                    <p className="text-red-600 mt-0.5">
+                      {oMissing > 0 && `${oMissing} servicio(s) sin pago asociado`}
+                      {oMissing > 0 && oPartial > 0 && ' y '}
+                      {oPartial > 0 && `${oPartial} con pago parcial`}.
+                      {oFin.unaccounted > 1 ? ` Sobran ${money(oFin.unaccounted)} en el saldo sin justificar.` : ''}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Resumen financiero */}
+              <div className="flex flex-wrap items-stretch gap-2">
+                <div className="flex-1 min-w-[130px] rounded-lg bg-orange-50 border border-orange-100 px-3 py-2">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-orange-400">Bruta pendiente</p>
+                  <p className="text-sm font-bold text-orange-600">{money(oFin.grossPending)}</p>
+                  {oFin.grossPaid > 0 && <p className="text-[10px] text-stone-400">de {money(oFin.gross)} · pagado {money(oFin.grossPaid)}</p>}
+                </div>
+                <div className="flex-1 min-w-[130px] rounded-lg bg-green-50 border border-green-100 px-3 py-2">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-green-500">Neta pendiente</p>
+                  <p className="text-sm font-bold text-green-700">{money(oFin.netPending)}</p>
+                  {oFin.netPaid > 0 && <p className="text-[10px] text-stone-400">de {money(oFin.net)} · pagado {money(oFin.netPaid)}</p>}
+                </div>
+                <div className="flex-1 min-w-[170px] rounded-lg border border-stone-200 bg-stone-50 px-3 py-2">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-stone-500">Saldo en cuenta</p>
+                  <p className={`text-sm font-bold ${oFin.saldo < 0 ? 'text-red-600' : 'text-stone-800'}`}>{money(oFin.saldo)}</p>
+                  {oFin.settledCommission > 0 && (
+                    <p className="text-[10px] text-stone-400">
+                      Disponible <strong className={oFin.disponible < 0 ? 'text-red-600' : 'text-emerald-700'}>{money(oFin.disponible)}</strong>
+                      {' '}(− agentes {money(oFin.agentPaid)} − Nomad {money(oFin.nomadKept)})
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* Todas las comisiones del viaje */}
+              <div className="rounded-xl border border-stone-100 overflow-hidden">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-stone-400 px-3 py-2 bg-stone-50 border-b border-stone-100">
+                  Comisiones del viaje
+                </p>
+                {oRows.length === 0 && <p className="px-3 py-4 text-xs text-stone-400 text-center">Sin comisiones registradas</p>}
+                {oRows.map((r) => {
+                  const s = r.service;
+                  const Icon = SERVICE_ICONS[s.service_type] || Package;
+                  const badge = STAGE_BADGE[r.stage] || { label: r.stage, cls: 'bg-stone-100 text-stone-500' };
+                  const res = getReservationNumber(s);
+                  return (
+                    <div key={s.id} className="flex items-center gap-2 px-3 py-2 border-t border-stone-100 first:border-t-0">
+                      <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${SERVICE_ICON_COLORS[s.service_type] || SERVICE_ICON_COLORS.otro}`}>
+                        <Icon className="w-3.5 h-3.5" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-semibold text-stone-800 truncate">{getServiceName(s)}</p>
+                        <p className="text-[10px] text-stone-400 truncate">
+                          {res && `Res: ${res} · `}{s.payment_type ? s.payment_type.toUpperCase() : 'sin tipo'}
+                          {r.refDate ? ` · ${formatDate(r.refDate, 'd MMM yy', { locale: es })}` : ''}
+                        </p>
+                      </div>
+                      <div className="text-right w-16 hidden sm:block">
+                        <p className="text-[9px] text-stone-400">Comisión</p>
+                        <p className="text-xs font-semibold text-stone-600">{money(s.commission || 0)}</p>
+                      </div>
+                      <div className="text-right w-16">
+                        <p className="text-[9px] text-stone-400">Agente</p>
+                        <p className="text-xs font-bold" style={{ color: '#2E442A' }}>{money(r.split.agent)}</p>
+                      </div>
+                      <span className={`flex-shrink-0 w-24 text-center text-[9px] font-bold uppercase tracking-wider px-1.5 py-1 rounded ${badge.cls}`}>
+                        {badge.label}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Checklist de pagos por servicio */}
+              {oChecklist.length > 0 && (
+                <div className="rounded-xl border border-stone-100 overflow-hidden">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-stone-400 px-3 py-2 bg-stone-50 border-b border-stone-100">
+                    Pagos por servicio (todo el folio)
+                  </p>
+                  <div className="px-3 py-2 space-y-1">
+                    {oChecklist.map(({ s, st }) => {
+                      const res = getReservationNumber(s);
+                      return (
+                        <div key={s.id} className="flex items-center gap-2 text-[11px]">
+                          {st.tone === 'green'
+                            ? <Check className="w-3 h-3 text-green-500 flex-shrink-0" />
+                            : <AlertTriangle className={`w-3 h-3 flex-shrink-0 ${st.tone === 'red' ? 'text-red-500' : st.tone === 'amber' ? 'text-amber-500' : 'text-stone-300'}`} />}
+                          <span className="flex-1 min-w-0 truncate text-stone-600">
+                            {getServiceName(s)}{res && <span className="text-stone-400"> · Res: {res}</span>}
+                          </span>
+                          <span className="text-stone-400 whitespace-nowrap hidden sm:inline">{money(st.paid)} / {money(st.cost)}</span>
+                          <span className={`flex-shrink-0 text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${PAY_TONE_CLASSES[st.tone]}`}>
+                            {st.label}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </DialogContent>
+          </Dialog>
+        );
+      })()}
     </div>
   );
 }
