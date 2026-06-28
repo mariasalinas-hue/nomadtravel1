@@ -1114,15 +1114,28 @@ export default function InternalCommissions() {
                   <p className="text-sm font-bold text-green-700">{money(oFin.netPending)}</p>
                   {oFin.netPaid > 0 && <p className="text-[10px] text-stone-400">de {money(oFin.net)} · pagado {money(oFin.netPaid)}</p>}
                 </div>
-                <div className="flex-1 min-w-[170px] rounded-lg border border-stone-200 bg-stone-50 px-3 py-2">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-stone-500">Saldo en cuenta</p>
-                  <p className={`text-sm font-bold ${oFin.saldo < 0 ? 'text-red-600' : 'text-stone-800'}`}>{money(oFin.saldo)}</p>
-                  {oFin.settledCommission > 0 && (
-                    <p className="text-[10px] text-stone-400">
-                      Disponible <strong className={oFin.disponible < 0 ? 'text-red-600' : 'text-emerald-700'}>{money(oFin.disponible)}</strong>
-                      {' '}(− agentes {money(oFin.agentPaid)} − Nomad {money(oFin.nomadKept)})
-                    </p>
-                  )}
+                <div className="flex-1 min-w-[240px] rounded-lg border border-stone-200 bg-stone-50 px-3 py-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-stone-500">Saldo en cuenta</p>
+                    <p className={`text-sm font-bold ${oFin.saldo < 0 ? 'text-red-600' : 'text-stone-800'}`}>{money(oFin.saldo)}</p>
+                  </div>
+                  <p className="text-[10px] text-stone-400 leading-tight">
+                    Cliente pagó {money(oFin.clientIn)} − proveedores {money(oFin.nomadOut)}
+                  </p>
+                  <div className="mt-1.5 pt-1.5 border-t border-stone-200 space-y-1">
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="text-stone-500">Pagado al agente</span>
+                      <span className="font-semibold text-stone-700">{money(oFin.agentPaid)}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="text-stone-500">Retenido por Nomad</span>
+                      <span className="font-semibold text-stone-700">{money(oFin.nomadKept)}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-[11px] pt-1 border-t border-stone-200/70">
+                      <span className="font-bold text-stone-600">Disponible (queda)</span>
+                      <span className={`font-bold ${oFin.disponible < 0 ? 'text-red-600' : 'text-emerald-700'}`}>{money(oFin.disponible)}</span>
+                    </div>
+                  </div>
                 </div>
               </div>
 
