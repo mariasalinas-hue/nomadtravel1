@@ -957,7 +957,7 @@ export default function InternalCommissions() {
                               </p>
                             )}
                           </div>
-                          <div className={`flex-1 min-w-[190px] rounded-lg border px-3 py-2 ${matchesNet ? 'bg-emerald-50 border-emerald-200' : 'bg-stone-50 border-stone-200'}`}>
+                          <div className={`flex-1 min-w-[240px] rounded-lg border px-3 py-2 ${matchesNet ? 'bg-emerald-50 border-emerald-200' : 'bg-stone-50 border-stone-200'}`}>
                             <div className="flex items-center justify-between">
                               <p className="text-[10px] font-bold uppercase tracking-wider text-stone-500">Saldo en cuenta</p>
                               {matchesNet
@@ -965,22 +965,25 @@ export default function InternalCommissions() {
                                 : <span className="text-[10px] text-stone-400">vs neta pend. {money(fin.netPending)}</span>}
                             </div>
                             <p className={`text-sm font-bold ${fin.saldo < 0 ? 'text-red-600' : 'text-stone-800'}`}>{money(fin.saldo)}</p>
-                            {fin.settledCommission > 0 && (
-                              <div className="mt-1 pt-1 border-t border-stone-200/70">
-                                <div className="flex items-center justify-between">
-                                  <span className="text-[10px] font-bold uppercase tracking-wider text-stone-500">Disponible</span>
-                                  <span className={`text-xs font-bold ${fin.disponible < 0 ? 'text-red-600' : 'text-emerald-700'}`}>{money(fin.disponible)}</span>
-                                </div>
-                                <p className="text-[10px] text-stone-400 leading-tight">
-                                  − pagado a agentes {money(fin.agentPaid)} − retenido por Nomad {money(fin.nomadKept)}
-                                </p>
-                              </div>
-                            )}
-                            <p className="text-[10px] text-stone-400 leading-tight mt-0.5">
-                              Cliente pagó {money(fin.clientIn)} − Nomad pagó {money(fin.nomadOut)}
+                            <p className="text-[10px] text-stone-400 leading-tight">
+                              Cliente pagó {money(fin.clientIn)} − proveedores {money(fin.nomadOut)}
                             </p>
+                            <div className="mt-1.5 pt-1.5 border-t border-stone-200/70 space-y-1">
+                              <div className="flex items-center justify-between text-[11px]">
+                                <span className="text-stone-500">Pagado al agente</span>
+                                <span className="font-semibold text-stone-700">{money(fin.agentPaid)}</span>
+                              </div>
+                              <div className="flex items-center justify-between text-[11px]">
+                                <span className="text-stone-500">Retenido por Nomad</span>
+                                <span className="font-semibold text-stone-700">{money(fin.nomadKept)}</span>
+                              </div>
+                              <div className="flex items-center justify-between text-[11px] pt-1 border-t border-stone-200/70">
+                                <span className="font-bold text-stone-600">Disponible (queda)</span>
+                                <span className={`font-bold ${fin.disponible < 0 ? 'text-red-600' : 'text-emerald-700'}`}>{money(fin.disponible)}</span>
+                              </div>
+                            </div>
                             {hasPaymentGap && fin.unaccounted > 1 && (
-                              <p className="text-[10px] leading-tight mt-0.5 text-red-500 font-medium">
+                              <p className="text-[10px] leading-tight mt-1 text-red-500 font-medium">
                                 Debería quedar {money(fin.netPending)} (neta pendiente) · sobran {money(fin.unaccounted)} sin justificar
                               </p>
                             )}
