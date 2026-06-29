@@ -355,7 +355,7 @@ export default function InternalCommissions() {
   const tripFinancials = useMemo(() => {
     const map = {};
     const ensure = (id) => (map[id] = map[id] || {
-      gross: 0, net: 0, grossPaid: 0, netPaid: 0, agentPaid: 0,
+      gross: 0, net: 0, grossPaid: 0, netPaid: 0, netAgentPaid: 0,
       clientIn: 0, nomadOut: 0, services: 0,
     });
     tripServices.forEach(s => {
@@ -367,11 +367,14 @@ export default function InternalCommissions() {
         const isNet = s.payment_type === 'neto';
         if (isNet) e.net += s.commission;
         else e.gross += s.commission;
-        // Comisiones ya liquidadas al agente: se descuentan de lo "pendiente".
         if (s.paid_to_agent) {
-          if (isNet) e.netPaid += s.commission;
-          else e.grossPaid += s.commission;
-          e.agentPaid += splitFor(s).agent; // parte que realmente salió de la cuenta
+          if (isNet) {
+            // Solo las comisiones NETAS salen del saldo (la bruta llega del proveedor por separado).
+            e.netPaid += s.commission;
+            e.netAgentPaid += splitFor(s).agent;
+          } else {
+            e.grossPaid += s.commission;
+          }
         }
       }
     });
@@ -387,14 +390,11 @@ export default function InternalCommissions() {
       e.saldo = e.clientIn - e.nomadOut;
       e.grossPending = e.gross - e.grossPaid;
       e.netPending = e.net - e.netPaid;
-      // Comisión ya liquidada = comisión total de los servicios pagados al agente.
-      // Incluye AMBAS mitades: lo pagado al agente y lo que Nomad (y Montecito) ya retuvo.
-      e.settledCommission = e.grossPaid + e.netPaid;
-      e.nomadKept = Math.max(0, e.settledCommission - e.agentPaid); // parte retenida por Nomad/Montecito
-      // Disponible real = saldo menos TODA la comisión liquidada (agente + Nomad), no solo la del agente.
-      e.disponible = e.saldo - e.settledCommission;
-      // En teoría, lo que debe quedar en cuenta es la comisión neta aún pendiente.
-      // Si sobra más que eso, es señal de pagos a proveedor sin registrar.
+      // Del saldo solo salen las comisiones NETAS ya liquidadas (agente + parte retenida por Nomad).
+      // Las comisiones brutas NO se restan: ese dinero no estaba en el saldo del cliente.
+      e.nomadKeptNet = Math.max(0, e.netPaid - e.netAgentPaid); // parte neta retenida por Nomad/Montecito
+      e.disponible = e.saldo - e.netPaid;
+      // Lo que debe quedar en cuenta es la comisión neta aún pendiente; si sobra más, faltan pagos a proveedor.
       e.unaccounted = e.disponible - e.netPending;
     });
     return map;
@@ -849,10 +849,10 @@ export default function InternalCommissions() {
                 const tripTotal = sumTotal(rows);
                 const refDate = trip?.end_date || trip?.start_date;
                 const fin = tripFinancials[tripId] || {
-                  gross: 0, net: 0, grossPaid: 0, netPaid: 0, agentPaid: 0,
+                  gross: 0, net: 0, grossPaid: 0, netPaid: 0, netAgentPaid: 0,
                   clientIn: 0, nomadOut: 0, saldo: 0, services: 0,
                   grossPending: 0, netPending: 0, disponible: 0,
-                  settledCommission: 0, nomadKept: 0, unaccounted: 0,
+                  nomadKeptNet: 0, unaccounted: 0,
                 };
                 const matchesNet = Math.abs(fin.unaccounted) < 1;
                 // ¿La tarjeta financiera abarca más servicios que los visibles en esta etapa?
@@ -969,13 +969,14 @@ export default function InternalCommissions() {
                               Cliente pagó {money(fin.clientIn)} − proveedores {money(fin.nomadOut)}
                             </p>
                             <div className="mt-1.5 pt-1.5 border-t border-stone-200/70 space-y-1">
+                              <p className="text-[9px] uppercase tracking-wider text-stone-400">Comisiones netas liquidadas</p>
                               <div className="flex items-center justify-between text-[11px]">
                                 <span className="text-stone-500">Pagado al agente</span>
-                                <span className="font-semibold text-stone-700">{money(fin.agentPaid)}</span>
+                                <span className="font-semibold text-stone-700">{money(fin.netAgentPaid)}</span>
                               </div>
                               <div className="flex items-center justify-between text-[11px]">
                                 <span className="text-stone-500">Retenido por Nomad</span>
-                                <span className="font-semibold text-stone-700">{money(fin.nomadKept)}</span>
+                                <span className="font-semibold text-stone-700">{money(fin.nomadKeptNet)}</span>
                               </div>
                               <div className="flex items-center justify-between text-[11px] pt-1 border-t border-stone-200/70">
                                 <span className="font-bold text-stone-600">Disponible (queda)</span>
@@ -1049,8 +1050,8 @@ export default function InternalCommissions() {
       {overviewTripId && (() => {
         const oTrip = tripsMap[overviewTripId];
         const oFin = tripFinancials[overviewTripId] || {
-          gross: 0, net: 0, grossPaid: 0, netPaid: 0, agentPaid: 0, clientIn: 0, nomadOut: 0, services: 0,
-          saldo: 0, grossPending: 0, netPending: 0, disponible: 0, settledCommission: 0, nomadKept: 0, unaccounted: 0,
+          gross: 0, net: 0, grossPaid: 0, netPaid: 0, netAgentPaid: 0, clientIn: 0, nomadOut: 0, services: 0,
+          saldo: 0, grossPending: 0, netPending: 0, disponible: 0, nomadKeptNet: 0, unaccounted: 0,
         };
         const oEnded = tripEnded(oTrip);
         const oRows = rows
@@ -1126,13 +1127,14 @@ export default function InternalCommissions() {
                     Cliente pagó {money(oFin.clientIn)} − proveedores {money(oFin.nomadOut)}
                   </p>
                   <div className="mt-1.5 pt-1.5 border-t border-stone-200 space-y-1">
+                    <p className="text-[9px] uppercase tracking-wider text-stone-400">Comisiones netas liquidadas</p>
                     <div className="flex items-center justify-between text-[11px]">
                       <span className="text-stone-500">Pagado al agente</span>
-                      <span className="font-semibold text-stone-700">{money(oFin.agentPaid)}</span>
+                      <span className="font-semibold text-stone-700">{money(oFin.netAgentPaid)}</span>
                     </div>
                     <div className="flex items-center justify-between text-[11px]">
                       <span className="text-stone-500">Retenido por Nomad</span>
-                      <span className="font-semibold text-stone-700">{money(oFin.nomadKept)}</span>
+                      <span className="font-semibold text-stone-700">{money(oFin.nomadKeptNet)}</span>
                     </div>
                     <div className="flex items-center justify-between text-[11px] pt-1 border-t border-stone-200/70">
                       <span className="font-bold text-stone-600">Disponible (queda)</span>
