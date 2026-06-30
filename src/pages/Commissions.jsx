@@ -14,6 +14,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import AgentInvoiceGenerator from '@/components/commissions/AgentInvoiceGenerator';
+import { agentRateOf, rateForService, splitCommission } from '@/components/utils/commissionSplit';
 
 const RESERVED_BY_LABELS = {
   virtuoso: 'Virtuoso',
@@ -46,24 +47,7 @@ const SERVICE_ICON_COLORS = {
   otro: 'bg-stone-100 text-stone-500'
 };
 
-// Reparto: el agente siempre recibe 50%. Nomad recibe 35% si fue bookeado por
-// Montecito (15% para Montecito) y 50% si fue con IATA Nomad.
-const AGENT_RATE = 0.5;
-const splitFor = (service) => {
-  const bookedBy = service.booked_by || service.metadata?.booked_by;
-  const commission = service.commission || 0;
-  const agent = commission * AGENT_RATE;
-  if (bookedBy === 'montecito') {
-    return { agent, nomad: commission * 0.35, montecito: commission * 0.15, bookedBy };
-  }
-  return { agent, nomad: commission * 0.5, montecito: 0, bookedBy };
-};
-
-// Niveles del split del agente (informativo)
-const TIERS = [
-  { threshold: 0, rate: 50, label: 'Base' },
-  { threshold: 75000, rate: 55, label: '$75,000' },
-];
+// El reparto de comisión (tarifa/tier por agente, congelada al pagar) vive en commissionSplit.js
 
 const money = (n) => `$${Math.round(n).toLocaleString()}`;
 
@@ -152,7 +136,6 @@ export default function Commissions() {
   const [search, setSearch] = useState('');
   const [activeTab, setActiveTab] = useState('proximas');
   const [expandedTrips, setExpandedTrips] = useState(() => new Set());
-  const [tierOpen, setTierOpen] = useState(false);
   const [invoiceDialogOpen, setInvoiceDialogOpen] = useState(false);
   const [editingCommission, setEditingCommission] = useState(null); // { id, value }
 
@@ -207,6 +190,14 @@ export default function Commissions() {
     enabled: !!user && soldTrips.length > 0,
     refetchOnWindowFocus: true
   });
+
+  // Usuarios (para la tarifa/tier de comisión de cada agente)
+  const { data: users = [] } = useQuery({
+    queryKey: ['users'],
+    queryFn: () => supabaseAPI.entities.User.list(),
+    enabled: !!user,
+  });
+  const usersByEmail = useMemo(() => users.reduce((a, u) => { a[(u.email || '').toLowerCase()] = u; return a; }, {}), [users]);
 
   // Resumen financiero por viaje: comisión bruta/neta y saldo en cuenta.
   // Saldo = lo que el cliente pagó a Nomad − lo que Nomad pagó a proveedores.
@@ -284,6 +275,17 @@ export default function Commissions() {
 
   const tripsMap = soldTrips.reduce((acc, trip) => { acc[trip.id] = trip; return acc; }, {});
 
+  // Parte del agente por servicio, según su tarifa (tier) y congelada si ya se pagó.
+  const rateOfService = (s) => {
+    const trip = tripsMap[s.sold_trip_id];
+    const u = usersByEmail[(trip?.created_by || user?.email || '').toLowerCase()];
+    return rateForService(s, agentRateOf(u));
+  };
+  const agentShareOf = (s) => splitCommission(s, rateOfService(s)).agent;
+  const sumAgentShare = (list) => list.reduce((sum, s) => sum + agentShareOf(s), 0);
+  // Tarifa actual del agente que está viendo la pantalla.
+  const myRatePct = Math.round(agentRateOf(usersByEmail[(user?.email || '').toLowerCase()]) * 100);
+
   // ¿El viaje ya terminó? (las comisiones pasan automáticamente a "Por cobrar")
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -310,14 +312,12 @@ export default function Commissions() {
   // ---- Stats globales (no cambian con búsqueda ni pestaña) ----
   const sumCommission = (list) => list.reduce((sum, s) => sum + (s.commission || 0), 0);
   const totalComisiones = sumCommission(commissionServices);
-  const miParteTotal = totalComisiones * AGENT_RATE;
-  const porCobrarTotal = (sumCommission(buckets.por_cobrar) + sumCommission(buckets.pagadas_agencia) + sumCommission(buckets.confirmadas)) * AGENT_RATE;
-  const cobradasTotal = sumCommission(buckets.cobradas) * AGENT_RATE;
+  const miParteTotal = sumAgentShare(commissionServices);
+  const porCobrarTotal = sumAgentShare([...buckets.por_cobrar, ...buckets.pagadas_agencia, ...buckets.confirmadas]);
+  const cobradasTotal = sumAgentShare(buckets.cobradas);
 
-  // Nivel actual del agente según lo cobrado
+  // Total de comisiones ya cobradas por el agente (para mostrar progreso)
   const tierProgress = cobradasTotal;
-  const currentTier = [...TIERS].reverse().find(t => tierProgress >= t.threshold) || TIERS[0];
-  const nextTier = TIERS.find(t => t.threshold > tierProgress);
 
   // ---- Stats de la pestaña activa ----
   const proximasTotal = sumCommission(buckets.proximas);
@@ -337,8 +337,8 @@ export default function Commissions() {
     const label = formatDate(new Date(year, month, 1), 'MMM yyyy', { locale: es });
     return label.charAt(0).toUpperCase() + label.slice(1);
   })();
-  const porCobrarNeto = sumCommission(buckets.por_cobrar.filter(s => s.payment_type === 'neto')) * AGENT_RATE;
-  const porCobrarBruto = sumCommission(buckets.por_cobrar.filter(s => s.payment_type !== 'neto')) * AGENT_RATE;
+  const porCobrarNeto = sumAgentShare(buckets.por_cobrar.filter(s => s.payment_type === 'neto'));
+  const porCobrarBruto = sumAgentShare(buckets.por_cobrar.filter(s => s.payment_type !== 'neto'));
 
   // ---- Búsqueda + agrupación por viaje ----
   const q = search.toLowerCase();
@@ -404,7 +404,7 @@ export default function Commissions() {
   const renderServiceRow = (service) => {
     const Icon = SERVICE_ICONS[service.service_type] || Package;
     const iconColors = SERVICE_ICON_COLORS[service.service_type] || SERVICE_ICON_COLORS.otro;
-    const split = splitFor(service);
+    const split = splitCommission(service, rateOfService(service));
     const isNeto = service.payment_type === 'neto';
     const bucket = bucketOf(service);
 
@@ -476,7 +476,7 @@ export default function Commissions() {
           <p className="text-sm font-bold text-stone-800">{money(split.agent)}</p>
           {isAdmin && (
             <p className="text-[10px] text-stone-400 leading-tight whitespace-nowrap">
-              50% · Nomad {money(split.nomad)}{split.montecito > 0 && <> · <span className="text-amber-600">Mtcto {money(split.montecito)}</span></>}
+              {Math.round(split.rate * 100)}% · Nomad {money(split.nomad)}{split.montecito > 0 && <> · <span className="text-amber-600">Mtcto {money(split.montecito)}</span></>}
             </p>
           )}
         </div>
@@ -573,42 +573,19 @@ export default function Commissions() {
         })}
       </div>
 
-      {/* Barra de nivel */}
-      <div className="bg-white rounded-xl border border-stone-100 px-4 py-3">
-        <button onClick={() => setTierOpen(o => !o)} className="w-full flex items-center gap-3 text-left">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-stone-500">{currentTier.label} · {currentTier.rate}%</span>
-          <span className="text-sm font-bold text-stone-700">{money(tierProgress)} USD</span>
-          {nextTier && (
-            <span className="text-xs text-stone-400">— faltan {money(nextTier.threshold - tierProgress)} para {nextTier.rate}%</span>
-          )}
-          <span className="flex-1" />
-          <div className="w-32 h-1.5 rounded-full bg-stone-100 overflow-hidden hidden sm:block">
-            <div
-              className="h-full rounded-full"
-              style={{
-                width: `${nextTier ? Math.min(100, (tierProgress / nextTier.threshold) * 100) : 100}%`,
-                background: '#C9A84C'
-              }}
-            />
-          </div>
-          {tierOpen ? <ChevronUp className="w-4 h-4 text-stone-300" /> : <ChevronDown className="w-4 h-4 text-stone-300" />}
-        </button>
-        {tierOpen && (
-          <div className="mt-3 pt-3 border-t border-stone-100 flex gap-6">
-            {TIERS.map((t, i) => (
-              <div key={i} className={`text-xs ${tierProgress >= t.threshold ? 'text-stone-700 font-semibold' : 'text-stone-400'}`}>
-                {t.label}: {t.rate}% {tierProgress >= t.threshold && '✓'}
-              </div>
-            ))}
-          </div>
-        )}
+      {/* Tu comisión (tarifa fija asignada por administración) */}
+      <div className="bg-white rounded-xl border border-stone-100 px-4 py-3 flex items-center gap-3">
+        <span className="text-[10px] font-bold uppercase tracking-wider text-stone-500">Tu comisión</span>
+        <span className="text-sm font-bold" style={{ color: '#2E442A' }}>{myRatePct}%</span>
+        <span className="flex-1" />
+        <span className="text-xs text-stone-400">Cobrado: <strong className="text-stone-700">{money(tierProgress)} USD</strong></span>
       </div>
 
       {/* Stats de pestaña */}
       {activeTab === 'proximas' && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <StatCard label="Estimadas" value={money(proximasTotal)} sub="Total servicios futuros" valueClass="text-violet-600" />
-          <StatCard label="Mi parte estimada" value={money(proximasTotal * AGENT_RATE)} sub="50% del total" />
+          <StatCard label="Mi parte estimada" value={money(sumAgentShare(buckets.proximas))} sub="Tu parte del total" />
           <StatCard label="Viajes futuros" value={futureTrips.size} sub="Con comisiones registradas" />
           <StatCard label="Mejor mes" value={bestMonth} sub="Mayor comisión estimada" valueClass="text-amber-600" />
         </div>
@@ -616,7 +593,7 @@ export default function Commissions() {
       {activeTab === 'por_cobrar' && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <StatCard label="Total a cobrar" value={money(sumCommission(buckets.por_cobrar))} sub="Comisión total de servicios" />
-          <StatCard label="Mi parte pendiente" value={money(sumCommission(buckets.por_cobrar) * AGENT_RATE)} sub="50% del total" valueClass="text-orange-500" />
+          <StatCard label="Mi parte pendiente" value={money(sumAgentShare(buckets.por_cobrar))} sub="Tu parte del total" valueClass="text-orange-500" />
           <StatCard label="Neto (disponible)" value={money(porCobrarNeto)} sub="Ya en poder de la agencia" valueClass="text-green-600" />
           <StatCard label="Bruto (en espera)" value={money(porCobrarBruto)} sub="Pendiente de proveedor" valueClass="text-orange-500" />
         </div>
@@ -625,7 +602,7 @@ export default function Commissions() {
         <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
           <p className="text-sm text-amber-800">
             <strong>{buckets.pagadas_agencia.length}</strong> comisión{buckets.pagadas_agencia.length !== 1 ? 'es' : ''} esperando que administración confirme la recepción del pago
-            · Mi parte: <strong>{money(sumCommission(buckets.pagadas_agencia) * AGENT_RATE)}</strong>
+            · Mi parte: <strong>{money(sumAgentShare(buckets.pagadas_agencia))}</strong>
           </p>
         </div>
       )}
@@ -633,7 +610,7 @@ export default function Commissions() {
         <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-xl px-4 py-3">
           <p className="text-sm text-blue-800">
             <strong>{buckets.confirmadas.length}</strong> comisión{buckets.confirmadas.length !== 1 ? 'es' : ''} confirmada{buckets.confirmadas.length !== 1 ? 's' : ''} por administración, lista{buckets.confirmadas.length !== 1 ? 's' : ''} para cobro
-            · Mi parte: <strong>{money(sumCommission(buckets.confirmadas) * AGENT_RATE)}</strong>
+            · Mi parte: <strong>{money(sumAgentShare(buckets.confirmadas))}</strong>
           </p>
           {visibleServices.length > 0 && (
             <Button
@@ -651,7 +628,7 @@ export default function Commissions() {
         <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3">
           <p className="text-sm text-green-800">
             <strong>{buckets.cobradas.length}</strong> comisión{buckets.cobradas.length !== 1 ? 'es' : ''} cobrada{buckets.cobradas.length !== 1 ? 's' : ''}
-            · Total recibido: <strong>{money(sumCommission(buckets.cobradas) * AGENT_RATE)}</strong>
+            · Total recibido: <strong>{money(sumAgentShare(buckets.cobradas))}</strong>
           </p>
         </div>
       )}
@@ -702,7 +679,7 @@ export default function Commissions() {
                 </div>
                 <div className="text-right w-24">
                   <p className="text-[10px] font-bold uppercase tracking-wider text-stone-400">Mi parte</p>
-                  <p className="text-sm font-bold" style={{ color: '#2E442A' }}>{money(total * AGENT_RATE)}</p>
+                  <p className="text-sm font-bold" style={{ color: '#2E442A' }}>{money(sumAgentShare(tripServices))}</p>
                 </div>
               </button>
 

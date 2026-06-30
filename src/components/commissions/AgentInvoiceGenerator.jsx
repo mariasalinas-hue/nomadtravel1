@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Loader2, FileText } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import { toast } from 'sonner';
+import { agentRateOf, rateForService } from '@/components/utils/commissionSplit';
 
 export default function AgentInvoiceGenerator({ open, onClose, services, soldTrips: _soldTrips, currentUser }) {
   const [profileData, setProfileData] = useState({
@@ -30,6 +31,7 @@ export default function AgentInvoiceGenerator({ open, onClose, services, soldTri
   });
   const [autoInvoiceNumber, setAutoInvoiceNumber] = useState('');
   const [profileMeta, setProfileMeta] = useState({ id: null, nextNumber: 1 });
+  const [agentRate, setAgentRate] = useState(0.5); // tarifa de comisión del agente
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [errors, setErrors] = useState({});
@@ -50,6 +52,7 @@ export default function AgentInvoiceGenerator({ open, onClose, services, soldTri
       // Fetch full profile from users table using Clerk email
       const { data: profile } = await supabase.from('users').select('*').eq('email', currentUser.email).single();
       const fullUser = profile || currentUser;
+      setAgentRate(agentRateOf(fullUser));
 
       setProfileData({
         full_name: fullUser.full_name || '',
@@ -256,8 +259,9 @@ export default function AgentInvoiceGenerator({ open, onClose, services, soldTri
         ensureSpace(rowHeight, true);
         const serviceName = getServiceName(service);
         const amountReceived = service.commission || 0;
-        const agentSplit = 50;
-        const amountOwed = amountReceived * 0.5;
+        const rate = rateForService(service, agentRate);
+        const agentSplit = Math.round(rate * 100);
+        const amountOwed = amountReceived * rate;
         totalOwed += amountOwed;
 
         // Zebra striping
@@ -406,7 +410,7 @@ export default function AgentInvoiceGenerator({ open, onClose, services, soldTri
 
         <div className="space-y-4 mt-4">
           <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-sm text-green-800">
-            Se generará una factura por <strong>{services.length} servicio(s)</strong> con un total de comisión del <strong>50%</strong>.
+            Se generará una factura por <strong>{services.length} servicio(s)</strong> con tu tarifa de comisión asignada (<strong>{Math.round(agentRate * 100)}%</strong>).
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -479,12 +483,13 @@ export default function AgentInvoiceGenerator({ open, onClose, services, soldTri
             <div className="space-y-2 max-h-48 overflow-y-auto">
               {services.map((service, index) => {
                 const serviceName = getServiceName(service);
-                const amountOwed = (service.commission || 0) * 0.5;
+                const rate = rateForService(service, agentRate);
+                const amountOwed = (service.commission || 0) * rate;
 
                 return (
                   <div key={index} className="flex justify-between items-center bg-stone-50 p-2 rounded text-sm">
                     <span className="flex-1">{serviceName}</span>
-                    <span className="text-stone-500 mx-4">50%</span>
+                    <span className="text-stone-500 mx-4">{Math.round(rate * 100)}%</span>
                     <span className="font-semibold" style={{ color: '#2E442A' }}>
                       ${amountOwed.toLocaleString()}
                     </span>
@@ -495,7 +500,7 @@ export default function AgentInvoiceGenerator({ open, onClose, services, soldTri
             <div className="flex justify-between items-center bg-stone-800 text-white p-3 rounded mt-2">
               <span className="font-semibold">Total a facturar:</span>
               <span className="text-lg font-bold">
-                ${(services.reduce((sum, s) => sum + ((s.commission || 0) * 0.5), 0)).toLocaleString()}
+                ${(services.reduce((sum, s) => sum + ((s.commission || 0) * rateForService(s, agentRate)), 0)).toLocaleString()}
               </span>
             </div>
           </div>

@@ -17,19 +17,10 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useServiceDropdownOptions } from '@/hooks/useServiceDropdownOptions';
 import { getSupplierCostToPay } from '@/components/utils/serviceCost';
+import { agentRateOf, rateForService, splitCommission, DEFAULT_AGENT_RATE } from '@/components/utils/commissionSplit';
 import AgentCommissionInvoice from '@/components/commissions/AgentCommissionInvoice';
 
-// ---- Misma lógica de cálculo y etiquetas que "Mis Comisiones" (fuente única) ----
-const AGENT_RATE = 0.5;
-const splitFor = (service) => {
-  const bookedBy = service.booked_by || service.metadata?.booked_by;
-  const commission = service.commission || 0;
-  const agent = commission * AGENT_RATE;
-  if (bookedBy === 'montecito') {
-    return { agent, nomad: commission * 0.35, montecito: commission * 0.15, bookedBy };
-  }
-  return { agent, nomad: commission * 0.5, montecito: 0, bookedBy };
-};
+// El reparto de comisión (tier por agente, congelado al pagar) vive en commissionSplit.js
 
 const money = (n) => `$${Math.round(n).toLocaleString()}`;
 
@@ -371,7 +362,9 @@ export default function InternalCommissions() {
           if (isNet) {
             // Solo las comisiones NETAS salen del saldo (la bruta llega del proveedor por separado).
             e.netPaid += s.commission;
-            e.netAgentPaid += splitFor(s).agent;
+            const trip = tripsMap[s.sold_trip_id];
+            const curRate = agentRateOf(usersByEmail[(trip?.created_by || '').toLowerCase()]);
+            e.netAgentPaid += splitCommission(s, rateForService(s, curRate)).agent;
           } else {
             e.grossPaid += s.commission;
           }
@@ -398,7 +391,7 @@ export default function InternalCommissions() {
       e.unaccounted = e.disponible - e.netPending;
     });
     return map;
-  }, [tripServices, clientPayments, supplierPayments]);
+  }, [tripServices, clientPayments, supplierPayments, tripsMap, usersByEmail]);
 
   const updateServiceMutation = useMutation({
     mutationFn: ({ id, data }) => supabaseAPI.entities.TripService.update(id, data),
@@ -413,14 +406,37 @@ export default function InternalCommissions() {
   const setFlags = (service, data, okMsg) =>
     updateServiceMutation.mutate({ id: service.id, data }, { onSuccess: () => okMsg && toast.success(okMsg) });
 
+  // Tarifa ACTUAL del agente dueño del servicio (vía el viaje).
+  const currentRateForService = (s) => {
+    const trip = tripsMap[s.sold_trip_id];
+    return agentRateOf(usersByEmail[(trip?.created_by || '').toLowerCase()]);
+  };
+  // Al pagar al agente se CONGELA la tarifa en el servicio (no se vuelve a recalcular).
+  const freezeRateData = (s) => ({ metadata: { ...(s.metadata || {}), agent_commission_rate: currentRateForService(s) } });
+
+  // Actualiza la tarifa (tier) del agente en su usuario.
+  const updateUserRateMutation = useMutation({
+    mutationFn: ({ user, rate }) =>
+      supabaseAPI.entities.User.update(user.id, { metadata: { ...(user.metadata || {}), commission_rate: rate } }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      toast.success('Tarifa de comisión actualizada');
+    },
+    onError: () => toast.error('No se pudo actualizar la tarifa'),
+  });
+  const setAgentRate = (user, rate) => {
+    if (!user?.id) { toast.error('Agente sin usuario registrado'); return; }
+    updateUserRateMutation.mutate({ user, rate });
+  };
+
   // Admin empuja a "pagado a agencia" si el agente no lo hizo
   const markPaidToAgency = (s) => setFlags(s, { paid_to_agency: true, paid_to_agency_date: s.paid_to_agency_date || new Date().toISOString().split('T')[0] });
   const undoPaidToAgency = (s) => setFlags(s, { paid_to_agency: false, commission_paid: false, paid_to_agent: false, paid_to_agency_date: null });
   // Admin confirma que la agencia recibió el dinero del proveedor
   const confirmReceipt = (s) => setFlags(s, { paid_to_agency: true, commission_paid: true }, 'Recepción confirmada');
   const undoConfirm = (s) => setFlags(s, { commission_paid: false, paid_to_agent: false });
-  // Admin paga su parte al agente
-  const payAgent = (s) => setFlags(s, { paid_to_agency: true, commission_paid: true, paid_to_agent: true }, 'Pagada al agente');
+  // Admin paga su parte al agente (congela la tarifa usada en ese momento)
+  const payAgent = (s) => setFlags(s, { paid_to_agency: true, commission_paid: true, paid_to_agent: true, ...freezeRateData(s) }, 'Pagada al agente');
   const undoPay = (s) => setFlags(s, { paid_to_agent: false });
 
   // Corregir el tipo de comisión (neto / bruto) servicio por servicio
@@ -438,11 +454,15 @@ export default function InternalCommissions() {
         const trip = tripsMap[s.sold_trip_id];
         const agentEmail = (trip?.created_by || '').toLowerCase();
         const agentUser = usersByEmail[agentEmail];
-        const split = splitFor(s);
+        const currentRate = agentRateOf(agentUser);
+        const rate = rateForService(s, currentRate);
+        const split = splitCommission(s, rate);
         return {
           service: s,
           trip,
           agentEmail,
+          agentUser,
+          currentRate,
           agentName: agentUser?.full_name || trip?.created_by || 'Sin asignar',
           iata: s.booked_by || s.metadata?.booked_by || 'iata_nomad',
           refDate: s.commission_payment_date || trip?.end_date || trip?.start_date || null,
@@ -530,7 +550,8 @@ export default function InternalCommissions() {
     for (const r of selectedRows) {
       await updateServiceMutation.mutateAsync({
         id: r.service.id,
-        data: { paid_to_agency: true, commission_paid: true, paid_to_agent: true },
+        // Congela la tarifa usada (la actual del agente) al momento de pagar.
+        data: { paid_to_agency: true, commission_paid: true, paid_to_agent: true, ...freezeRateData(r.service) },
       });
     }
     setSelected([]);
@@ -674,7 +695,7 @@ export default function InternalCommissions() {
         <div className="w-32 flex-shrink-0 text-right">
           <p className="text-sm font-bold text-stone-800">{money(r.split.agent)}</p>
           <p className="text-[10px] text-stone-400 leading-tight whitespace-nowrap">
-            50% · Nomad {money(r.split.nomad)}{r.split.montecito > 0 && <> · <span className="text-amber-600">Mtcto {money(r.split.montecito)}</span></>}
+            {Math.round(r.split.rate * 100)}% · Nomad {money(r.split.nomad)}{r.split.montecito > 0 && <> · <span className="text-amber-600">Mtcto {money(r.split.montecito)}</span></>}
           </p>
         </div>
 
@@ -741,7 +762,7 @@ export default function InternalCommissions() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <StatCard label="Por confirmar" value={money(sumAgent(buckets.pagadas_agencia))} sub={`${buckets.pagadas_agencia.length} · reportadas por agentes`} valueClass="text-amber-600" />
         <StatCard label="Por pagar a agentes" value={money(sumAgent(buckets.confirmadas))} sub={`${buckets.confirmadas.length} · confirmadas`} valueClass="text-blue-600" />
-        <StatCard label="Pagadas a agentes" value={money(sumAgent(buckets.pagadas))} sub={`${buckets.pagadas.length} · 50% entregado`} valueClass="text-green-600" />
+        <StatCard label="Pagadas a agentes" value={money(sumAgent(buckets.pagadas))} sub={`${buckets.pagadas.length} · entregado`} valueClass="text-green-600" />
         <StatCard label="Por cobrar" value={money(sumAgent(buckets.por_cobrar))} sub={`${buckets.por_cobrar.length} · viajes terminados`} valueClass="text-orange-500" />
       </div>
 
@@ -816,34 +837,55 @@ export default function InternalCommissions() {
           <span className="w-24 flex-shrink-0 hidden lg:block text-[10px] font-bold uppercase tracking-wider text-stone-400">Canal</span>
           <span className="w-14 flex-shrink-0 hidden lg:block" />
           <span className="w-20 flex-shrink-0 hidden sm:block text-right text-[10px] font-bold uppercase tracking-wider text-stone-400">Comisión</span>
-          <span className="w-32 flex-shrink-0 text-right text-[10px] font-bold uppercase tracking-wider text-stone-400">Agente (50%)</span>
+          <span className="w-32 flex-shrink-0 text-right text-[10px] font-bold uppercase tracking-wider text-stone-400">Agente</span>
           <span className="w-52 flex-shrink-0 text-right text-[10px] font-bold uppercase tracking-wider text-stone-400">Acción</span>
         </div>
 
         {groups.map(({ agent, list }) => {
           const isOpen = expanded.has(agent);
+          const agentUser = list[0]?.agentUser;
+          const agentRatePct = Math.round((list[0]?.currentRate ?? DEFAULT_AGENT_RATE) * 100);
           return (
             <div key={agent} className="border-b border-stone-100 last:border-0">
-              <button onClick={() => toggleAgent(agent)} className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-stone-50 transition-colors text-left">
-                <span className="w-7 flex justify-center text-stone-300">
-                  {isOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                </span>
-                <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#2E442A15' }}>
-                  <Users className="w-4 h-4" style={{ color: '#2E442A' }} />
+              <div className="flex items-stretch">
+                <button onClick={() => toggleAgent(agent)} className="flex-1 min-w-0 flex items-center gap-3 px-4 py-3.5 hover:bg-stone-50 transition-colors text-left">
+                  <span className="w-7 flex justify-center text-stone-300">
+                    {isOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                  </span>
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#2E442A15' }}>
+                    <Users className="w-4 h-4" style={{ color: '#2E442A' }} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-stone-800 truncate">{agent}</p>
+                    <p className="text-xs text-stone-400">{list.length} comisión{list.length !== 1 ? 'es' : ''}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-stone-400">Comisión total</p>
+                    <p className="text-sm font-bold text-stone-700">{money(sumTotal(list))}</p>
+                  </div>
+                  <div className="text-right w-28">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-stone-400">Parte agente</p>
+                    <p className="text-sm font-bold" style={{ color: '#2E442A' }}>{money(sumAgent(list))}</p>
+                  </div>
+                </button>
+                <div className="flex flex-col items-center justify-center px-3 border-l border-stone-100" onClick={(e) => e.stopPropagation()}>
+                  <p className="text-[9px] font-bold uppercase tracking-wider text-stone-400 mb-0.5">Tarifa</p>
+                  <Select
+                    value={String(agentRatePct)}
+                    onValueChange={(v) => setAgentRate(agentUser, Number(v) / 100)}
+                    disabled={!agentUser || updateUserRateMutation.isPending}
+                  >
+                    <SelectTrigger className="h-7 w-20 rounded-lg text-xs font-bold" style={{ color: '#2E442A' }} title="Tarifa de comisión del agente (solo afecta comisiones futuras)">
+                      <SelectValue>{agentRatePct}%</SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {[50, 55, 60, 65, 70, 75, 80].map(p => (
+                        <SelectItem key={p} value={String(p)}>{p}%</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-bold text-stone-800 truncate">{agent}</p>
-                  <p className="text-xs text-stone-400">{list.length} comisión{list.length !== 1 ? 'es' : ''}</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-stone-400">Comisión total</p>
-                  <p className="text-sm font-bold text-stone-700">{money(sumTotal(list))}</p>
-                </div>
-                <div className="text-right w-28">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-stone-400">Parte agente</p>
-                  <p className="text-sm font-bold" style={{ color: '#2E442A' }}>{money(sumAgent(list))}</p>
-                </div>
-              </button>
+              </div>
               {isOpen && tripSubgroups(list).map(({ tripId, trip, rows }) => {
                 const tripOpen = expandedTrips.has(tripId);
                 const tripTotal = sumTotal(rows);
