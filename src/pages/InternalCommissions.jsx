@@ -75,8 +75,6 @@ function CommissionCell({ service, onSave, disabled }) {
   );
 }
 
-const IATA_LABELS = { montecito: 'Montecito', iata_nomad: 'IATA Nomad', nomad: 'IATA Nomad' };
-
 const RESERVED_BY_LABELS = {
   virtuoso: 'Virtuoso', preferred_partner: 'Preferred Partner', tbo: 'TBO',
   expedia_taap: 'Expedia TAAP', ratehawk: 'RateHawk', tablet_hotels: 'Tablet Hotels', dmc: 'DMC', otro: 'Otro',
@@ -89,6 +87,64 @@ const CHANNEL_LABELS = {
   ...RESERVED_BY_LABELS, ...CRUISE_PROVIDER_LABELS,
   ytc: 'YTC', directo: 'Directo', ez_travel: 'EZ Travel', lozano_travel: 'Lozano Travel', consofly: 'Consofly',
 };
+
+// ---- Opciones editables (mismos valores que ServiceForm) ----
+const BOOKED_BY_OPTIONS = [
+  { value: 'montecito', label: 'Montecito' },
+  { value: 'iata_nomad', label: 'Nomad' },
+];
+const RESERVED_BY_OPTIONS = [
+  { value: 'virtuoso', label: 'Virtuoso' }, { value: 'preferred_partner', label: 'Preferred Partner' },
+  { value: 'tbo', label: 'TBO' }, { value: 'expedia_taap', label: 'Expedia TAAP' },
+  { value: 'ratehawk', label: 'RateHawk' }, { value: 'tablet_hotels', label: 'Tablet Hotels' },
+  { value: 'dmc', label: 'DMC' }, { value: 'otro', label: 'Otro' },
+];
+const CRUISE_PROVIDER_OPTIONS = [
+  { value: 'creative_travel', label: 'Creative Travel' }, { value: 'directo', label: 'Directo' },
+  { value: 'international_cruises', label: 'International Cruises' }, { value: 'cruceros_57', label: 'Cruceros 57' },
+  { value: 'pema', label: 'PeMA' },
+];
+const TRAIN_PROVIDER_OPTIONS = [
+  { value: 'rail_europe', label: 'Rail Europe' }, { value: 'omio', label: 'Omio' }, { value: 'klook', label: 'Klook' },
+];
+const FLIGHT_CONSOLIDATOR_OPTIONS = {
+  montecito: [{ value: 'ytc', label: 'YTC' }],
+  iata_nomad: [
+    { value: 'directo', label: 'Directo' }, { value: 'ez_travel', label: 'EZ Travel' },
+    { value: 'lozano_travel', label: 'Lozano Travel' }, { value: 'consofly', label: 'Consofly' },
+  ],
+};
+
+const normalizeBookedBy = (v) => (v === 'nomad' ? 'iata_nomad' : v) || 'iata_nomad';
+
+// Campo y opciones de "Canal" según el tipo de servicio (null si no aplica)
+const channelConfigFor = (service) => {
+  const bookedBy = normalizeBookedBy(service.booked_by || service.metadata?.booked_by);
+  switch (service.service_type) {
+    case 'hotel': return { field: 'reserved_by', options: RESERVED_BY_OPTIONS };
+    case 'vuelo': return { field: 'flight_consolidator', options: FLIGHT_CONSOLIDATOR_OPTIONS[bookedBy] || [] };
+    case 'crucero': return { field: 'cruise_provider', options: CRUISE_PROVIDER_OPTIONS };
+    case 'tren': return { field: 'train_provider', options: TRAIN_PROVIDER_OPTIONS };
+    default: return null;
+  }
+};
+
+// Select compacto en línea para editar IATA / Canal
+function InlineSelect({ value, options, placeholder = '—', onChange, disabled, triggerClassName }) {
+  return (
+    <Select value={value || undefined} onValueChange={onChange} disabled={disabled}>
+      <SelectTrigger
+        className={triggerClassName || 'h-6 px-2 rounded-md text-xs border-stone-200 bg-white text-stone-600'}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <SelectValue placeholder={placeholder} />
+      </SelectTrigger>
+      <SelectContent>
+        {options.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+      </SelectContent>
+    </Select>
+  );
+}
 
 const SERVICE_ICONS = { hotel: Hotel, vuelo: Plane, traslado: Car, tour: Compass, crucero: Ship, tren: Train, dmc: Briefcase, otro: Package };
 const SERVICE_ICON_COLORS = {
@@ -114,16 +170,6 @@ const getServiceName = (service) => {
     case 'otro': return service.other_name || m.other_name || service.other_description || m.other_description || service.service_name || 'Servicio';
     default: return service.service_name || 'Servicio';
   }
-};
-
-const getChannel = (service) => {
-  const m = service.metadata || {};
-  const raw = service.reserved_by || m.reserved_by
-    || service.flight_consolidator || m.flight_consolidator
-    || service.cruise_provider || m.cruise_provider
-    || service.train_provider || m.train_provider;
-  if (!raw) return '—';
-  return CHANNEL_LABELS[raw] || raw;
 };
 
 // 5 etapas del ciclo de vida — idéntico a Mis Comisiones
@@ -248,6 +294,16 @@ export default function InternalCommissions() {
 
   // Editar el monto de la comisión
   const setCommission = (s, amount) => setFlags(s, { commission: amount }, 'Comisión actualizada');
+
+  // Editar la agencia (IATA). Para vuelos, alinea el consolidador igual que ServiceForm.
+  const setBookedBy = (s, value) => {
+    const data = { booked_by: value };
+    if (s.service_type === 'vuelo') data.flight_consolidator = value === 'montecito' ? 'ytc' : '';
+    setFlags(s, data, 'Agencia (IATA) actualizada');
+  };
+
+  // Editar el canal (campo depende del tipo de servicio)
+  const setChannel = (s, field, value) => setFlags(s, { [field]: value }, 'Canal actualizado');
 
   // Corregir el tipo de comisión (neto / bruto) servicio por servicio
   const setPaymentType = (s, value) => setFlags(
@@ -394,7 +450,17 @@ export default function InternalCommissions() {
     const s = r.service;
     const Icon = SERVICE_ICONS[s.service_type] || Package;
     const iconColors = SERVICE_ICON_COLORS[s.service_type] || SERVICE_ICON_COLORS.otro;
-    const channel = getChannel(s);
+    const channelCfg = channelConfigFor(s);
+    let channelValue = '';
+    let channelOptions = [];
+    if (channelCfg) {
+      channelValue = s[channelCfg.field] || s.metadata?.[channelCfg.field] || '';
+      channelOptions = channelCfg.options;
+      // Conservar un valor personalizado que no esté en la lista estática
+      if (channelValue && !channelOptions.some(o => o.value === channelValue)) {
+        channelOptions = [{ value: channelValue, label: CHANNEL_LABELS[channelValue] || channelValue }, ...channelOptions];
+      }
+    }
 
     return (
       <div key={s.id} className="flex items-center gap-3 px-4 py-3 border-t border-stone-100 bg-stone-50/40">
@@ -438,12 +504,27 @@ export default function InternalCommissions() {
           </Select>
         </div>
 
-        <div className="w-20 flex-shrink-0 hidden lg:block">
-          <span className="text-xs font-medium text-stone-600">{IATA_LABELS[r.iata] || r.iata}</span>
+        <div className="w-20 flex-shrink-0 hidden lg:block" onClick={(e) => e.stopPropagation()}>
+          <InlineSelect
+            value={normalizeBookedBy(r.iata)}
+            options={BOOKED_BY_OPTIONS}
+            onChange={(v) => setBookedBy(s, v)}
+            disabled={updateServiceMutation.isPending}
+          />
         </div>
 
-        <div className="w-24 flex-shrink-0 hidden lg:block min-w-0">
-          <span className="text-xs text-stone-500 block truncate" title={channel}>{channel}</span>
+        <div className="w-24 flex-shrink-0 hidden lg:block min-w-0" onClick={(e) => e.stopPropagation()}>
+          {channelCfg ? (
+            <InlineSelect
+              value={channelValue}
+              options={channelOptions}
+              placeholder="Seleccionar"
+              onChange={(v) => setChannel(s, channelCfg.field, v)}
+              disabled={updateServiceMutation.isPending}
+            />
+          ) : (
+            <span className="text-xs text-stone-400 block truncate">—</span>
+          )}
         </div>
 
         <div className="w-20 flex-shrink-0 text-right hidden sm:block" onClick={(e) => e.stopPropagation()}>
