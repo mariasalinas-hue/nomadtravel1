@@ -17,19 +17,21 @@ import {
   MapPin, Plane, Clock,
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
-const BRAND = '#2E442A';
+const BRAND = '#2D4629';
+const GOLD = '#C9A84C';
 
 // Colores por estado del viaje (mismos estados que Viajes Vendidos)
+// bar   = pastilla suave con etiqueta (día de inicio / inicio de semana)
+// track = barra fina de continuación en los días intermedios
 const STATUS_META = {
-  pendiente: { label: 'Pendiente', dot: '#eab308', chip: 'bg-yellow-100 text-yellow-800 border-yellow-200' },
-  parcial: { label: 'Pago parcial', dot: '#3b82f6', chip: 'bg-blue-100 text-blue-800 border-blue-200' },
-  pagado: { label: 'Pagado', dot: '#22c55e', chip: 'bg-green-100 text-green-800 border-green-200' },
-  completado: { label: 'Completado', dot: '#10b981', chip: 'bg-emerald-100 text-emerald-800 border-emerald-200' },
+  pendiente:  { label: 'Pendiente',    dot: '#EAB308', bar: 'bg-amber-50 text-amber-700 ring-1 ring-amber-200/70',     track: 'bg-amber-300/70' },
+  parcial:    { label: 'Pago parcial', dot: '#3B82F6', bar: 'bg-blue-50 text-blue-700 ring-1 ring-blue-200/70',        track: 'bg-blue-300/70' },
+  pagado:     { label: 'Pagado',       dot: '#22C55E', bar: 'bg-green-50 text-green-700 ring-1 ring-green-200/70',     track: 'bg-green-300/70' },
+  completado: { label: 'Completado',   dot: '#10B981', bar: 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200/70', track: 'bg-emerald-300/70' },
 };
-const statusMeta = (s) => STATUS_META[s] || { label: s || 'Sin estado', dot: '#a8a29e', chip: 'bg-stone-100 text-stone-700 border-stone-200' };
+const statusMeta = (s) => STATUS_META[s] || { label: s || 'Sin estado', dot: '#A8A29E', bar: 'bg-stone-100 text-stone-600 ring-1 ring-stone-200/70', track: 'bg-stone-300/70' };
 
 const WEEKDAYS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 
@@ -145,38 +147,45 @@ export default function TripCalendar() {
     );
   }
 
-  const StatCard = ({ label, value, sub, valueClass = 'text-stone-800' }) => (
-    <div className="bg-white rounded-xl p-4 border border-stone-100">
-      <p className="text-[10px] font-semibold uppercase tracking-wider text-stone-400">{label}</p>
-      <p className={`text-2xl font-bold mt-1 ${valueClass}`}>{value}</p>
-      <p className="text-xs text-stone-400 mt-0.5">{sub}</p>
+  const StatCard = ({ label, value, sub, valueClass = 'text-stone-800', accent }) => (
+    <div className="bg-white rounded-2xl p-4 border border-stone-100 shadow-sm">
+      <div className="flex items-center gap-1.5">
+        {accent && <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: accent }} />}
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-stone-400">{label}</p>
+      </div>
+      <p className={`text-2xl font-bold mt-1.5 ${valueClass}`} style={{ letterSpacing: '-0.02em' }}>{value}</p>
+      <p className="text-xs text-stone-400 mt-0.5 truncate">{sub}</p>
     </div>
   );
 
   const renderMonth = () => (
-    <div className="bg-white rounded-2xl border border-stone-100 overflow-hidden">
+    <div className="bg-white rounded-2xl border border-stone-100 shadow-sm overflow-hidden">
       {/* Navegación del mes */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-stone-100">
-        <h2 className="text-lg font-bold text-stone-800 capitalize">
-          {formatDate(cursor, 'MMMM yyyy', { locale: es })}
+      <div className="flex items-center justify-between px-5 py-4 border-b border-stone-100">
+        <h2 className="text-2xl font-bold text-stone-800 capitalize" style={{ fontFamily: 'Playfair Display, serif', letterSpacing: '-0.01em' }}>
+          {formatDate(cursor, 'MMMM', { locale: es })}
+          <span className="text-stone-300 font-normal ml-2">{formatDate(cursor, 'yyyy')}</span>
         </h2>
-        <div className="flex items-center gap-1">
-          <Button variant="outline" size="sm" className="rounded-lg" onClick={() => setCursor(subMonths(cursor, 1))}>
+        <div className="flex items-center gap-1.5">
+          <button onClick={() => setCursor(subMonths(cursor, 1))}
+            className="w-9 h-9 flex items-center justify-center rounded-full border border-stone-200 text-stone-500 hover:bg-stone-50 hover:text-stone-800 transition-colors">
             <ChevronLeft className="w-4 h-4" />
-          </Button>
-          <Button variant="outline" size="sm" className="rounded-lg" onClick={() => setCursor(startOfMonth(new Date()))}>
+          </button>
+          <button onClick={() => setCursor(startOfMonth(new Date()))}
+            className="px-4 h-9 rounded-full border border-stone-200 text-sm font-medium text-stone-600 hover:bg-stone-50 hover:text-stone-800 transition-colors">
             Hoy
-          </Button>
-          <Button variant="outline" size="sm" className="rounded-lg" onClick={() => setCursor(addMonths(cursor, 1))}>
+          </button>
+          <button onClick={() => setCursor(addMonths(cursor, 1))}
+            className="w-9 h-9 flex items-center justify-center rounded-full border border-stone-200 text-stone-500 hover:bg-stone-50 hover:text-stone-800 transition-colors">
             <ChevronRight className="w-4 h-4" />
-          </Button>
+          </button>
         </div>
       </div>
 
       {/* Encabezado de días */}
-      <div className="grid grid-cols-7 border-b border-stone-100">
-        {WEEKDAYS.map(d => (
-          <div key={d} className="px-2 py-2 text-center text-[10px] font-bold uppercase tracking-wider text-stone-400">{d}</div>
+      <div className="grid grid-cols-7 bg-stone-50/60 border-b border-stone-100">
+        {WEEKDAYS.map((d, i) => (
+          <div key={d} className={`px-2 py-2.5 text-center text-[10px] font-semibold uppercase tracking-[0.1em] ${i >= 5 ? 'text-stone-300' : 'text-stone-400'}`}>{d}</div>
         ))}
       </div>
 
@@ -185,18 +194,19 @@ export default function TripCalendar() {
         {monthGrid.map((day, i) => {
           const inMonth = isSameMonth(day, cursor);
           const isToday = isSameDay(day, today);
+          const isWeekend = day.getDay() === 0 || day.getDay() === 6;
           const dayTrips = tripsForDay(day);
           const shown = dayTrips.slice(0, 3);
           const overflow = dayTrips.length - shown.length;
           return (
             <div
               key={i}
-              className={`min-h-[92px] border-b border-r border-stone-100 p-1.5 flex flex-col gap-1 ${
-                inMonth ? 'bg-white' : 'bg-stone-50/60'
-              } ${(i + 1) % 7 === 0 ? 'border-r-0' : ''}`}
+              className={`min-h-[104px] border-b border-r border-stone-100/80 px-1.5 pt-1.5 pb-2 flex flex-col gap-1 transition-colors ${
+                !inMonth ? 'bg-stone-50/50' : isWeekend ? 'bg-stone-50/30' : 'bg-white'
+              } ${(i + 1) % 7 === 0 ? 'border-r-0' : ''} ${i >= monthGrid.length - 7 ? 'border-b-0' : ''}`}
             >
               <span className={`text-[11px] font-semibold self-end w-6 h-6 flex items-center justify-center rounded-full ${
-                isToday ? 'text-white' : inMonth ? 'text-stone-600' : 'text-stone-300'
+                isToday ? 'text-white shadow-sm' : inMonth ? 'text-stone-500' : 'text-stone-300'
               }`} style={isToday ? { backgroundColor: BRAND } : undefined}>
                 {formatDate(day, 'd')}
               </span>
@@ -205,23 +215,31 @@ export default function TripCalendar() {
                   const meta = statusMeta(dt.trip.status);
                   const isStart = isSameDay(day, dt.s);
                   const isWeekStart = day.getDay() === 1; // lunes
-                  const label = isStart || isWeekStart;
-                  return (
+                  const withLabel = isStart || isWeekStart;
+                  const title = `${tripTitle(dt.trip)}${dt.trip.destination ? ' · ' + dt.trip.destination : ''}`;
+                  return withLabel ? (
                     <Link
                       key={dt.trip.id}
                       to={tripUrl(dt.trip)}
-                      title={`${tripTitle(dt.trip)}${dt.trip.destination ? ' · ' + dt.trip.destination : ''}`}
-                      className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border truncate hover:opacity-80 ${meta.chip} ${
-                        !isStart ? 'rounded-l-none border-l-0' : ''
-                      }`}
+                      title={title}
+                      className={`flex items-center gap-1 h-[19px] px-1.5 rounded-md text-[11px] font-medium leading-none truncate transition-transform hover:-translate-y-px ${meta.bar}`}
                     >
                       <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: meta.dot }} />
-                      {label && <span className="truncate">{tripTitle(dt.trip)}</span>}
+                      <span className="truncate">{tripTitle(dt.trip)}</span>
+                    </Link>
+                  ) : (
+                    <Link
+                      key={dt.trip.id}
+                      to={tripUrl(dt.trip)}
+                      title={title}
+                      className="h-[19px] flex items-center px-0.5"
+                    >
+                      <span className={`w-full h-1.5 rounded-full ${meta.track}`} />
                     </Link>
                   );
                 })}
                 {overflow > 0 && (
-                  <span className="text-[10px] text-stone-400 pl-1">+{overflow} más</span>
+                  <span className="text-[10px] font-medium text-stone-400 pl-1.5">+{overflow} más</span>
                 )}
               </div>
             </div>
@@ -259,10 +277,10 @@ export default function TripCalendar() {
   };
 
   const renderAgenda = () => (
-    <div className="bg-white rounded-2xl border border-stone-100 overflow-hidden">
-      <div className="px-4 py-3 border-b border-stone-100 flex items-center gap-2">
+    <div className="bg-white rounded-2xl border border-stone-100 shadow-sm overflow-hidden">
+      <div className="px-5 py-4 border-b border-stone-100 flex items-center gap-2">
         <Plane className="w-4 h-4" style={{ color: BRAND }} />
-        <h2 className="text-sm font-bold text-stone-800">Próximos viajes</h2>
+        <h2 className="text-base font-bold text-stone-800" style={{ fontFamily: 'Playfair Display, serif' }}>Próximos viajes</h2>
         <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: `${BRAND}15`, color: BRAND }}>
           {agenda.upcoming.length}
         </span>
@@ -297,10 +315,12 @@ export default function TripCalendar() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-stone-800">Calendario de Viajes</h1>
-          <p className="text-stone-400 text-sm">
+          <h1 className="text-3xl lg:text-4xl font-bold text-stone-800" style={{ fontFamily: 'Playfair Display, serif', letterSpacing: '-0.02em' }}>
+            Calendario de Viajes
+          </h1>
+          <p className="text-stone-500 text-sm mt-1">
             {stats.nextTrip
-              ? <>Próximo: <strong>{tripTitle(stats.nextTrip.trip)}</strong> · {daysLabel(stats.nextTrip).text.toLowerCase()}</>
+              ? <>Próximo: <strong className="text-stone-700">{tripTitle(stats.nextTrip.trip)}</strong> · {daysLabel(stats.nextTrip).text.toLowerCase()}</>
               : 'Programación de los viajes vendidos'}
           </p>
         </div>
@@ -327,14 +347,15 @@ export default function TripCalendar() {
 
       {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <StatCard label="Próximos" value={stats.upcomingCount} sub="viajes por venir" valueClass="text-stone-800" />
-        <StatCard label="En 30 días" value={stats.next30} sub="empiezan pronto" valueClass="text-orange-600" />
-        <StatCard label="Este mes" value={stats.thisMonth} sub={formatDate(cursor, 'MMMM', { locale: es })} valueClass="text-blue-600" />
+        <StatCard label="Próximos" value={stats.upcomingCount} sub="viajes por venir" valueClass="text-stone-800" accent={BRAND} />
+        <StatCard label="En 30 días" value={stats.next30} sub="empiezan pronto" valueClass="text-orange-600" accent="#F97316" />
+        <StatCard label="Este mes" value={stats.thisMonth} sub={formatDate(cursor, 'MMMM', { locale: es })} valueClass="text-blue-600" accent="#3B82F6" />
         <StatCard
           label="Siguiente"
           value={stats.nextTrip ? daysLabel(stats.nextTrip).text : '—'}
           sub={stats.nextTrip ? tripTitle(stats.nextTrip.trip) : 'sin viajes'}
-          valueClass="text-emerald-600"
+          valueClass="text-stone-800"
+          accent={GOLD}
         />
       </div>
 
@@ -359,7 +380,8 @@ export default function TripCalendar() {
       {view === 'month' ? renderMonth() : renderAgenda()}
 
       {/* Leyenda de estados */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-1">
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-2 px-1">
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-stone-400">Estado</span>
         {Object.entries(STATUS_META).map(([key, meta]) => (
           <span key={key} className="flex items-center gap-1.5 text-xs text-stone-500">
             <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: meta.dot }} />
