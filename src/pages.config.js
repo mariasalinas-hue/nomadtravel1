@@ -27,6 +27,7 @@ import SoldTrips from './pages/SoldTrips';
 import Statistics from './pages/Statistics';
 import SupplierDetail from './pages/SupplierDetail';
 import Suppliers from './pages/Suppliers';
+import TripCalendar from './pages/TripCalendar';
 import TripDetail from './pages/TripDetail';
 import TripRequestPublic from './pages/TripRequestPublic';
 import Trips from './pages/Trips';
@@ -63,6 +64,7 @@ export const PAGES = {
     "Statistics": Statistics,
     "SupplierDetail": SupplierDetail,
     "Suppliers": Suppliers,
+    "TripCalendar": TripCalendar,
     "TripDetail": TripDetail,
     "TripRequestPublic": TripRequestPublic,
     "Trips": Trips,
