@@ -30,6 +30,51 @@ const splitFor = (service) => {
 
 const money = (n) => `$${Math.round(n).toLocaleString()}`;
 
+// Celda de comisión editable en línea (click para editar, Enter/blur para guardar)
+function CommissionCell({ service, onSave, disabled }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(String(service.commission || 0));
+
+  const start = () => { setValue(String(service.commission || 0)); setEditing(true); };
+  const cancel = () => setEditing(false);
+  const commit = () => {
+    setEditing(false);
+    const num = Math.round(parseFloat(value) || 0);
+    if (num !== Math.round(service.commission || 0)) onSave(service, num);
+  };
+
+  if (editing) {
+    return (
+      <Input
+        type="number"
+        autoFocus
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') { e.preventDefault(); commit(); }
+          if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+        }}
+        onClick={(e) => e.stopPropagation()}
+        disabled={disabled}
+        className="h-6 px-1.5 text-right text-sm w-full rounded-md"
+      />
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={(e) => { e.stopPropagation(); start(); }}
+      disabled={disabled}
+      title="Editar comisión"
+      className="w-full text-right text-sm font-semibold text-stone-700 hover:text-stone-900 hover:underline decoration-dotted underline-offset-2"
+    >
+      {money(service.commission || 0)}
+    </button>
+  );
+}
+
 const IATA_LABELS = { montecito: 'Montecito', iata_nomad: 'IATA Nomad', nomad: 'IATA Nomad' };
 
 const RESERVED_BY_LABELS = {
@@ -200,6 +245,9 @@ export default function InternalCommissions() {
   // Admin paga su parte al agente
   const payAgent = (s) => setFlags(s, { paid_to_agency: true, commission_paid: true, paid_to_agent: true }, 'Pagada al agente');
   const undoPay = (s) => setFlags(s, { paid_to_agent: false });
+
+  // Editar el monto de la comisión
+  const setCommission = (s, amount) => setFlags(s, { commission: amount }, 'Comisión actualizada');
 
   // Corregir el tipo de comisión (neto / bruto) servicio por servicio
   const setPaymentType = (s, value) => setFlags(
@@ -398,8 +446,8 @@ export default function InternalCommissions() {
           <span className="text-xs text-stone-500 block truncate" title={channel}>{channel}</span>
         </div>
 
-        <div className="w-20 flex-shrink-0 text-right hidden sm:block">
-          <span className="text-sm font-semibold text-stone-700">{money(s.commission || 0)}</span>
+        <div className="w-20 flex-shrink-0 text-right hidden sm:block" onClick={(e) => e.stopPropagation()}>
+          <CommissionCell service={s} onSave={setCommission} disabled={updateServiceMutation.isPending} />
         </div>
 
         <div className="w-32 flex-shrink-0 text-right">
