@@ -9,7 +9,7 @@ import { updateSoldTripTotalsFromServices } from '@/components/utils/soldTripRec
 import { toast } from 'sonner';
 import {
   Loader2, Search, DollarSign, Users, Calendar, ArrowUpDown, Check, Undo2,
-  ChevronDown, ChevronUp, FileText, Eye, ExternalLink,
+  ChevronDown, ChevronUp, FileText, Eye, ExternalLink, Trash2, Plus,
   Hotel, Plane, Car, Compass, Ship, Train, Briefcase, Package,
 } from 'lucide-react';
 import { Input } from "@/components/ui/input";
@@ -210,7 +210,10 @@ const TABS = [
 const STAGE_ORDER = ['proximas', 'por_cobrar', 'pagadas_agencia', 'confirmadas', 'pagadas'];
 
 // Ventana "de un vistazo": el viaje y todas sus comisiones con su etapa
-function TripGlanceDialog({ open, onClose, trip, tripRows = [], fin }) {
+function TripGlanceDialog({ open, onClose, trip, tripRows = [], fin, onSaveDeductions, saving }) {
+  const [newConcept, setNewConcept] = useState('');
+  const [newAmount, setNewAmount] = useState('');
+
   const totalCommission = tripRows.reduce((s, r) => s + (r.service.commission || 0), 0);
   const totalAgent = tripRows.reduce((s, r) => s + r.split.agent, 0);
   const byStage = STAGE_ORDER.map(k => {
@@ -224,6 +227,28 @@ function TripGlanceDialog({ open, onClose, trip, tripRows = [], fin }) {
   const matchesNet = Math.abs(f.saldo - f.net) < 1;
   const refDate = trip?.end_date || trip?.start_date;
   const agentName = tripRows[0]?.agentName;
+
+  const deductions = trip?.metadata?.commission_deductions || [];
+  const totalDeductions = deductions.reduce((s, d) => s + (Number(d.amount) || 0), 0);
+  const netAgent = totalAgent - totalDeductions;
+
+  const addDeduction = () => {
+    const amount = Math.round(parseFloat(newAmount) || 0);
+    if (!trip?.id || amount <= 0) return;
+    const entry = {
+      id: (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now()),
+      concept: newConcept.trim() || 'Deducción',
+      amount,
+      date: new Date().toISOString().split('T')[0],
+    };
+    onSaveDeductions(trip.id, [...deductions, entry]);
+    setNewConcept('');
+    setNewAmount('');
+  };
+  const removeDeduction = (id) => {
+    if (!trip?.id) return;
+    onSaveDeductions(trip.id, deductions.filter(d => d.id !== id));
+  };
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -247,8 +272,11 @@ function TripGlanceDialog({ open, onClose, trip, tripRows = [], fin }) {
             <p className="text-2xl font-bold text-stone-800">{money(totalCommission)}</p>
           </div>
           <div className="rounded-xl border p-3" style={{ borderColor: '#2E442A22', backgroundColor: '#2E442A08' }}>
-            <p className="text-[10px] font-bold uppercase tracking-wider text-stone-400">Parte agente (50%)</p>
-            <p className="text-2xl font-bold" style={{ color: '#2E442A' }}>{money(totalAgent)}</p>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-stone-400">Neto a pagar al agente</p>
+            <p className="text-2xl font-bold" style={{ color: '#2E442A' }}>{money(netAgent)}</p>
+            {totalDeductions > 0 && (
+              <p className="text-[11px] text-stone-500 mt-0.5">{money(totalAgent)} − {money(totalDeductions)} deducciones</p>
+            )}
           </div>
         </div>
 
@@ -282,6 +310,58 @@ function TripGlanceDialog({ open, onClose, trip, tripRows = [], fin }) {
               {matchesNet && <Check className="w-3 h-3 text-emerald-500" />}
             </div>
             <p className={`text-sm font-bold ${f.saldo < 0 ? 'text-red-600' : 'text-stone-800'}`}>{money(f.saldo)}</p>
+          </div>
+        </div>
+
+        {/* Deducciones de la comisión del agente */}
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-stone-400">Deducciones (parte agente)</p>
+            {totalDeductions > 0 && <p className="text-xs font-semibold text-red-600">− {money(totalDeductions)}</p>}
+          </div>
+          <div className="rounded-xl border border-stone-100 divide-y divide-stone-100">
+            {deductions.length === 0 ? (
+              <p className="px-3 py-2 text-sm text-stone-400">Sin deducciones</p>
+            ) : deductions.map(d => (
+              <div key={d.id} className="flex items-center justify-between px-3 py-2">
+                <div className="min-w-0">
+                  <p className="text-sm text-stone-700 truncate">{d.concept || 'Deducción'}</p>
+                  {d.date && <p className="text-[10px] text-stone-400">{formatDate(d.date, 'd MMM yy', { locale: es })}</p>}
+                </div>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <span className="text-sm font-semibold text-red-600">− {money(Number(d.amount) || 0)}</span>
+                  <button onClick={() => removeDeduction(d.id)} disabled={saving} title="Quitar"
+                    className="p-1 rounded text-stone-300 hover:text-red-500">
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="flex gap-2 mt-2">
+            <Input
+              placeholder="Concepto (ej. anticipo, gasto)"
+              value={newConcept}
+              onChange={(e) => setNewConcept(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') addDeduction(); }}
+              className="flex-1 rounded-lg h-9"
+            />
+            <Input
+              type="number"
+              placeholder="Monto"
+              value={newAmount}
+              onChange={(e) => setNewAmount(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') addDeduction(); }}
+              className="w-28 rounded-lg h-9 text-right"
+            />
+            <Button
+              onClick={addDeduction}
+              disabled={saving || !(parseFloat(newAmount) > 0)}
+              className="rounded-lg h-9 text-white flex-shrink-0"
+              style={{ backgroundColor: '#2E442A' }}
+            >
+              <Plus className="w-4 h-4 mr-1" /> Agregar
+            </Button>
           </div>
         </div>
 
@@ -417,6 +497,18 @@ export default function InternalCommissions() {
   });
   const setFlags = (service, data, okMsg) =>
     updateServiceMutation.mutate({ id: service.id, data }, { onSuccess: () => okMsg && toast.success(okMsg) });
+
+  // Deducciones por viaje (guardadas en metadata.commission_deductions del SoldTrip)
+  const updateTripMutation = useMutation({
+    mutationFn: ({ id, data }) => supabaseAPI.entities.SoldTrip.update(id, data),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['soldTrips'] }),
+    onError: () => toast.error('No se pudo guardar la deducción'),
+  });
+  const saveDeductions = (tripId, deductions) => {
+    const trip = tripsMap[tripId];
+    const metadata = { ...(trip?.metadata || {}), commission_deductions: deductions };
+    updateTripMutation.mutate({ id: tripId, data: { metadata } }, { onSuccess: () => toast.success('Deducciones actualizadas') });
+  };
 
   // Admin empuja a "pagado a agencia" si el agente no lo hizo
   const markPaidToAgency = (s) => setFlags(s, { paid_to_agency: true, paid_to_agency_date: s.paid_to_agency_date || new Date().toISOString().split('T')[0] });
@@ -946,9 +1038,11 @@ export default function InternalCommissions() {
       <TripGlanceDialog
         open={!!glanceTrip}
         onClose={() => setGlanceTrip(null)}
-        trip={glanceTrip?.trip}
+        trip={glanceTrip ? (tripsMap[glanceTrip.tripId] || glanceTrip.trip) : null}
         tripRows={glanceRows}
         fin={glanceFin}
+        onSaveDeductions={saveDeductions}
+        saving={updateTripMutation.isPending}
       />
     </div>
   );
