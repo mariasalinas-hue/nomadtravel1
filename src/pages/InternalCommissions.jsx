@@ -19,17 +19,24 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import AgentCommissionInvoice from '@/components/commissions/AgentCommissionInvoice';
 
-// ---- Misma lógica de cálculo y etiquetas que "Mis Comisiones" (fuente única) ----
-const AGENT_RATE = 0.5;
-const splitFor = (service) => {
+// ---- Cálculo del reparto de comisión ----
+// El % del agente es configurable por agente (default 50). El extra (>50%)
+// sale de la parte de Nomad; en viajes Montecito, Montecito conserva su 15%.
+const DEFAULT_AGENT_RATE = 50;
+const splitFor = (service, agentRate = DEFAULT_AGENT_RATE) => {
   const bookedBy = service.booked_by || service.metadata?.booked_by;
   const commission = service.commission || 0;
-  const agent = commission * AGENT_RATE;
+  const rate = (Number(agentRate) || DEFAULT_AGENT_RATE) / 100;
+  const agent = commission * rate;
   if (bookedBy === 'montecito') {
-    return { agent, nomad: commission * 0.35, montecito: commission * 0.15, bookedBy };
+    const montecito = commission * 0.15;
+    return { agent, nomad: Math.max(0, commission - agent - montecito), montecito, bookedBy };
   }
-  return { agent, nomad: commission * 0.5, montecito: 0, bookedBy };
+  return { agent, nomad: Math.max(0, commission - agent), montecito: 0, bookedBy };
 };
+
+// Lee el % configurado de un agente desde su registro de usuario
+const agentRateOf = (user) => Number(user?.metadata?.agent_commission_rate) || DEFAULT_AGENT_RATE;
 
 const money = (n) => `$${Math.round(n).toLocaleString()}`;
 
@@ -149,6 +156,53 @@ function InlineSelect({ value, options, placeholder = '—', onChange, disabled,
   );
 }
 
+// Porcentaje editable del agente (clic para editar; se guarda en el usuario)
+function AgentRateControl({ userId, metadata, rate, onSave, disabled }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(String(rate));
+
+  const badgeCls = rate > DEFAULT_AGENT_RATE ? 'bg-amber-50 text-amber-700' : 'bg-stone-100 text-stone-600';
+
+  if (!userId) {
+    return <span className={`text-xs font-bold px-2 py-1 rounded-md ${badgeCls}`} title="Agente sin usuario registrado">{rate}%</span>;
+  }
+
+  const commit = () => {
+    setEditing(false);
+    let n = Math.round(parseFloat(value) || 0);
+    if (n < 0) n = 0;
+    if (n > 100) n = 100;
+    if (n !== rate) onSave(userId, metadata, n);
+  };
+
+  if (editing) {
+    return (
+      <div className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
+        <Input
+          type="number" autoFocus value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); commit(); } if (e.key === 'Escape') { e.preventDefault(); setEditing(false); } }}
+          disabled={disabled}
+          className="h-7 w-14 px-1.5 text-right text-sm rounded-md"
+        />
+        <span className="text-xs text-stone-400">%</span>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      onClick={(e) => { e.stopPropagation(); setValue(String(rate)); setEditing(true); }}
+      disabled={disabled}
+      title="Editar % de comisión del agente"
+      className={`text-xs font-bold px-2 py-1 rounded-md hover:opacity-80 ${badgeCls}`}
+    >
+      {rate}%
+    </button>
+  );
+}
+
 const SERVICE_ICONS = { hotel: Hotel, vuelo: Plane, traslado: Car, tour: Compass, crucero: Ship, tren: Train, dmc: Briefcase, otro: Package };
 const SERVICE_ICON_COLORS = {
   hotel: 'bg-rose-50 text-rose-500', vuelo: 'bg-sky-50 text-sky-500', traslado: 'bg-amber-50 text-amber-500',
@@ -227,6 +281,7 @@ function TripGlanceDialog({ open, onClose, trip, tripRows = [], fin, onSaveDeduc
   const matchesNet = Math.abs(f.saldo - f.net) < 1;
   const refDate = trip?.end_date || trip?.start_date;
   const agentName = tripRows[0]?.agentName;
+  const agentRate = tripRows[0]?.agentRate ?? DEFAULT_AGENT_RATE;
 
   const deductions = trip?.metadata?.commission_deductions || [];
   const totalDeductions = deductions.reduce((s, d) => s + (Number(d.amount) || 0), 0);
@@ -260,7 +315,7 @@ function TripGlanceDialog({ open, onClose, trip, tripRows = [], fin, onSaveDeduc
           <p className="text-sm text-stone-400">
             {trip?.trip_name ? `${trip.trip_name} · ` : ''}
             {refDate ? formatDate(refDate, "d 'de' MMMM yyyy", { locale: es }) : 'Sin fecha'}
-            {agentName ? ` · ${agentName}` : ''}
+            {agentName ? ` · ${agentName} (${agentRate}%)` : ''}
             {trip?.file_number ? ` · Exp. ${trip.file_number}` : ''}
           </p>
         </DialogHeader>
@@ -510,6 +565,17 @@ export default function InternalCommissions() {
     updateTripMutation.mutate({ id: tripId, data: { metadata } }, { onSuccess: () => toast.success('Deducciones actualizadas') });
   };
 
+  // Porcentaje de comisión configurable por agente (metadata.agent_commission_rate)
+  const updateUserMutation = useMutation({
+    mutationFn: ({ id, data }) => supabaseAPI.entities.User.update(id, data),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['users'] }),
+    onError: () => toast.error('No se pudo actualizar el porcentaje'),
+  });
+  const setAgentRate = (userId, metadata, rate) => {
+    const md = { ...(metadata || {}), agent_commission_rate: rate };
+    updateUserMutation.mutate({ id: userId, data: { metadata: md } }, { onSuccess: () => toast.success(`Comisión del agente: ${rate}%`) });
+  };
+
   // Admin empuja a "pagado a agencia" si el agente no lo hizo
   const markPaidToAgency = (s) => setFlags(s, { paid_to_agency: true, paid_to_agency_date: s.paid_to_agency_date || new Date().toISOString().split('T')[0] });
   const undoPaidToAgency = (s) => setFlags(s, { paid_to_agency: false, commission_paid: false, paid_to_agent: false, paid_to_agency_date: null });
@@ -548,11 +614,14 @@ export default function InternalCommissions() {
         const trip = tripsMap[s.sold_trip_id];
         const agentEmail = (trip?.created_by || '').toLowerCase();
         const agentUser = usersByEmail[agentEmail];
-        const split = splitFor(s);
+        const agentRate = agentRateOf(agentUser);
+        const split = splitFor(s, agentRate);
         return {
           service: s,
           trip,
           agentEmail,
+          agentUser,
+          agentRate,
           agentName: agentUser?.full_name || trip?.created_by || 'Sin asignar',
           iata: s.booked_by || s.metadata?.booked_by || 'iata_nomad',
           refDate: s.commission_payment_date || trip?.end_date || trip?.start_date || null,
@@ -768,7 +837,7 @@ export default function InternalCommissions() {
         <div className="w-28 flex-shrink-0 text-right pt-0.5">
           <p className="text-sm font-bold text-stone-800">{money(r.split.agent)}</p>
           <p className="text-[10px] text-stone-400 leading-tight">
-            50% · Nomad {money(r.split.nomad)}{r.split.montecito > 0 && <> · <span className="text-amber-600">Mtcto {money(r.split.montecito)}</span></>}
+            {r.agentRate}% · Nomad {money(r.split.nomad)}{r.split.montecito > 0 && <> · <span className="text-amber-600">Mtcto {money(r.split.montecito)}</span></>}
           </p>
         </div>
 
@@ -844,7 +913,7 @@ export default function InternalCommissions() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <StatCard label="Por confirmar" value={money(sumAgent(buckets.pagadas_agencia))} sub={`${buckets.pagadas_agencia.length} · reportadas por agentes`} valueClass="text-amber-600" />
         <StatCard label="Por pagar a agentes" value={money(sumAgent(buckets.confirmadas))} sub={`${buckets.confirmadas.length} · confirmadas`} valueClass="text-blue-600" />
-        <StatCard label="Pagadas a agentes" value={money(sumAgent(buckets.pagadas))} sub={`${buckets.pagadas.length} · 50% entregado`} valueClass="text-green-600" />
+        <StatCard label="Pagadas a agentes" value={money(sumAgent(buckets.pagadas))} sub={`${buckets.pagadas.length} · entregado a agentes`} valueClass="text-green-600" />
         <StatCard label="Por cobrar" value={money(sumAgent(buckets.por_cobrar))} sub={`${buckets.por_cobrar.length} · viajes terminados`} valueClass="text-orange-500" />
       </div>
 
@@ -915,24 +984,38 @@ export default function InternalCommissions() {
           <span className="w-8 flex-shrink-0" />
           <span className="flex-1 min-w-0 text-[10px] font-bold uppercase tracking-wider text-stone-400">Servicio · Viaje · Tipo / IATA / Canal</span>
           <span className="w-24 flex-shrink-0 hidden sm:block text-right text-[10px] font-bold uppercase tracking-wider text-stone-400">Comisión</span>
-          <span className="w-28 flex-shrink-0 text-right text-[10px] font-bold uppercase tracking-wider text-stone-400">Agente (50%)</span>
+          <span className="w-28 flex-shrink-0 text-right text-[10px] font-bold uppercase tracking-wider text-stone-400">Agente</span>
           <span className="w-48 flex-shrink-0 text-right text-[10px] font-bold uppercase tracking-wider text-stone-400">{activeTab === 'todas' ? 'Estado' : 'Acción'}</span>
         </div>
 
         {groups.map(({ agent, list }) => {
           const isOpen = expanded.has(agent);
+          const agentUser = list[0]?.agentUser;
+          const agentRate = list[0]?.agentRate ?? DEFAULT_AGENT_RATE;
           return (
             <div key={agent} className="border-b border-stone-100 last:border-0">
-              <button onClick={() => toggleAgent(agent)} className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-stone-50 transition-colors text-left">
-                <span className="w-7 flex justify-center text-stone-300">
-                  {isOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                </span>
-                <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#2E442A15' }}>
-                  <Users className="w-4 h-4" style={{ color: '#2E442A' }} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-bold text-stone-800 truncate">{agent}</p>
-                  <p className="text-xs text-stone-400">{list.length} comisión{list.length !== 1 ? 'es' : ''}</p>
+              <div className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-stone-50 transition-colors">
+                <button onClick={() => toggleAgent(agent)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
+                  <span className="w-7 flex justify-center text-stone-300 flex-shrink-0">
+                    {isOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                  </span>
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#2E442A15' }}>
+                    <Users className="w-4 h-4" style={{ color: '#2E442A' }} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-stone-800 truncate">{agent}</p>
+                    <p className="text-xs text-stone-400">{list.length} comisión{list.length !== 1 ? 'es' : ''}</p>
+                  </div>
+                </button>
+                <div className="flex flex-col items-center gap-0.5 flex-shrink-0">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-stone-400">Comisión</span>
+                  <AgentRateControl
+                    userId={agentUser?.id}
+                    metadata={agentUser?.metadata}
+                    rate={agentRate}
+                    onSave={setAgentRate}
+                    disabled={updateUserMutation.isPending}
+                  />
                 </div>
                 <div className="text-right">
                   <p className="text-[10px] font-bold uppercase tracking-wider text-stone-400">Comisión total</p>
@@ -942,7 +1025,7 @@ export default function InternalCommissions() {
                   <p className="text-[10px] font-bold uppercase tracking-wider text-stone-400">Parte agente</p>
                   <p className="text-sm font-bold" style={{ color: '#2E442A' }}>{money(sumAgent(list))}</p>
                 </div>
-              </button>
+              </div>
               {isOpen && tripSubgroups(list).map(({ tripId, trip, rows }) => {
                 const tripOpen = expandedTrips.has(tripId);
                 const tripTotal = sumTotal(rows);
