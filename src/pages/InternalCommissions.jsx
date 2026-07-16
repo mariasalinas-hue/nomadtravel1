@@ -9,7 +9,7 @@ import { updateSoldTripTotalsFromServices } from '@/components/utils/soldTripRec
 import { toast } from 'sonner';
 import {
   Loader2, Search, DollarSign, Users, Calendar, ArrowUpDown, Check, Undo2,
-  ChevronDown, ChevronUp, FileText, Eye, ExternalLink, Trash2, Plus,
+  ChevronDown, ChevronUp, FileText, Eye, ExternalLink, Trash2, Plus, Percent,
   Hotel, Plane, Car, Compass, Ship, Train, Briefcase, Package,
 } from 'lucide-react';
 import { Input } from "@/components/ui/input";
@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { isAdminEmail } from '@/config/adminEmails';
 import AgentCommissionInvoice from '@/components/commissions/AgentCommissionInvoice';
 
 // ---- Cálculo del reparto de comisión ----
@@ -477,6 +478,7 @@ export default function InternalCommissions() {
   const [selected, setSelected] = useState([]); // service ids (solo en "Por pagar")
   const [invoiceOpen, setInvoiceOpen] = useState(false);
   const [glanceTrip, setGlanceTrip] = useState(null); // { trip, tripId } para el modal "de un vistazo"
+  const [ratesOpen, setRatesOpen] = useState(true); // panel de % por agente
 
   const queryClient = useQueryClient();
 
@@ -634,6 +636,14 @@ export default function InternalCommissions() {
   const uniqueAgents = useMemo(
     () => [...new Set(rows.map(r => r.agentName))].filter(Boolean).sort(),
     [rows]
+  );
+
+  // Lista de agentes (usuarios no-admin) para configurar su % de comisión
+  const agentUsers = useMemo(
+    () => [...users]
+      .filter(u => u.is_active !== false && !isAdminEmail(u.email))
+      .sort((a, b) => (a.full_name || a.email || '').localeCompare(b.full_name || b.email || '')),
+    [users]
   );
 
   const q = search.toLowerCase();
@@ -907,6 +917,44 @@ export default function InternalCommissions() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
           <Input placeholder="Agente, cliente o destino..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-10 rounded-xl" />
         </div>
+      </div>
+
+      {/* Porcentaje de comisión por agente */}
+      <div className="bg-white rounded-2xl border border-stone-100 shadow-sm overflow-hidden">
+        <button onClick={() => setRatesOpen(o => !o)} className="w-full flex items-center justify-between px-4 py-3 hover:bg-stone-50 transition-colors">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#2E442A15' }}>
+              <Percent className="w-4 h-4" style={{ color: '#2E442A' }} />
+            </div>
+            <div className="text-left">
+              <h2 className="text-sm font-bold text-stone-800">Comisión por agente</h2>
+              <p className="text-[11px] text-stone-400">El % que gana cada agente · el extra sobre 50% se descuenta de Nomad</p>
+            </div>
+          </div>
+          {ratesOpen ? <ChevronUp className="w-4 h-4 text-stone-400" /> : <ChevronDown className="w-4 h-4 text-stone-400" />}
+        </button>
+        {ratesOpen && (
+          <div className="px-4 pb-4 pt-1 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+            {agentUsers.map(u => (
+              <div key={u.id} className="flex items-center justify-between gap-2 rounded-xl border border-stone-100 bg-stone-50/40 px-3 py-2">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-stone-800 truncate">{u.full_name || u.email}</p>
+                  {u.full_name && u.email && <p className="text-[10px] text-stone-400 truncate">{u.email}</p>}
+                </div>
+                <AgentRateControl
+                  userId={u.id}
+                  metadata={u.metadata}
+                  rate={agentRateOf(u)}
+                  onSave={setAgentRate}
+                  disabled={updateUserMutation.isPending}
+                />
+              </div>
+            ))}
+            {agentUsers.length === 0 && (
+              <p className="text-sm text-stone-400 col-span-full py-2">No hay agentes registrados</p>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Stats globales */}
