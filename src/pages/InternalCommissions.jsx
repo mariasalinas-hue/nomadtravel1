@@ -187,7 +187,17 @@ const stageOf = (service, trip) => {
   return tripEnded(trip) ? 'por_cobrar' : 'proximas';
 };
 
+// Etiqueta e color de cada etapa (para la vista "Todas" y badges de estado)
+const STAGE_META = {
+  proximas:        { label: 'Estimada',      cls: 'bg-violet-50 text-violet-600' },
+  por_cobrar:      { label: 'Por cobrar',    cls: 'bg-orange-50 text-orange-600' },
+  pagadas_agencia: { label: 'Por confirmar', cls: 'bg-amber-50 text-amber-600' },
+  confirmadas:     { label: 'Por pagar',     cls: 'bg-blue-50 text-blue-600' },
+  pagadas:         { label: 'Pagada',        cls: 'bg-green-50 text-green-600' },
+};
+
 const TABS = [
+  { key: 'todas', label: 'Todas' },
   { key: 'proximas', label: 'Próximas' },
   { key: 'por_cobrar', label: 'Por cobrar' },
   { key: 'pagadas_agencia', label: 'Por confirmar' },
@@ -356,10 +366,10 @@ export default function InternalCommissions() {
     });
   }, [rows, filterAgent, q, dateFrom, dateTo]);
 
-  // Buckets por etapa
+  // Buckets por etapa (+ "todas" con el total)
   const buckets = useMemo(() => {
-    const b = { proximas: [], por_cobrar: [], pagadas_agencia: [], confirmadas: [], pagadas: [] };
-    filteredRows.forEach(r => b[r.stage]?.push(r));
+    const b = { todas: [], proximas: [], por_cobrar: [], pagadas_agencia: [], confirmadas: [], pagadas: [] };
+    filteredRows.forEach(r => { b[r.stage]?.push(r); b.todas.push(r); });
     return b;
   }, [filteredRows]);
 
@@ -462,10 +472,12 @@ export default function InternalCommissions() {
       }
     }
 
+    const stageBadge = STAGE_META[r.stage] || { label: r.stage, cls: 'bg-stone-100 text-stone-500' };
+
     return (
-      <div key={s.id} className="flex items-center gap-3 px-4 py-3 border-t border-stone-100 bg-stone-50/40">
+      <div key={s.id} className="flex items-start gap-3 px-4 py-3 border-t border-stone-100 bg-stone-50/40">
         {activeTab === 'confirmadas' ? (
-          <span className="w-7 flex justify-center flex-shrink-0">
+          <span className="w-7 flex justify-center flex-shrink-0 pt-0.5">
             <Checkbox checked={selected.includes(s.id)} onCheckedChange={() => toggleSelect(s.id)} />
           </span>
         ) : <span className="w-7 flex-shrink-0" />}
@@ -474,109 +486,118 @@ export default function InternalCommissions() {
           <Icon className="w-4 h-4" />
         </div>
 
+        {/* Servicio · viaje + controles editables (Tipo / IATA / Canal) */}
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-stone-800 truncate">{getServiceName(s)}</p>
           <p className="text-xs text-stone-400 truncate">
             {r.trip ? `${r.trip.client_name}${r.trip.destination ? ' · ' + r.trip.destination : ''}` : 'Viaje'}
             {r.refDate ? ` · ${formatDate(r.refDate, 'd MMM yy', { locale: es })}` : ''}
           </p>
-        </div>
 
-        <div className="w-24 flex-shrink-0 hidden md:block" onClick={(e) => e.stopPropagation()}>
-          <Select value={s.payment_type || 'sin'} onValueChange={(v) => setPaymentType(s, v)}>
-            <SelectTrigger
-              className={`h-6 px-2 rounded-md text-[10px] font-bold tracking-wider ${
-                s.payment_type === 'neto'
-                  ? 'border-green-200 bg-green-50 text-green-600'
-                  : s.payment_type === 'bruto'
-                    ? 'border-orange-200 bg-orange-50 text-orange-600'
-                    : 'border-amber-200 bg-amber-50 text-amber-600'
-              }`}
-              title="Tipo de comisión"
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="neto">NETO</SelectItem>
-              <SelectItem value="bruto">BRUTO</SelectItem>
-              <SelectItem value="sin">Sin tipo</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+          <div className="flex flex-wrap items-center gap-1.5 mt-2" onClick={(e) => e.stopPropagation()}>
+            <Select value={s.payment_type || 'sin'} onValueChange={(v) => setPaymentType(s, v)}>
+              <SelectTrigger
+                className={`h-6 w-[70px] px-2 rounded-md text-[10px] font-bold tracking-wider ${
+                  s.payment_type === 'neto'
+                    ? 'border-green-200 bg-green-50 text-green-600'
+                    : s.payment_type === 'bruto'
+                      ? 'border-orange-200 bg-orange-50 text-orange-600'
+                      : 'border-amber-200 bg-amber-50 text-amber-600'
+                }`}
+                title="Tipo de comisión"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="neto">NETO</SelectItem>
+                <SelectItem value="bruto">BRUTO</SelectItem>
+                <SelectItem value="sin">Sin tipo</SelectItem>
+              </SelectContent>
+            </Select>
 
-        <div className="w-20 flex-shrink-0 hidden lg:block" onClick={(e) => e.stopPropagation()}>
-          <InlineSelect
-            value={normalizeBookedBy(r.iata)}
-            options={BOOKED_BY_OPTIONS}
-            onChange={(v) => setBookedBy(s, v)}
-            disabled={updateServiceMutation.isPending}
-          />
-        </div>
-
-        <div className="w-24 flex-shrink-0 hidden lg:block min-w-0" onClick={(e) => e.stopPropagation()}>
-          {channelCfg ? (
             <InlineSelect
-              value={channelValue}
-              options={channelOptions}
-              placeholder="Seleccionar"
-              onChange={(v) => setChannel(s, channelCfg.field, v)}
+              value={normalizeBookedBy(r.iata)}
+              options={BOOKED_BY_OPTIONS}
+              onChange={(v) => setBookedBy(s, v)}
               disabled={updateServiceMutation.isPending}
+              triggerClassName="h-6 w-[94px] px-2 rounded-md text-[11px] border-stone-200 bg-white text-stone-600"
             />
-          ) : (
-            <span className="text-xs text-stone-400 block truncate">—</span>
-          )}
+
+            {channelCfg && (
+              <InlineSelect
+                value={channelValue}
+                options={channelOptions}
+                placeholder="Canal"
+                onChange={(v) => setChannel(s, channelCfg.field, v)}
+                disabled={updateServiceMutation.isPending}
+                triggerClassName="h-6 w-[112px] px-2 rounded-md text-[11px] border-stone-200 bg-white text-stone-600"
+              />
+            )}
+          </div>
         </div>
 
-        <div className="w-20 flex-shrink-0 text-right hidden sm:block" onClick={(e) => e.stopPropagation()}>
+        {/* Comisión total (editable) */}
+        <div className="w-24 flex-shrink-0 text-right hidden sm:block pt-0.5" onClick={(e) => e.stopPropagation()}>
           <CommissionCell service={s} onSave={setCommission} disabled={updateServiceMutation.isPending} />
+          <p className="text-[10px] text-stone-400 mt-0.5">Comisión</p>
         </div>
 
-        <div className="w-32 flex-shrink-0 text-right">
+        {/* Parte del agente */}
+        <div className="w-28 flex-shrink-0 text-right pt-0.5">
           <p className="text-sm font-bold text-stone-800">{money(r.split.agent)}</p>
-          <p className="text-[10px] text-stone-400 leading-tight whitespace-nowrap">
+          <p className="text-[10px] text-stone-400 leading-tight">
             50% · Nomad {money(r.split.nomad)}{r.split.montecito > 0 && <> · <span className="text-amber-600">Mtcto {money(r.split.montecito)}</span></>}
           </p>
         </div>
 
-        <div className="w-40 flex-shrink-0 flex justify-end">
-          {r.stage === 'proximas' && (
-            <span className="text-[10px] font-bold tracking-wider px-2.5 py-1 rounded-md bg-violet-50 text-violet-500">ESTIMADA</span>
-          )}
-          {r.stage === 'por_cobrar' && (
-            <Button variant="outline" size="sm" onClick={() => markPaidToAgency(s)} disabled={updateServiceMutation.isPending}
-              className="h-7 rounded-lg text-xs border-stone-300 px-2 whitespace-nowrap">
-              <Check className="w-3 h-3 mr-1" /> Pagado a agencia
-            </Button>
-          )}
-          {r.stage === 'pagadas_agencia' && (
-            <div className="flex items-center gap-1">
-              <Button size="sm" onClick={() => confirmReceipt(s)} disabled={updateServiceMutation.isPending}
-                className="h-7 rounded-lg text-xs text-white px-2 whitespace-nowrap" style={{ backgroundColor: '#2E442A' }}>
-                <Check className="w-3 h-3 mr-1" /> Confirmar recepción
-              </Button>
-              <button onClick={() => undoPaidToAgency(s)} title="Deshacer" className="p-1 rounded text-stone-300 hover:text-stone-500">
-                <Undo2 className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          )}
-          {r.stage === 'confirmadas' && (
-            <div className="flex items-center gap-1">
-              <Button size="sm" onClick={() => payAgent(s)} disabled={updateServiceMutation.isPending}
-                className="h-7 rounded-lg text-xs text-white px-2 whitespace-nowrap bg-blue-600 hover:bg-blue-700">
-                <DollarSign className="w-3 h-3 mr-1" /> Pagar al agente
-              </Button>
-              <button onClick={() => undoConfirm(s)} title="Deshacer confirmación" className="p-1 rounded text-stone-300 hover:text-stone-500">
-                <Undo2 className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          )}
-          {r.stage === 'pagadas' && (
-            <div className="flex items-center gap-1">
-              <span className="text-[10px] font-bold tracking-wider px-2.5 py-1 rounded-md bg-green-50 text-green-600">PAGADA</span>
-              <button onClick={() => undoPay(s)} title="Deshacer pago" className="p-1 rounded text-stone-300 hover:text-stone-500">
-                <Undo2 className="w-3.5 h-3.5" />
-              </button>
-            </div>
+        {/* Acción / estado */}
+        <div className="w-48 flex-shrink-0 flex justify-end pt-0.5">
+          {activeTab === 'todas' ? (
+            <span className={`text-[10px] font-bold tracking-wider px-2.5 py-1 rounded-md ${stageBadge.cls}`}>
+              {stageBadge.label}
+            </span>
+          ) : (
+            <>
+              {r.stage === 'proximas' && (
+                <span className="text-[10px] font-bold tracking-wider px-2.5 py-1 rounded-md bg-violet-50 text-violet-500">ESTIMADA</span>
+              )}
+              {r.stage === 'por_cobrar' && (
+                <Button variant="outline" size="sm" onClick={() => markPaidToAgency(s)} disabled={updateServiceMutation.isPending}
+                  className="h-7 rounded-lg text-xs border-stone-300 px-2 whitespace-nowrap">
+                  <Check className="w-3 h-3 mr-1" /> Pagado a agencia
+                </Button>
+              )}
+              {r.stage === 'pagadas_agencia' && (
+                <div className="flex items-center gap-1">
+                  <Button size="sm" onClick={() => confirmReceipt(s)} disabled={updateServiceMutation.isPending}
+                    className="h-7 rounded-lg text-xs text-white px-2 whitespace-nowrap" style={{ backgroundColor: '#2E442A' }}>
+                    <Check className="w-3 h-3 mr-1" /> Confirmar recepción
+                  </Button>
+                  <button onClick={() => undoPaidToAgency(s)} title="Deshacer" className="p-1 rounded text-stone-300 hover:text-stone-500">
+                    <Undo2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
+              {r.stage === 'confirmadas' && (
+                <div className="flex items-center gap-1">
+                  <Button size="sm" onClick={() => payAgent(s)} disabled={updateServiceMutation.isPending}
+                    className="h-7 rounded-lg text-xs text-white px-2 whitespace-nowrap bg-blue-600 hover:bg-blue-700">
+                    <DollarSign className="w-3 h-3 mr-1" /> Pagar al agente
+                  </Button>
+                  <button onClick={() => undoConfirm(s)} title="Deshacer confirmación" className="p-1 rounded text-stone-300 hover:text-stone-500">
+                    <Undo2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
+              {r.stage === 'pagadas' && (
+                <div className="flex items-center gap-1">
+                  <span className="text-[10px] font-bold tracking-wider px-2.5 py-1 rounded-md bg-green-50 text-green-600">PAGADA</span>
+                  <button onClick={() => undoPay(s)} title="Deshacer pago" className="p-1 rounded text-stone-300 hover:text-stone-500">
+                    <Undo2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -670,13 +691,10 @@ export default function InternalCommissions() {
         <div className="flex items-center gap-3 px-4 py-2.5 border-b border-stone-100">
           <span className="w-7 flex-shrink-0" />
           <span className="w-8 flex-shrink-0" />
-          <span className="flex-1 min-w-0 text-[10px] font-bold uppercase tracking-wider text-stone-400">Servicio · Viaje</span>
-          <span className="w-24 flex-shrink-0 hidden md:block text-[10px] font-bold uppercase tracking-wider text-stone-400">Tipo</span>
-          <span className="w-20 flex-shrink-0 hidden lg:block text-[10px] font-bold uppercase tracking-wider text-stone-400">IATA</span>
-          <span className="w-24 flex-shrink-0 hidden lg:block text-[10px] font-bold uppercase tracking-wider text-stone-400">Canal</span>
-          <span className="w-20 flex-shrink-0 hidden sm:block text-right text-[10px] font-bold uppercase tracking-wider text-stone-400">Comisión</span>
-          <span className="w-32 flex-shrink-0 text-right text-[10px] font-bold uppercase tracking-wider text-stone-400">Agente (50%)</span>
-          <span className="w-40 flex-shrink-0 text-right text-[10px] font-bold uppercase tracking-wider text-stone-400">Acción</span>
+          <span className="flex-1 min-w-0 text-[10px] font-bold uppercase tracking-wider text-stone-400">Servicio · Viaje · Tipo / IATA / Canal</span>
+          <span className="w-24 flex-shrink-0 hidden sm:block text-right text-[10px] font-bold uppercase tracking-wider text-stone-400">Comisión</span>
+          <span className="w-28 flex-shrink-0 text-right text-[10px] font-bold uppercase tracking-wider text-stone-400">Agente (50%)</span>
+          <span className="w-48 flex-shrink-0 text-right text-[10px] font-bold uppercase tracking-wider text-stone-400">{activeTab === 'todas' ? 'Estado' : 'Acción'}</span>
         </div>
 
         {groups.map(({ agent, list }) => {
