@@ -1,4 +1,6 @@
 import { useState, useMemo } from 'react';
+import { Link } from 'react-router-dom';
+import { createPageUrl } from '@/utils';
 import { supabaseAPI } from '@/api/supabaseClient';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { formatDate, parseLocalDate } from '@/lib/dateUtils';
@@ -7,13 +9,14 @@ import { updateSoldTripTotalsFromServices } from '@/components/utils/soldTripRec
 import { toast } from 'sonner';
 import {
   Loader2, Search, DollarSign, Users, Calendar, ArrowUpDown, Check, Undo2,
-  ChevronDown, ChevronUp, FileText,
+  ChevronDown, ChevronUp, FileText, Eye, ExternalLink,
   Hotel, Plane, Car, Compass, Ship, Train, Briefcase, Package,
 } from 'lucide-react';
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import AgentCommissionInvoice from '@/components/commissions/AgentCommissionInvoice';
 
 // ---- Misma lógica de cálculo y etiquetas que "Mis Comisiones" (fuente única) ----
@@ -204,6 +207,128 @@ const TABS = [
   { key: 'confirmadas', label: 'Por pagar' },
   { key: 'pagadas', label: 'Pagadas' },
 ];
+const STAGE_ORDER = ['proximas', 'por_cobrar', 'pagadas_agencia', 'confirmadas', 'pagadas'];
+
+// Ventana "de un vistazo": el viaje y todas sus comisiones con su etapa
+function TripGlanceDialog({ open, onClose, trip, tripRows = [], fin }) {
+  const totalCommission = tripRows.reduce((s, r) => s + (r.service.commission || 0), 0);
+  const totalAgent = tripRows.reduce((s, r) => s + r.split.agent, 0);
+  const byStage = STAGE_ORDER.map(k => {
+    const list = tripRows.filter(r => r.stage === k);
+    return {
+      key: k, ...STAGE_META[k], count: list.length,
+      agent: list.reduce((s, r) => s + r.split.agent, 0),
+    };
+  });
+  const f = fin || { gross: 0, net: 0, clientIn: 0, nomadOut: 0, saldo: 0 };
+  const matchesNet = Math.abs(f.saldo - f.net) < 1;
+  const refDate = trip?.end_date || trip?.start_date;
+  const agentName = tripRows[0]?.agentName;
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="text-xl font-bold" style={{ color: '#2E442A' }}>
+            {trip ? `${trip.client_name || 'Viaje'}${trip.destination ? ' · ' + trip.destination : ''}` : 'Viaje'}
+          </DialogTitle>
+          <p className="text-sm text-stone-400">
+            {trip?.trip_name ? `${trip.trip_name} · ` : ''}
+            {refDate ? formatDate(refDate, "d 'de' MMMM yyyy", { locale: es }) : 'Sin fecha'}
+            {agentName ? ` · ${agentName}` : ''}
+            {trip?.file_number ? ` · Exp. ${trip.file_number}` : ''}
+          </p>
+        </DialogHeader>
+
+        {/* Totales */}
+        <div className="grid grid-cols-2 gap-3">
+          <div className="rounded-xl border border-stone-100 bg-stone-50 p-3">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-stone-400">Comisión total</p>
+            <p className="text-2xl font-bold text-stone-800">{money(totalCommission)}</p>
+          </div>
+          <div className="rounded-xl border p-3" style={{ borderColor: '#2E442A22', backgroundColor: '#2E442A08' }}>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-stone-400">Parte agente (50%)</p>
+            <p className="text-2xl font-bold" style={{ color: '#2E442A' }}>{money(totalAgent)}</p>
+          </div>
+        </div>
+
+        {/* Pipeline de etapas */}
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-wider text-stone-400 mb-2">En qué etapa está</p>
+          <div className="grid grid-cols-5 gap-1.5">
+            {byStage.map(s => (
+              <div key={s.key} className={`rounded-lg px-1.5 py-2 text-center ${s.count > 0 ? s.cls : 'bg-stone-50 text-stone-300'}`}>
+                <p className="text-lg font-bold leading-none">{s.count}</p>
+                <p className="text-[9px] font-semibold uppercase tracking-wide mt-1 leading-tight">{s.label}</p>
+                {s.count > 0 && <p className="text-[9px] mt-0.5 opacity-80">{money(s.agent)}</p>}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Resumen financiero */}
+        <div className="grid grid-cols-3 gap-2">
+          <div className="rounded-lg bg-orange-50 border border-orange-100 px-3 py-2">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-orange-400">Bruta</p>
+            <p className="text-sm font-bold text-orange-600">{money(f.gross)}</p>
+          </div>
+          <div className="rounded-lg bg-green-50 border border-green-100 px-3 py-2">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-green-500">Neta</p>
+            <p className="text-sm font-bold text-green-700">{money(f.net)}</p>
+          </div>
+          <div className={`rounded-lg border px-3 py-2 ${matchesNet ? 'bg-emerald-50 border-emerald-200' : 'bg-stone-50 border-stone-200'}`}>
+            <div className="flex items-center justify-between">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-stone-500">Saldo</p>
+              {matchesNet && <Check className="w-3 h-3 text-emerald-500" />}
+            </div>
+            <p className={`text-sm font-bold ${f.saldo < 0 ? 'text-red-600' : 'text-stone-800'}`}>{money(f.saldo)}</p>
+          </div>
+        </div>
+
+        {/* Lista de comisiones con su etapa */}
+        <div className="rounded-xl border border-stone-100 overflow-hidden">
+          {tripRows.length === 0 ? (
+            <p className="p-4 text-center text-sm text-stone-400">Sin comisiones</p>
+          ) : tripRows.map(r => {
+            const s = r.service;
+            const Icon = SERVICE_ICONS[s.service_type] || Package;
+            const iconColors = SERVICE_ICON_COLORS[s.service_type] || SERVICE_ICON_COLORS.otro;
+            const meta = STAGE_META[r.stage] || { label: r.stage, cls: 'bg-stone-100 text-stone-500' };
+            return (
+              <div key={s.id} className="flex items-center gap-2.5 px-3 py-2 border-t border-stone-100 first:border-t-0">
+                <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${iconColors}`}>
+                  <Icon className="w-3.5 h-3.5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-stone-800 truncate">{getServiceName(s)}</p>
+                  <p className="text-[10px] text-stone-400">
+                    {s.payment_type ? s.payment_type.toUpperCase() : 'SIN TIPO'}
+                  </p>
+                </div>
+                <div className="text-right w-20 flex-shrink-0">
+                  <p className="text-sm font-semibold text-stone-700">{money(s.commission || 0)}</p>
+                  <p className="text-[10px] text-stone-400">Ag. {money(r.split.agent)}</p>
+                </div>
+                <span className={`text-[9px] font-bold tracking-wide px-2 py-1 rounded-md flex-shrink-0 ${meta.cls}`}>{meta.label}</span>
+              </div>
+            );
+          })}
+        </div>
+
+        {trip?.id && (
+          <div className="flex justify-end">
+            <Link
+              to={createPageUrl(`SoldTripDetail?id=${trip.id}`)}
+              className="inline-flex items-center gap-1.5 text-sm font-medium text-stone-600 hover:text-stone-900"
+            >
+              <ExternalLink className="w-4 h-4" /> Abrir viaje completo
+            </Link>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 export default function InternalCommissions() {
   const [search, setSearch] = useState('');
@@ -216,6 +341,7 @@ export default function InternalCommissions() {
   const [expandedTrips, setExpandedTrips] = useState(() => new Set());
   const [selected, setSelected] = useState([]); // service ids (solo en "Por pagar")
   const [invoiceOpen, setInvoiceOpen] = useState(false);
+  const [glanceTrip, setGlanceTrip] = useState(null); // { trip, tripId } para el modal "de un vistazo"
 
   const queryClient = useQueryClient();
 
@@ -417,6 +543,10 @@ export default function InternalCommissions() {
 
   const toggleSelect = (id) => setSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   const selectedRows = visibleRows.filter(r => selected.includes(r.service.id));
+
+  // Datos del modal "de un vistazo": TODAS las comisiones del viaje (todas las etapas)
+  const glanceRows = glanceTrip ? rows.filter(r => (r.trip?.id || r.service.sold_trip_id) === glanceTrip.tripId) : [];
+  const glanceFin = glanceTrip ? (tripFinancials[glanceTrip.tripId] || null) : null;
 
   const paySelected = async () => {
     for (const r of selectedRows) {
@@ -729,19 +859,21 @@ export default function InternalCommissions() {
                 const matchesNet = Math.abs(fin.saldo - fin.net) < 1;
                 return (
                   <div key={tripId} className="border-t border-stone-100 bg-stone-50/30">
-                    <button onClick={() => toggleTrip(tripId)} className="w-full flex items-center gap-3 pl-10 pr-4 py-2.5 hover:bg-stone-100/60 transition-colors text-left">
-                      <span className="w-5 flex justify-center text-stone-300">
-                        {tripOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                      </span>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-stone-700 truncate">
-                          {trip ? `${trip.client_name} ${trip.destination || ''}`.trim() : 'Viaje'}
-                          {trip?.trip_name ? ` — ${trip.trip_name}` : ''}
-                        </p>
-                        <p className="text-xs text-stone-400">
-                          {rows.length} comisión{rows.length !== 1 ? 'es' : ''}{refDate ? ` · ${formatDate(refDate, 'yyyy-MM-dd')}` : ''}
-                        </p>
-                      </div>
+                    <div className="w-full flex items-center gap-3 pl-10 pr-4 py-2.5 hover:bg-stone-100/60 transition-colors">
+                      <button onClick={() => toggleTrip(tripId)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
+                        <span className="w-5 flex justify-center text-stone-300 flex-shrink-0">
+                          {tripOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-stone-700 truncate">
+                            {trip ? `${trip.client_name} ${trip.destination || ''}`.trim() : 'Viaje'}
+                            {trip?.trip_name ? ` — ${trip.trip_name}` : ''}
+                          </p>
+                          <p className="text-xs text-stone-400">
+                            {rows.length} comisión{rows.length !== 1 ? 'es' : ''}{refDate ? ` · ${formatDate(refDate, 'yyyy-MM-dd')}` : ''}
+                          </p>
+                        </div>
+                      </button>
                       <div className="text-right">
                         <p className="text-[10px] font-bold uppercase tracking-wider text-stone-400">Total</p>
                         <p className="text-sm font-bold text-stone-700">{money(tripTotal)}</p>
@@ -750,7 +882,14 @@ export default function InternalCommissions() {
                         <p className="text-[10px] font-bold uppercase tracking-wider text-stone-400">Parte agente</p>
                         <p className="text-sm font-bold" style={{ color: '#2E442A' }}>{money(sumAgent(rows))}</p>
                       </div>
-                    </button>
+                      <button
+                        onClick={() => setGlanceTrip({ trip, tripId })}
+                        title="Ver resumen del viaje"
+                        className="w-8 h-8 flex items-center justify-center rounded-lg border border-stone-200 text-stone-500 hover:bg-white hover:text-stone-700 transition-colors flex-shrink-0"
+                      >
+                        <Eye className="w-4 h-4" />
+                      </button>
+                    </div>
 
                     {tripOpen && sortedRows(rows).map(renderRow)}
 
@@ -801,6 +940,15 @@ export default function InternalCommissions() {
         onClose={() => setInvoiceOpen(false)}
         commissions={invoiceCommissions}
         onMarkAsPaid={paySelected}
+      />
+
+      {/* Modal "de un vistazo" por viaje */}
+      <TripGlanceDialog
+        open={!!glanceTrip}
+        onClose={() => setGlanceTrip(null)}
+        trip={glanceTrip?.trip}
+        tripRows={glanceRows}
+        fin={glanceFin}
       />
     </div>
   );
