@@ -15,6 +15,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { SUPPLIER_ACCEPTED_METHOD_LABELS as PAYMENT_LABELS } from '@/config/paymentMethods';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -45,13 +46,6 @@ const SUPPLIER_TYPES = {
   transporte: 'Transporte',
   tours: 'Tours / Actividades',
   otro: 'Otro'
-};
-
-const PAYMENT_LABELS = {
-  tarjeta: 'Tarjeta',
-  transferencia: 'Transferencia',
-  link_pago: 'Link de pago',
-  pago_destino: 'Pago en destino'
 };
 
 const DOC_TYPE_LABELS = {

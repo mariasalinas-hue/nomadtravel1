@@ -52,3 +52,16 @@ export const PAYMENT_METHOD_LABELS = {
 };
 
 export const paymentMethodLabel = (value) => PAYMENT_METHOD_LABELS[value] || value || '—';
+
+// Concepto DISTINTO: qué formas de pago ACEPTA un proveedor (en su perfil).
+// No es cómo Nomad paga, sino lo que el proveedor admite recibir.
+export const SUPPLIER_ACCEPTED_METHODS = [
+  { value: 'tarjeta', label: 'Tarjeta' },
+  { value: 'transferencia', label: 'Transferencia' },
+  { value: 'link_pago', label: 'Link de Pago' },
+  { value: 'pago_destino', label: 'Pago en destino' },
+];
+
+export const SUPPLIER_ACCEPTED_METHOD_LABELS = Object.fromEntries(
+  SUPPLIER_ACCEPTED_METHODS.map(m => [m.value, m.label])
+);

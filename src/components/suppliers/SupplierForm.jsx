@@ -12,6 +12,7 @@ import { Loader2, X, Star, Sparkles, Upload, Image } from 'lucide-react';
 import { supabaseAPI } from '@/api/supabaseClient';
 import { toast } from "sonner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { SUPPLIER_ACCEPTED_METHODS as PAYMENT_METHODS } from '@/config/paymentMethods';
 
 const SUPPLIER_TYPES = [
   { value: 'dmc', label: 'DMC' },
@@ -35,13 +36,6 @@ const DESTINATIONS = [
 
 const SERVICES = [
   'Hoteles', 'Vuelos', 'Traslados', 'Tours', 'Cruceros', 'Seguros', 'Renta de Autos', 'Experiencias'
-];
-
-const PAYMENT_METHODS = [
-  { value: 'tarjeta', label: 'Tarjeta' },
-  { value: 'transferencia', label: 'Transferencia' },
-  { value: 'link_pago', label: 'Link de pago' },
-  { value: 'pago_destino', label: 'Pago en destino' }
 ];
 
 const CURRENCIES = [
