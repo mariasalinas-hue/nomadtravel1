@@ -8,6 +8,7 @@ import { es } from 'date-fns/locale';
 import { Printer, Download, Loader2, ImagePlus, Settings2, Trash2 } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
+import { PAYMENT_METHOD_LABELS } from '@/config/paymentMethods';
 
 /* ----------------------------------------------------------------------------
  * Brand palette (inline so html2canvas captures exact colors in the PDF)
@@ -52,7 +53,6 @@ const money = (n) => `$${Number(n || 0).toLocaleString(undefined, { minimumFract
 
 /* ------------------------------- service config ---------------------------- */
 const MEAL_PLAN_LABELS = { solo_habitacion: 'Solo Habitación', desayuno: 'Desayuno Incluido', all_inclusive: 'All Inclusive' };
-const PAYMENT_METHOD_LABELS = { efectivo: 'Efectivo', transferencia: 'Transferencia', tarjeta: 'Tarjeta', link_pago: 'Link de Pago', tarjeta_cliente: 'Tarjeta del cliente', otro: 'Otro' };
 const TYPE_ORDER = ['hotel', 'vuelo', 'tren', 'traslado', 'crucero', 'tour', 'dmc', 'otro'];
 
 /* Builds a compact {title, tag, detail, price} row for any service type */

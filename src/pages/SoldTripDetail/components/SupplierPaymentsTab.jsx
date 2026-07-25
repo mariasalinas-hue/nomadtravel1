@@ -3,11 +3,7 @@ import { Plus, Building2, Edit2, Trash2, FileText } from 'lucide-react';
 import { es } from 'date-fns/locale';
 import EmptyState from '@/components/ui/EmptyState';
 import { formatDate } from '@/components/utils/dateHelpers';
-
-const METHOD_LABEL = {
-  transferencia: 'Transferencia', efectivo: 'Efectivo', tarjeta: 'Tarjeta',
-  zelle: 'Zelle', paypal: 'PayPal', cheque: 'Cheque', otro: 'Otro',
-};
+import { PAYMENT_METHOD_LABELS as METHOD_LABEL } from '@/config/paymentMethods';
 
 export default function SupplierPaymentsTab({
   supplierPayments, totalSupplierPaid, onAddPayment, onEditPayment, onDeletePayment

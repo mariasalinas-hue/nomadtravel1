@@ -9,21 +9,7 @@ import { Loader2, Search, SearchX, ExternalLink } from 'lucide-react';
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-
-/* Etiquetas de métodos de pago (cliente + proveedor) */
-const METHOD_LABELS = {
-  transferencia: 'Transferencia',
-  efectivo: 'Efectivo',
-  link_pago: 'Link de Pago',
-  tarjeta: 'Tarjeta',
-  tarjeta_cliente: 'Tarjeta del Cliente',
-  ms_beyond: 'MS Beyond',
-  capital_one_blue: 'Capital One Blue',
-  capital_one_green: 'Capital One Green',
-  amex: 'American Express',
-  amex_verde: 'Amex Verde',
-  otro: 'Otro',
-};
+import { PAYMENT_METHOD_LABELS as METHOD_LABELS, ALL_PAYMENT_METHODS } from '@/config/paymentMethods';
 
 const CHANNEL_LABELS = {
   virtuoso: 'Virtuoso', preferred_partner: 'Preferred Partner', tbo: 'TBO',
@@ -322,7 +308,7 @@ export default function AdminSearch() {
             <SelectTrigger className="rounded-xl text-xs h-9"><SelectValue placeholder="Método" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todo método</SelectItem>
-              {Object.entries(METHOD_LABELS).map(([value, label]) => (
+              {ALL_PAYMENT_METHODS.map(({ value, label }) => (
                 <SelectItem key={value} value={value}>{label}</SelectItem>
               ))}
             </SelectContent>

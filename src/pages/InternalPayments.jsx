@@ -29,18 +29,7 @@ import {
 import EmptyState from '@/components/ui/EmptyState';
 import { toast } from "sonner";
 import { updateSoldTripAndTripServiceTotals } from '@/components/utils/soldTripRecalculations';
-
-const PAYMENT_METHOD_LABELS = {
-  transferencia: 'Transferencia',
-  ms_beyond: 'MS Beyond',
-  capital_one_blue: 'Capital One Blue',
-  capital_one_green: 'Capital One Green',
-  amex: 'Amex',
-  tarjeta_cliente: 'Tarjeta de Cliente',
-  efectivo: 'Efectivo',
-  tarjeta: 'Tarjeta',
-  otro: 'Otro'
-};
+import { PAYMENT_METHOD_LABELS, SUPPLIER_PAYMENT_METHODS } from '@/config/paymentMethods';
 
 // Loading Skeleton
 const TableSkeleton = memo(() => (
@@ -472,12 +461,9 @@ export default function InternalPayments() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="transferencia">Transferencia</SelectItem>
-                  <SelectItem value="ms_beyond">MS Beyond</SelectItem>
-                  <SelectItem value="capital_one_blue">Capital One Blue</SelectItem>
-                  <SelectItem value="capital_one_green">Capital One Green</SelectItem>
-                  <SelectItem value="amex">AMEX</SelectItem>
-                  <SelectItem value="tarjeta_cliente">Tarjeta de Cliente</SelectItem>
+                  {SUPPLIER_PAYMENT_METHODS.map(m => (
+                    <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>

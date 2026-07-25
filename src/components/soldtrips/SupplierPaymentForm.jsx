@@ -9,16 +9,7 @@ import { Loader2 } from 'lucide-react';
 import { supabaseAPI } from '@/api/supabaseClient';
 import { getSupplierOutstanding } from '@/components/utils/serviceCost';
 import { toast } from "sonner";
-
-const SUPPLIER_METHODS = [
-  { value: 'transferencia', label: 'Transferencia' },
-  { value: 'ms_beyond', label: 'MS Beyond' },
-  { value: 'capital_one_blue', label: 'Capital One Blue' },
-  { value: 'capital_one_green', label: 'Capital One Green' },
-  { value: 'amex', label: 'American Express' },
-  { value: 'amex_verde', label: 'American Express Verde' },
-  { value: 'tarjeta_cliente', label: 'Tarjeta de Cliente' },
-];
+import { SUPPLIER_PAYMENT_METHODS as SUPPLIER_METHODS } from '@/config/paymentMethods';
 
 const today = () => new Date().toISOString().split('T')[0];
 

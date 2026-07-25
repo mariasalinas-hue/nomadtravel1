@@ -7,13 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2 } from 'lucide-react';
 import { toast } from "sonner";
-
-const CLIENT_PAYMENT_METHODS = [
-  { value: 'transferencia', label: 'Transferencia' },
-  { value: 'efectivo', label: 'Efectivo' },
-  { value: 'link_pago', label: 'Link de Pago' },
-  { value: 'tarjeta_cliente', label: 'Pagado Directo con Tarjeta de Cliente' }
-];
+import { CLIENT_PAYMENT_METHODS } from '@/config/paymentMethods';
 
 const BANK_OPTIONS = [
   { value: 'bbva_mxn', label: 'BBVA MXN' },

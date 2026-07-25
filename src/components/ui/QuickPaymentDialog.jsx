@@ -10,29 +10,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Loader2, User, Building2, Upload, FileText, X, Sparkles, CheckCircle, Search } from 'lucide-react';
 import { toast } from "sonner";
-
-const CLIENT_PAYMENT_METHODS = [
-  { value: 'transferencia', label: 'Transferencia' },
-  { value: 'efectivo', label: 'Efectivo' },
-  { value: 'link_pago', label: 'Link de Pago' },
-  { value: 'tarjeta_cliente', label: 'Pagado Directo con Tarjeta de Cliente' }
-];
+import { CLIENT_PAYMENT_METHODS, SUPPLIER_PAYMENT_METHODS } from '@/config/paymentMethods';
 
 const BANK_OPTIONS = [
   { value: 'bbva_mxn', label: 'BBVA MXN' },
   { value: 'bbva_usd', label: 'BBVA USD' },
   { value: 'base', label: 'BASE' },
   { value: 'wise', label: 'WISE' }
-];
-
-const SUPPLIER_PAYMENT_METHODS = [
-  { value: 'transferencia', label: 'Transferencia' },
-  { value: 'ms_beyond', label: 'MS Beyond' },
-  { value: 'capital_one_blue', label: 'Capital One Blue' },
-  { value: 'capital_one_green', label: 'Capital One Green' },
-  { value: 'amex', label: 'American Express' },
-  { value: 'amex_verde', label: 'American Express Verde' },
-  { value: 'tarjeta_cliente', label: 'Tarjeta de Cliente' }
 ];
 
 const getServiceLabel = (service) => {

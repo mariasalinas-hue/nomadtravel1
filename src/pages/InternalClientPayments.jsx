@@ -26,15 +26,7 @@ import {
 import EmptyState from '@/components/ui/EmptyState';
 import { toast } from "sonner";
 import { updateSoldTripAndPaymentPlanTotals } from '@/components/utils/soldTripRecalculations';
-
-const PAYMENT_METHOD_LABELS = {
-  transferencia: 'Transferencia',
-  efectivo: 'Efectivo',
-  tarjeta: 'Tarjeta',
-  tarjeta_cliente: 'Tarjeta de Cliente',
-  wise: 'Wise',
-  otro: 'Otro'
-};
+import { PAYMENT_METHOD_LABELS, CLIENT_PAYMENT_METHODS } from '@/config/paymentMethods';
 
 export default function InternalClientPayments() {
   const [search, setSearch] = useState('');
@@ -415,10 +407,9 @@ export default function InternalClientPayments() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="efectivo">Efectivo</SelectItem>
-                  <SelectItem value="transferencia">Transferencia</SelectItem>
-                  <SelectItem value="tarjeta">Tarjeta</SelectItem>
-                  <SelectItem value="otro">Otro</SelectItem>
+                  {CLIENT_PAYMENT_METHODS.map(m => (
+                    <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
