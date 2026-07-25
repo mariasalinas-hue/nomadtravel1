@@ -240,8 +240,8 @@ export default function InvoiceView({ open, onClose, soldTrip, services = [], cl
   };
   const contactLine = [branding.email, branding.phone, branding.website].filter(Boolean).join('  ·  ');
 
-  // "Sin pagos a proveedores": exclude client payments auto-generated from supplier card payments
-  const visiblePayments = clientPayments.filter(p => !isSupplierDerived(p));
+  // Mostrar TODOS los pagos del cliente (incluidos los pagados con su tarjeta directo al proveedor)
+  const visiblePayments = clientPayments;
   const totalPaid = visiblePayments.reduce((sum, p) => sum + (p.amount_usd_fixed || p.amount || 0), 0);
   const total = services.reduce((sum, s) => sum + (s.total_price || 0), 0);
   const balance = total - totalPaid;
@@ -565,7 +565,7 @@ export default function InvoiceView({ open, onClose, soldTrip, services = [], cl
                         const amountOriginal = p.amount_original || p.amount || 0;
                         return (
                           <tr key={i}>
-                            <td style={{ ...cell, fontSize: 10.5 }}>{p.notes || 'Pago recibido'}</td>
+                            <td style={{ ...cell, fontSize: 10.5 }}>{isSupplierDerived(p) ? 'Pago con tarjeta del cliente' : (p.notes || 'Pago recibido')}</td>
                             <td style={cell}>{fmt(p.date)}</td>
                             <td style={cell}>{PAYMENT_METHOD_LABELS[p.method] || p.method}</td>
                             <td style={{ ...cell, textAlign: 'right', fontWeight: 700, color: C.greenLight, whiteSpace: 'nowrap' }}>
