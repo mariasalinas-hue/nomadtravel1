@@ -511,6 +511,11 @@ export default function InvoiceView({ open, onClose, soldTrip, services = [], cl
                           {row.detail && (
                             <p style={{ fontFamily: SANS, fontSize: 10.5, color: C.body, margin: '2px 0 0', lineHeight: 1.5 }}>{row.detail}</p>
                           )}
+                          {s.notes && (
+                            <p style={{ fontFamily: SANS, fontSize: 10.5, color: C.muted, margin: '3px 0 0', lineHeight: 1.5, fontStyle: 'italic' }}>
+                              <span style={{ fontWeight: 600, fontStyle: 'normal' }}>Nota: </span>{s.notes}
+                            </p>
+                          )}
                         </div>
                         <p style={{ fontFamily: SANS, fontSize: 13.5, fontWeight: 700, color: C.green, margin: 0, whiteSpace: 'nowrap' }}>
                           {money(row.price)} <span style={{ fontSize: 9, fontWeight: 500, color: C.muted }}>USD</span>
