@@ -1,7 +1,14 @@
 import { useState, useMemo } from 'react';
-import { startOfMonth, endOfMonth, subMonths, isWithinInterval } from 'date-fns';
+import {
+  startOfMonth, endOfMonth, subMonths, addMonths, isWithinInterval,
+  isSameMonth, differenceInDays, format,
+} from 'date-fns';
+import { es } from 'date-fns/locale';
 import { parseLocalDate } from '@/lib/dateUtils';
-import { DollarSign, TrendingUp, Plane, Receipt, Target, Percent, Pencil } from 'lucide-react';
+import {
+  DollarSign, TrendingUp, Plane, Receipt, Target, Percent, Pencil,
+  ChevronLeft, ChevronRight, CalendarClock, Clock,
+} from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -12,9 +19,9 @@ import FunnelChart from '@/components/dashboard/FunnelChart';
 const money = (n) => `$${Math.round(n || 0).toLocaleString()}`;
 const pctTrend = (cur, prev) => (prev > 0 ? Math.round(((cur - prev) / prev) * 100) : 0);
 
+const parseDay = (dateStr) => (dateStr ? parseLocalDate(String(dateStr).split('T')[0]) : null);
 const inRange = (dateStr, start, end) => {
-  if (!dateStr) return false;
-  const d = parseLocalDate(String(dateStr).split('T')[0]);
+  const d = parseDay(dateStr);
   return d ? isWithinInterval(d, { start, end }) : false;
 };
 
@@ -50,16 +57,19 @@ export default function ProgressHero({
   onSaveGoals,
   savingGoals = false,
 }) {
+  const [cursor, setCursor] = useState(() => startOfMonth(new Date())); // mes seleccionado (por venta)
   const [editOpen, setEditOpen] = useState(false);
   const [sVal, setSVal] = useState('');
   const [cVal, setCVal] = useState('');
 
+  const isCurrentMonth = isSameMonth(cursor, new Date());
+
+  // KPIs + tendencia del MES SELECCIONADO (por fecha de venta = created_date)
   const m = useMemo(() => {
-    const now = new Date();
-    const curStart = startOfMonth(now);
-    const curEnd = endOfMonth(now);
-    const prevStart = startOfMonth(subMonths(now, 1));
-    const prevEnd = endOfMonth(subMonths(now, 1));
+    const curStart = startOfMonth(cursor);
+    const curEnd = endOfMonth(cursor);
+    const prevStart = startOfMonth(subMonths(cursor, 1));
+    const prevEnd = endOfMonth(subMonths(cursor, 1));
 
     const curTrips = soldTrips.filter(t => inRange(t.created_date, curStart, curEnd));
     const prevTrips = soldTrips.filter(t => inRange(t.created_date, prevStart, prevEnd));
@@ -76,6 +86,27 @@ export default function ProgressHero({
     const ticketCur = curTrips.length > 0 ? salesCur / curTrips.length : 0;
     const ticketPrev = prevTrips.length > 0 ? salesPrev / prevTrips.length : 0;
 
+    // Relación venta→viaje: de lo VENDIDO este mes, ¿en qué mes VIAJAN? (por start_date)
+    const buckets = {};
+    const leadDays = [];
+    curTrips.forEach(t => {
+      const travel = parseDay(t.start_date);
+      const sold = parseDay(t.created_date);
+      if (travel) {
+        const key = `${travel.getFullYear()}-${String(travel.getMonth()).padStart(2, '0')}`;
+        if (!buckets[key]) buckets[key] = { key, date: startOfMonth(travel), count: 0, sales: 0 };
+        buckets[key].count += 1;
+        buckets[key].sales += (t.total_price || 0);
+      }
+      if (travel && sold) {
+        const diff = differenceInDays(travel, sold);
+        if (diff >= 0) leadDays.push(diff);
+      }
+    });
+    const travelList = Object.values(buckets).sort((a, b) => a.date - b.date);
+    const maxCount = Math.max(1, ...travelList.map(b => b.count));
+    const avgLeadDays = leadDays.length ? Math.round(leadDays.reduce((a, b) => a + b, 0) / leadDays.length) : null;
+
     const conversion = trips.length > 0 ? Math.round((soldTrips.length / trips.length) * 100) : 0;
 
     return {
@@ -83,11 +114,13 @@ export default function ProgressHero({
       commCur, commTrend: pctTrend(commCur, commPrev),
       tripsCur: curTrips.length, tripsTrend: pctTrend(curTrips.length, prevTrips.length),
       ticketCur, ticketTrend: pctTrend(ticketCur, ticketPrev),
-      conversion,
+      conversion, travelList, maxCount, avgLeadDays, soldCount: curTrips.length,
     };
-  }, [soldTrips, services, trips]);
+  }, [soldTrips, services, trips, cursor]);
 
   const hasGoals = (salesGoal && salesGoal > 0) || (commissionGoal && commissionGoal > 0);
+  const monthLabel = format(cursor, "MMMM yyyy", { locale: es });
+  const avgLeadMonths = m.avgLeadDays != null ? (m.avgLeadDays / 30.44).toFixed(1) : null;
 
   const openEdit = () => {
     setSVal(salesGoal ? String(salesGoal) : '');
@@ -101,13 +134,37 @@ export default function ProgressHero({
 
   return (
     <div className="space-y-4">
-      <h2 className="text-lg font-bold text-stone-800" style={{ fontFamily: 'Playfair Display, serif' }}>
-        Resumen de este mes
-      </h2>
+      {/* Título + selector de mes */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <h2 className="text-lg font-bold text-stone-800" style={{ fontFamily: 'Playfair Display, serif' }}>
+          Resumen
+        </h2>
+        <div className="flex items-center gap-1.5">
+          <button onClick={() => setCursor(subMonths(cursor, 1))}
+            className="w-8 h-8 flex items-center justify-center rounded-full border border-stone-200 text-stone-500 hover:bg-stone-50 hover:text-stone-800 transition-colors">
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+          <span className="text-sm font-semibold text-stone-700 capitalize min-w-[120px] text-center">{monthLabel}</span>
+          <button onClick={() => setCursor(addMonths(cursor, 1))}
+            className="w-8 h-8 flex items-center justify-center rounded-full border border-stone-200 text-stone-500 hover:bg-stone-50 hover:text-stone-800 transition-colors">
+            <ChevronRight className="w-4 h-4" />
+          </button>
+          {!isCurrentMonth && (
+            <button onClick={() => setCursor(startOfMonth(new Date()))}
+              className="px-3 h-8 rounded-full border border-stone-200 text-xs font-medium text-stone-600 hover:bg-stone-50 hover:text-stone-800 transition-colors">
+              Este mes
+            </button>
+          )}
+        </div>
+      </div>
+
+      <p className="text-xs text-stone-400 -mt-2">
+        Ventas por <strong>fecha de venta</strong> (cuándo se vendió) del mes seleccionado.
+      </p>
 
       {/* KPIs con tendencia vs mes anterior */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <StatCard icon={DollarSign} value={money(m.salesCur)} label="Ventas del mes" trend={m.salesTrend} />
+        <StatCard icon={DollarSign} value={money(m.salesCur)} label="Vendido en el mes" trend={m.salesTrend} />
         <StatCard icon={TrendingUp} value={money(m.commCur)} label="Comisiones del mes" trend={m.commTrend} iconBg="#C9A84C1f" iconColor="#A98C3D" />
         <StatCard icon={Plane} value={m.tripsCur} label="Viajes vendidos" trend={m.tripsTrend} iconBg="#3B82F618" iconColor="#3B82F6" />
         <StatCard icon={Receipt} value={money(m.ticketCur)} label="Ticket promedio" trend={m.ticketTrend} iconBg="#8B5CF618" iconColor="#8B5CF6" />
@@ -164,6 +221,42 @@ export default function ProgressHero({
           </div>
           <FunnelChart trips={trips} />
         </div>
+      </div>
+
+      {/* Relación venta → viaje: de lo vendido este mes, ¿cuándo viajan? */}
+      <div className="bg-white rounded-2xl p-5 shadow-sm border border-stone-100">
+        <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+          <h3 className="font-semibold text-stone-800 flex items-center gap-2">
+            <CalendarClock className="w-4 h-4" style={{ color: '#2E442A' }} />
+            De lo vendido en <span className="capitalize">{monthLabel}</span>, ¿cuándo viajan?
+          </h3>
+          {avgLeadMonths != null && (
+            <div className="flex items-center gap-2 text-sm">
+              <Clock className="w-4 h-4 text-stone-400" />
+              <span className="text-stone-500">Anticipación promedio:</span>
+              <strong className="text-stone-800">{avgLeadMonths} meses</strong>
+              <span className="text-[11px] text-stone-400">({m.avgLeadDays} días)</span>
+            </div>
+          )}
+        </div>
+
+        {m.travelList.length === 0 ? (
+          <p className="text-sm text-stone-400 py-4 text-center">No hay viajes vendidos en este mes.</p>
+        ) : (
+          <div className="space-y-2.5">
+            {m.travelList.map(b => (
+              <div key={b.key}>
+                <div className="flex items-baseline justify-between text-xs mb-1">
+                  <span className="font-medium text-stone-600 capitalize">{format(b.date, 'MMM yyyy', { locale: es })}</span>
+                  <span className="text-stone-500">{b.count} viaje{b.count !== 1 ? 's' : ''} · {money(b.sales)}</span>
+                </div>
+                <div className="h-2 rounded-full bg-stone-100 overflow-hidden">
+                  <div className="h-full rounded-full transition-all duration-700" style={{ width: `${(b.count / m.maxCount) * 100}%`, background: '#2E442A' }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Modal de edición de metas */}
