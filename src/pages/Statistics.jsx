@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect, useContext } from 'react';
 import { supabaseAPI } from '@/api/supabaseClient';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { ViewModeContext } from '@/Layout';
 import { useSpoofableUser } from '@/contexts/SpoofContext';
 import { format, getMonth, getYear, parseISO, startOfYear, endOfYear, isWithinInterval } from 'date-fns';
@@ -24,6 +25,7 @@ import ProvidersChart from '@/components/statistics/ProvidersChart';
 import SoldTripsStats from '@/components/statistics/SoldTripsStats';
 import PendingTripsStats from '@/components/statistics/PendingTripsStats';
 import AgentComparisonStats from '@/components/statistics/AgentComparisonStats';
+import ProgressHero from '@/components/statistics/ProgressHero';
 
 const MONTHS = [
   { value: '0', label: 'Enero' },
@@ -151,6 +153,51 @@ export default function Statistics() {
   });
 
   const agents = allUsers.filter(u => u.role === 'user');
+
+  // Registro de usuario propio (para leer/guardar metas del agente en su propia vista)
+  const { data: currentUserRecord = null } = useQuery({
+    queryKey: ['currentUserRecord', user?.email],
+    queryFn: async () => {
+      const rows = await supabaseAPI.entities.User.filter({ email: user.email });
+      return rows?.[0] || null;
+    },
+    enabled: !!user && !userLoading && !isAdmin
+  });
+
+  // Metas: en vista de agente son suyas (editables); en admin con 1 agente seleccionado,
+  // se muestran read-only; en admin "Todos" no aplican.
+  const selectedAgentEmail = isAdmin && filters.agent !== 'all' ? filters.agent : null;
+  const goalsUserRow = isAdmin
+    ? (selectedAgentEmail ? allUsers.find(u => u.email === selectedAgentEmail) : null)
+    : currentUserRecord;
+  const salesGoal = Number(goalsUserRow?.metadata?.monthly_sales_goal) || null;
+  const commissionGoal = Number(goalsUserRow?.metadata?.monthly_commission_goal) || null;
+  const canEditGoals = !isAdmin;
+  const showGoals = !isAdmin || !!selectedAgentEmail;
+
+  // Datos del "Resumen": en admin con 1 agente seleccionado, se acotan a ese agente.
+  const heroSoldTrips = selectedAgentEmail ? soldTrips.filter(t => t.created_by === selectedAgentEmail) : soldTrips;
+  const heroTrips = selectedAgentEmail ? trips.filter(t => t.created_by === selectedAgentEmail) : trips;
+  const heroServices = useMemo(() => {
+    if (!selectedAgentEmail) return services;
+    const idSet = new Set(heroSoldTrips.map(t => t.id));
+    return services.filter(s => idSet.has(s.sold_trip_id));
+  }, [services, heroSoldTrips, selectedAgentEmail]);
+
+  const queryClient = useQueryClient();
+  const updateUserMutation = useMutation({
+    mutationFn: ({ id, data }) => supabaseAPI.entities.User.update(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['currentUserRecord'] });
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+    },
+    onError: () => toast.error('No se pudieron guardar las metas'),
+  });
+  const saveGoals = (sGoal, cGoal) => {
+    if (!goalsUserRow?.id) return;
+    const md = { ...(goalsUserRow.metadata || {}), monthly_sales_goal: sGoal, monthly_commission_goal: cGoal };
+    updateUserMutation.mutate({ id: goalsUserRow.id, data: { metadata: md } }, { onSuccess: () => toast.success('Metas actualizadas') });
+  };
 
   const isLoading = tripsLoading || servicesLoading || clientsLoading || rawTripsLoading || usersLoading || userLoading;
 
@@ -345,6 +392,21 @@ export default function Statistics() {
           </div>
         </div>
       </div>
+
+      {/* Resumen (mes actual + metas + conversión) */}
+      {(soldTrips.length > 0 || trips.length > 0) && (
+        <ProgressHero
+          soldTrips={heroSoldTrips}
+          services={heroServices}
+          trips={heroTrips}
+          salesGoal={salesGoal}
+          commissionGoal={commissionGoal}
+          canEditGoals={canEditGoals}
+          showGoals={showGoals}
+          onSaveGoals={saveGoals}
+          savingGoals={updateUserMutation.isPending}
+        />
+      )}
 
       {/* Filters */}
       <div className="bg-white rounded-2xl p-4 shadow-sm border border-stone-100">
