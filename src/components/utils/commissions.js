@@ -41,3 +41,35 @@ export const agentPct = (split, commission) => {
   if (!(commission > 0)) return Math.round(AGENT_RATE * 100);
   return Math.round((split.agent / commission) * 100);
 };
+
+// ¿El servicio tiene comisión neta? (fuente única de la definición de "neto":
+// el tipo marcado en el servicio, editable en Comisiones Internas).
+export const isNetService = (s) => s.payment_type === 'neto';
+
+// Tolerancia (USD) para considerar que el saldo del cliente "cuadra" con las
+// comisiones netas.
+export const TRANSFER_TOLERANCE = 1;
+
+// Veredicto del traspaso Operaciones → Revenue para un viaje.
+//
+// Las comisiones NETAS entran primero a la cuenta de Operaciones (ahí cae el
+// dinero del cliente). Antes de pasarlas a Revenue hay que verificar que el
+// saldo del cliente alcance para cubrirlas:
+//   · saldo ≥ netas → 'pasar'  (se puede traspasar el monto neto; si sobra,
+//                               el excedente se queda en Operaciones)
+//   · saldo < netas → 'revisar' (falta dinero: revisar el viaje con el agente)
+//
+// `netTotal` = comisiones netas del viaje. `saldo` = lo que pagó el cliente
+// menos lo que Nomad pagó a proveedores (lo que queda en Operaciones).
+export const transferVerdict = (netTotal, saldo) => {
+  if (!(netTotal > 0)) return { type: 'none', netTotal: 0, saldo, diff: 0, shortfall: 0 };
+  const diff = saldo - netTotal;               // negativo = falta dinero
+  const canTransfer = diff >= -TRANSFER_TOLERANCE;
+  return {
+    type: canTransfer ? 'pasar' : 'revisar',
+    netTotal,
+    saldo,
+    diff,
+    shortfall: canTransfer ? 0 : netTotal - saldo,
+  };
+};
