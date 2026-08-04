@@ -15,18 +15,8 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import AgentCommissionInvoice from '@/components/commissions/AgentCommissionInvoice';
-
 // ---- Misma lógica de cálculo y etiquetas que "Mis Comisiones" (fuente única) ----
-const AGENT_RATE = 0.5;
-const splitFor = (service) => {
-  const bookedBy = service.booked_by || service.metadata?.booked_by;
-  const commission = service.commission || 0;
-  const agent = commission * AGENT_RATE;
-  if (bookedBy === 'montecito') {
-    return { agent, nomad: commission * 0.35, montecito: commission * 0.15, bookedBy };
-  }
-  return { agent, nomad: commission * 0.5, montecito: 0, bookedBy };
-};
+import { splitFor, agentPct } from '@/components/utils/commissions';
 
 const money = (n) => `$${Math.round(n).toLocaleString()}`;
 
@@ -113,6 +103,7 @@ export default function InternalCommissions() {
   const [sortOrder, setSortOrder] = useState('asc');
   const [expanded, setExpanded] = useState(() => new Set());
   const [expandedTrips, setExpandedTrips] = useState(() => new Set());
+  const [expandedDates, setExpandedDates] = useState(() => new Set());
   const [selected, setSelected] = useState([]); // service ids (solo en "Por pagar")
   const [invoiceOpen, setInvoiceOpen] = useState(false);
 
@@ -193,13 +184,18 @@ export default function InternalCommissions() {
 
   // Admin empuja a "pagado a agencia" si el agente no lo hizo
   const markPaidToAgency = (s) => setFlags(s, { paid_to_agency: true, paid_to_agency_date: s.paid_to_agency_date || new Date().toISOString().split('T')[0] });
-  const undoPaidToAgency = (s) => setFlags(s, { paid_to_agency: false, commission_paid: false, paid_to_agent: false, paid_to_agency_date: null });
+  const undoPaidToAgency = (s) => setFlags(s, { paid_to_agency: false, commission_paid: false, paid_to_agent: false, paid_to_agency_date: null, paid_to_agent_date: null });
   // Admin confirma que la agencia recibió el dinero del proveedor
   const confirmReceipt = (s) => setFlags(s, { paid_to_agency: true, commission_paid: true }, 'Recepción confirmada');
-  const undoConfirm = (s) => setFlags(s, { commission_paid: false, paid_to_agent: false });
-  // Admin paga su parte al agente
-  const payAgent = (s) => setFlags(s, { paid_to_agency: true, commission_paid: true, paid_to_agent: true }, 'Pagada al agente');
-  const undoPay = (s) => setFlags(s, { paid_to_agent: false });
+  const undoConfirm = (s) => setFlags(s, { commission_paid: false, paid_to_agent: false, paid_to_agent_date: null });
+  // Admin paga su parte al agente (registra la fecha de pago)
+  const payAgent = (s) => setFlags(s, {
+    paid_to_agency: true,
+    commission_paid: true,
+    paid_to_agent: true,
+    paid_to_agent_date: s.paid_to_agent_date || new Date().toISOString().split('T')[0],
+  }, 'Pagada al agente');
+  const undoPay = (s) => setFlags(s, { paid_to_agent: false, paid_to_agent_date: null });
 
   // Corregir el tipo de comisión (neto / bruto) servicio por servicio
   const setPaymentType = (s, value) => setFlags(
@@ -216,7 +212,7 @@ export default function InternalCommissions() {
         const trip = tripsMap[s.sold_trip_id];
         const agentEmail = (trip?.created_by || '').toLowerCase();
         const agentUser = usersByEmail[agentEmail];
-        const split = splitFor(s);
+        const split = splitFor(s, agentEmail);
         return {
           service: s,
           trip,
@@ -280,11 +276,34 @@ export default function InternalCommissions() {
     return sortOrder === 'asc' ? da - db : db - da;
   });
 
+  // Agrupar la pestaña "Pagadas" por fecha de pago al agente (dropdown por fecha)
+  const NO_DATE = 'sin_fecha';
+  const dateGroups = useMemo(() => {
+    if (activeTab !== 'pagadas') return [];
+    const byDate = visibleRows.reduce((acc, r) => {
+      const key = r.service.paid_to_agent_date || NO_DATE;
+      (acc[key] = acc[key] || []).push(r);
+      return acc;
+    }, {});
+    return Object.entries(byDate)
+      .map(([date, list]) => ({ date, list }))
+      .sort((a, b) => {
+        if (a.date === NO_DATE) return 1;
+        if (b.date === NO_DATE) return -1;
+        const da = parseLocalDate(a.date) || new Date(0);
+        const db = parseLocalDate(b.date) || new Date(0);
+        return sortOrder === 'asc' ? da - db : db - da;
+      });
+  }, [activeTab, visibleRows, sortOrder]);
+
   const toggleAgent = (agent) => setExpanded(prev => {
     const n = new Set(prev); n.has(agent) ? n.delete(agent) : n.add(agent); return n;
   });
   const toggleTrip = (tripId) => setExpandedTrips(prev => {
     const n = new Set(prev); n.has(tripId) ? n.delete(tripId) : n.add(tripId); return n;
+  });
+  const toggleDate = (date) => setExpandedDates(prev => {
+    const n = new Set(prev); n.has(date) ? n.delete(date) : n.add(date); return n;
   });
 
   // Subagrupar las filas de un agente por viaje
@@ -305,10 +324,16 @@ export default function InternalCommissions() {
   const selectedRows = visibleRows.filter(r => selected.includes(r.service.id));
 
   const paySelected = async () => {
+    const todayStr = new Date().toISOString().split('T')[0];
     for (const r of selectedRows) {
       await updateServiceMutation.mutateAsync({
         id: r.service.id,
-        data: { paid_to_agency: true, commission_paid: true, paid_to_agent: true },
+        data: {
+          paid_to_agency: true,
+          commission_paid: true,
+          paid_to_agent: true,
+          paid_to_agent_date: r.service.paid_to_agent_date || todayStr,
+        },
       });
     }
     setSelected([]);
@@ -363,6 +388,7 @@ export default function InternalCommissions() {
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-stone-800 truncate">{getServiceName(s)}</p>
           <p className="text-xs text-stone-400 truncate">
+            {activeTab === 'pagadas' ? `${r.agentName} · ` : ''}
             {r.trip ? `${r.trip.client_name}${r.trip.destination ? ' · ' + r.trip.destination : ''}` : 'Viaje'}
             {r.refDate ? ` · ${formatDate(r.refDate, 'd MMM yy', { locale: es })}` : ''}
           </p>
@@ -403,9 +429,9 @@ export default function InternalCommissions() {
         </div>
 
         <div className="w-32 flex-shrink-0 text-right">
-          <p className="text-sm font-bold text-stone-800">{money(r.split.agent)}</p>
+          <p className={`text-sm font-bold ${r.split.isOwner ? 'text-emerald-700' : 'text-stone-800'}`}>{money(r.split.agent)}</p>
           <p className="text-[10px] text-stone-400 leading-tight whitespace-nowrap">
-            50% · Nomad {money(r.split.nomad)}{r.split.montecito > 0 && <> · <span className="text-amber-600">Mtcto {money(r.split.montecito)}</span></>}
+            {agentPct(r.split, s.commission || 0)}%{r.split.nomad > 0 && <> · Nomad {money(r.split.nomad)}</>}{r.split.montecito > 0 && <> · <span className="text-amber-600">Mtcto {money(r.split.montecito)}</span></>}
           </p>
         </div>
 
@@ -546,11 +572,43 @@ export default function InternalCommissions() {
           <span className="w-20 flex-shrink-0 hidden lg:block text-[10px] font-bold uppercase tracking-wider text-stone-400">IATA</span>
           <span className="w-24 flex-shrink-0 hidden lg:block text-[10px] font-bold uppercase tracking-wider text-stone-400">Canal</span>
           <span className="w-20 flex-shrink-0 hidden sm:block text-right text-[10px] font-bold uppercase tracking-wider text-stone-400">Comisión</span>
-          <span className="w-32 flex-shrink-0 text-right text-[10px] font-bold uppercase tracking-wider text-stone-400">Agente (50%)</span>
+          <span className="w-32 flex-shrink-0 text-right text-[10px] font-bold uppercase tracking-wider text-stone-400">Agente</span>
           <span className="w-40 flex-shrink-0 text-right text-[10px] font-bold uppercase tracking-wider text-stone-400">Acción</span>
         </div>
 
-        {groups.map(({ agent, list }) => {
+        {/* Pestaña "Pagadas": agrupada por fecha de pago (dropdown por fecha) */}
+        {activeTab === 'pagadas' && dateGroups.map(({ date, list }) => {
+          const isOpen = expandedDates.has(date);
+          const label = date === NO_DATE
+            ? 'Sin fecha de pago'
+            : (() => {
+                const l = formatDate(date, "d 'de' MMMM yyyy", { locale: es });
+                return l.charAt(0).toUpperCase() + l.slice(1);
+              })();
+          return (
+            <div key={date} className="border-b border-stone-100 last:border-0">
+              <button onClick={() => toggleDate(date)} className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-stone-50 transition-colors text-left">
+                <span className="w-7 flex justify-center text-stone-300">
+                  {isOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                </span>
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#2E442A15' }}>
+                  <Calendar className="w-4 h-4" style={{ color: '#2E442A' }} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold text-stone-800 truncate">{label}</p>
+                  <p className="text-xs text-stone-400">{list.length} comisión{list.length !== 1 ? 'es' : ''} pagada{list.length !== 1 ? 's' : ''}</p>
+                </div>
+                <div className="text-right w-28">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-stone-400">Pagado a agentes</p>
+                  <p className="text-sm font-bold text-green-600">{money(sumAgent(list))}</p>
+                </div>
+              </button>
+              {isOpen && sortedRows(list).map(renderRow)}
+            </div>
+          );
+        })}
+
+        {activeTab !== 'pagadas' && groups.map(({ agent, list }) => {
           const isOpen = expanded.has(agent);
           return (
             <div key={agent} className="border-b border-stone-100 last:border-0">
@@ -640,7 +698,7 @@ export default function InternalCommissions() {
           );
         })}
 
-        {groups.length === 0 && (
+        {(activeTab === 'pagadas' ? dateGroups.length === 0 : groups.length === 0) && (
           <div className="p-10 text-center text-stone-400">
             <DollarSign className="w-10 h-10 mx-auto mb-3 text-stone-200" />
             <p className="text-sm">No hay comisiones en esta etapa</p>
