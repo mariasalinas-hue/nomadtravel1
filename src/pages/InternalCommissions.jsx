@@ -7,7 +7,7 @@ import { updateSoldTripTotalsFromServices } from '@/components/utils/soldTripRec
 import { toast } from 'sonner';
 import {
   Loader2, Search, DollarSign, Users, Calendar, ArrowUpDown, Check, Undo2,
-  ChevronDown, ChevronUp, FileText, ArrowRightLeft, AlertTriangle, Wallet,
+  ChevronDown, ChevronUp, FileText, ArrowRightLeft, AlertTriangle,
   Hotel, Plane, Car, Compass, Ship, Train, Briefcase, Package,
 } from 'lucide-react';
 import { Input } from "@/components/ui/input";
@@ -87,7 +87,6 @@ const stageOf = (service, trip) => {
 };
 
 const TABS = [
-  { key: 'cierre', label: 'Cierre mensual' },
   { key: 'proximas', label: 'Próximas' },
   { key: 'por_cobrar', label: 'Por cobrar' },
   { key: 'pagadas_agencia', label: 'Por confirmar' },
@@ -98,14 +97,13 @@ const TABS = [
 export default function InternalCommissions() {
   const [search, setSearch] = useState('');
   const [filterAgent, setFilterAgent] = useState('all');
-  const [activeTab, setActiveTab] = useState('cierre');
+  const [activeTab, setActiveTab] = useState('pagadas_agencia');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [sortOrder, setSortOrder] = useState('asc');
   const [expanded, setExpanded] = useState(() => new Set());
   const [expandedTrips, setExpandedTrips] = useState(() => new Set());
   const [expandedDates, setExpandedDates] = useState(() => new Set());
-  const [expandedCierre, setExpandedCierre] = useState(() => new Set());
   const [selected, setSelected] = useState([]); // service ids (solo en "Por pagar")
   const [invoiceOpen, setInvoiceOpen] = useState(false);
 
@@ -186,10 +184,19 @@ export default function InternalCommissions() {
 
   // Admin empuja a "pagado a agencia" si el agente no lo hizo
   const markPaidToAgency = (s) => setFlags(s, { paid_to_agency: true, paid_to_agency_date: s.paid_to_agency_date || new Date().toISOString().split('T')[0] });
-  const undoPaidToAgency = (s) => setFlags(s, { paid_to_agency: false, commission_paid: false, paid_to_agent: false, paid_to_agency_date: null, paid_to_agent_date: null });
-  // Admin confirma que la agencia recibió el dinero del proveedor
-  const confirmReceipt = (s) => setFlags(s, { paid_to_agency: true, commission_paid: true }, 'Recepción confirmada');
-  const undoConfirm = (s) => setFlags(s, { commission_paid: false, paid_to_agent: false, paid_to_agent_date: null });
+  const undoPaidToAgency = (s) => setFlags(s, { paid_to_agency: false, commission_paid: false, paid_to_agent: false, paid_to_agency_date: null, paid_to_agent_date: null, revenue_transfer_date: null, revenue_transfer_amount: null });
+  // Admin confirma que el dinero ya está en Revenue.
+  // NETAS: es el traspaso de Operaciones → Revenue (guarda fecha y monto).
+  // BRUTAS: solo confirma que el depósito directo ya llegó.
+  const confirmReceipt = (s) => {
+    const data = { paid_to_agency: true, commission_paid: true };
+    if (isNetService(s)) {
+      data.revenue_transfer_date = s.revenue_transfer_date || new Date().toISOString().split('T')[0];
+      data.revenue_transfer_amount = s.commission || 0;
+    }
+    setFlags(s, data, isNetService(s) ? 'Traspaso a Revenue registrado' : 'Depósito confirmado');
+  };
+  const undoConfirm = (s) => setFlags(s, { commission_paid: false, paid_to_agent: false, paid_to_agent_date: null, revenue_transfer_date: null, revenue_transfer_amount: null });
   // Admin paga su parte al agente (registra la fecha de pago)
   const payAgent = (s) => setFlags(s, {
     paid_to_agency: true,
@@ -307,84 +314,6 @@ export default function InternalCommissions() {
   const toggleDate = (date) => setExpandedDates(prev => {
     const n = new Set(prev); n.has(date) ? n.delete(date) : n.add(date); return n;
   });
-  const toggleCierre = (tripId) => setExpandedCierre(prev => {
-    const n = new Set(prev); n.has(tripId) ? n.delete(tripId) : n.add(tripId); return n;
-  });
-
-  // ---- "Cierre mensual": reconciliación por viaje (traspaso Operaciones → Revenue) ----
-  // Candidatas: comisiones de viajes ya terminados que todavía NO están en Revenue
-  // (ni confirmadas ni pagadas al agente). Se agrupan por viaje y se calcula el
-  // veredicto del traspaso (netas) o la validación del depósito (brutas).
-  const cierreGroups = useMemo(() => {
-    if (activeTab !== 'cierre') return [];
-    const candidates = filteredRows.filter(r =>
-      !r.service.commission_paid && !r.service.paid_to_agent && tripEnded(r.trip)
-    );
-    const byTrip = candidates.reduce((acc, r) => {
-      const id = r.trip?.id || r.service.sold_trip_id;
-      if (!acc[id]) acc[id] = { tripId: id, trip: r.trip, agentName: r.agentName, rows: [] };
-      acc[id].rows.push(r);
-      return acc;
-    }, {});
-    return Object.values(byTrip).map(g => {
-      const fin = tripFinancials[g.tripId] || { gross: 0, net: 0, clientIn: 0, nomadOut: 0, saldo: 0 };
-      const netRows = g.rows.filter(r => isNetService(r.service));
-      const grossRows = g.rows.filter(r => !isNetService(r.service));
-      const pendingNet = netRows.reduce((s, r) => s + (r.service.commission || 0), 0);
-      const pendingGross = grossRows.reduce((s, r) => s + (r.service.commission || 0), 0);
-      const verdict = transferVerdict(fin.net, fin.saldo);
-      return { ...g, fin, netRows, grossRows, pendingNet, pendingGross, verdict };
-    }).sort((a, b) => {
-      // Primero los que NO cuadran (requieren revisión), luego por fecha del viaje
-      const aReview = a.netRows.length > 0 && a.verdict.type === 'revisar' ? 0 : 1;
-      const bReview = b.netRows.length > 0 && b.verdict.type === 'revisar' ? 0 : 1;
-      if (aReview !== bReview) return aReview - bReview;
-      const da = a.trip ? (parseLocalDate(a.trip.end_date || a.trip.start_date) || new Date(0)) : new Date(0);
-      const db = b.trip ? (parseLocalDate(b.trip.end_date || b.trip.start_date) || new Date(0)) : new Date(0);
-      return sortOrder === 'asc' ? da - db : db - da;
-    });
-  }, [activeTab, filteredRows, tripFinancials, sortOrder]);
-
-  // Totales de la pestaña de cierre
-  const cierreStats = useMemo(() => {
-    let porPasar = 0, porRevisar = 0, brutasPorConfirmar = 0, tripsRevisar = 0;
-    cierreGroups.forEach(g => {
-      if (g.netRows.length > 0) {
-        if (g.verdict.type === 'pasar') porPasar += g.pendingNet;
-        else { porRevisar += g.pendingNet; tripsRevisar += 1; }
-      }
-      brutasPorConfirmar += g.pendingGross;
-    });
-    return { porPasar, porRevisar, brutasPorConfirmar, tripsRevisar };
-  }, [cierreGroups]);
-
-  // Registrar el traspaso de las netas de un viaje a Revenue (guarda fecha y monto)
-  const registerTransfer = async (group) => {
-    const todayStr = new Date().toISOString().split('T')[0];
-    for (const r of group.netRows) {
-      await updateServiceMutation.mutateAsync({
-        id: r.service.id,
-        data: {
-          paid_to_agency: true,
-          commission_paid: true,
-          revenue_transfer_date: r.service.revenue_transfer_date || todayStr,
-          revenue_transfer_amount: r.service.commission || 0,
-        },
-      });
-    }
-    toast.success(`Traspaso registrado: ${money(group.pendingNet)} a Revenue`);
-  };
-
-  // Confirmar que el depósito directo de las brutas ya llegó a Revenue
-  const confirmGrossDeposit = async (group) => {
-    for (const r of group.grossRows) {
-      await updateServiceMutation.mutateAsync({
-        id: r.service.id,
-        data: { paid_to_agency: true, commission_paid: true },
-      });
-    }
-    toast.success('Depósito confirmado');
-  };
 
   // Subagrupar las filas de un agente por viaje
   const tripSubgroups = (list) => Object.values(
@@ -447,127 +376,13 @@ export default function InternalCommissions() {
     </div>
   );
 
-  // Tarjeta de un viaje en la pestaña "Cierre mensual"
-  const renderCierreCard = (g) => {
-    const { tripId, trip, agentName, netRows, grossRows, pendingNet, pendingGross, fin, verdict } = g;
-    const isOpen = expandedCierre.has(tripId);
-    const refDate = trip?.end_date || trip?.start_date;
-    const canTransfer = verdict.type === 'pasar';
-    const allRows = [...netRows, ...grossRows];
-
-    return (
-      <div key={tripId} className="border-b border-stone-100 last:border-0 px-4 py-3.5">
-        {/* Encabezado del viaje */}
-        <div className="flex items-start gap-3">
-          <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#2E442A15' }}>
-            <Wallet className="w-4 h-4" style={{ color: '#2E442A' }} />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-bold text-stone-800 truncate">
-              {trip ? `${trip.client_name} ${trip.destination || ''}`.trim() : 'Viaje'}
-              {trip?.trip_name ? ` — ${trip.trip_name}` : ''}
-            </p>
-            <p className="text-xs text-stone-400">
-              {agentName}{refDate ? ` · regresó ${formatDate(refDate, 'd MMM yyyy', { locale: es })}` : ''}
-            </p>
-          </div>
-          {netRows.length > 0 && (
-            <span className={`text-[10px] font-bold tracking-wider px-2.5 py-1 rounded-md flex-shrink-0 ${
-              canTransfer ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'
-            }`}>
-              {canTransfer ? 'CUADRA' : 'NO CUADRA'}
-            </span>
-          )}
-        </div>
-
-        {/* NETAS: traspaso Operaciones → Revenue */}
-        {netRows.length > 0 && (
-          <div className={`mt-3 rounded-xl border px-3 py-2.5 ${canTransfer ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'}`}>
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-              <div className="min-w-0">
-                <p className={`text-[10px] font-bold uppercase tracking-wider ${canTransfer ? 'text-emerald-500' : 'text-red-500'}`}>
-                  Netas · traspaso Operaciones → Revenue
-                </p>
-                <p className="text-sm text-stone-600 mt-0.5">
-                  Comisiones netas <strong className="text-stone-800">{money(fin.net)}</strong>
-                  <span className="mx-1.5 text-stone-300">·</span>
-                  Saldo del cliente <strong className={fin.saldo < fin.net ? 'text-red-600' : 'text-stone-800'}>{money(fin.saldo)}</strong>
-                </p>
-                <p className={`text-sm font-semibold mt-1 flex items-center gap-1.5 ${canTransfer ? 'text-emerald-700' : 'text-red-700'}`}>
-                  {canTransfer ? (
-                    <><Check className="w-3.5 h-3.5" /> Pasar {money(pendingNet)} de Operaciones a Revenue</>
-                  ) : (
-                    <><AlertTriangle className="w-3.5 h-3.5" /> No pasar. Faltan {money(verdict.shortfall)} — revisar el viaje con {agentName}</>
-                  )}
-                </p>
-              </div>
-              <Button
-                size="sm"
-                onClick={() => registerTransfer(g)}
-                disabled={!canTransfer || pendingNet <= 0 || updateServiceMutation.isPending}
-                className="h-8 rounded-lg text-xs text-white px-3 whitespace-nowrap flex-shrink-0"
-                style={{ backgroundColor: canTransfer ? '#2E442A' : '#D1D5DB' }}
-              >
-                <ArrowRightLeft className="w-3.5 h-3.5 mr-1.5" /> Registrar traspaso
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {/* BRUTAS: depósito directo a Revenue */}
-        {grossRows.length > 0 && (
-          <div className="mt-2 rounded-xl border border-stone-200 bg-stone-50 px-3 py-2.5">
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-              <div className="min-w-0">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-stone-500">Brutas · depósito directo a Revenue</p>
-                <p className="text-sm text-stone-600 mt-0.5">
-                  Comisiones brutas <strong className="text-stone-800">{money(pendingGross)}</strong> — validar que el depósito ya llegó
-                </p>
-              </div>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => confirmGrossDeposit(g)}
-                disabled={updateServiceMutation.isPending}
-                className="h-8 rounded-lg text-xs px-3 whitespace-nowrap flex-shrink-0 border-stone-300"
-              >
-                <Check className="w-3.5 h-3.5 mr-1.5" /> Confirmar depósito
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {/* Detalle de servicios (solo lectura) */}
-        <button onClick={() => toggleCierre(tripId)} className="mt-2 text-xs text-stone-400 hover:text-stone-600 flex items-center gap-1">
-          {isOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-          {allRows.length} servicio{allRows.length !== 1 ? 's' : ''} con comisión
-        </button>
-        {isOpen && (
-          <div className="mt-1.5 space-y-1">
-            {allRows.map(r => {
-              const s = r.service;
-              const net = isNetService(s);
-              return (
-                <div key={s.id} className="flex items-center gap-2 text-xs pl-1">
-                  <span className={`text-[9px] font-bold tracking-wider px-1.5 py-0.5 rounded ${net ? 'bg-green-100 text-green-600' : 'bg-orange-100 text-orange-600'}`}>
-                    {net ? 'NETO' : 'BRUTO'}
-                  </span>
-                  <span className="flex-1 min-w-0 truncate text-stone-600">{getServiceName(s)}</span>
-                  <span className="font-semibold text-stone-700">{money(s.commission || 0)}</span>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  const renderRow = (r) => {
+  const renderRow = (r, verdict) => {
     const s = r.service;
     const Icon = SERVICE_ICONS[s.service_type] || Package;
     const iconColors = SERVICE_ICON_COLORS[s.service_type] || SERVICE_ICON_COLORS.otro;
     const channel = getChannel(s);
+    // Comisión neta cuyo viaje no cuadra: no se puede pasar a Revenue todavía
+    const netBlocked = isNetService(s) && verdict?.type === 'revisar';
 
     return (
       <div key={s.id} className="flex items-center gap-3 px-4 py-3 border-t border-stone-100 bg-stone-50/40">
@@ -643,10 +458,19 @@ export default function InternalCommissions() {
           )}
           {r.stage === 'pagadas_agencia' && (
             <div className="flex items-center gap-1">
-              <Button size="sm" onClick={() => confirmReceipt(s)} disabled={updateServiceMutation.isPending}
-                className="h-7 rounded-lg text-xs text-white px-2 whitespace-nowrap" style={{ backgroundColor: '#2E442A' }}>
-                <Check className="w-3 h-3 mr-1" /> Confirmar recepción
-              </Button>
+              {netBlocked ? (
+                <span
+                  title="El saldo del cliente no cuadra con las comisiones netas. Revisa el viaje con el agente antes de pasar el dinero a Revenue."
+                  className="text-[10px] font-bold tracking-wider px-2.5 py-1 rounded-md bg-red-50 text-red-600 flex items-center gap-1 whitespace-nowrap"
+                >
+                  <AlertTriangle className="w-3 h-3" /> Revisar saldo
+                </span>
+              ) : (
+                <Button size="sm" onClick={() => confirmReceipt(s)} disabled={updateServiceMutation.isPending}
+                  className="h-7 rounded-lg text-xs text-white px-2 whitespace-nowrap" style={{ backgroundColor: '#2E442A' }}>
+                  <Check className="w-3 h-3 mr-1" /> {isNetService(s) ? 'Confirmar traspaso' : 'Confirmar recepción'}
+                </Button>
+              )}
               <button onClick={() => undoPaidToAgency(s)} title="Deshacer" className="p-1 rounded text-stone-300 hover:text-stone-500">
                 <Undo2 className="w-3.5 h-3.5" />
               </button>
@@ -721,7 +545,7 @@ export default function InternalCommissions() {
       {/* Tabs */}
       <div className="border-b border-stone-200 flex gap-6 overflow-x-auto">
         {TABS.map(tab => {
-          const count = tab.key === 'cierre' ? cierreGroups.length : (buckets[tab.key]?.length || 0);
+          const count = buckets[tab.key].length;
           const active = activeTab === tab.key;
           return (
             <button key={tab.key} onClick={() => { setActiveTab(tab.key); setSelected([]); }}
@@ -731,8 +555,7 @@ export default function InternalCommissions() {
               {tab.label}
               {count > 0 ? (
                 <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
-                  tab.key === 'cierre' ? 'bg-emerald-100 text-emerald-700'
-                    : tab.key === 'pagadas_agencia' ? 'bg-amber-100 text-amber-600'
+                  tab.key === 'pagadas_agencia' ? 'bg-amber-100 text-amber-600'
                     : tab.key === 'confirmadas' ? 'bg-blue-100 text-blue-600' : 'bg-stone-100 text-stone-500'
                 }`}>{count}</span>
               ) : <span className="text-stone-300">—</span>}
@@ -758,26 +581,9 @@ export default function InternalCommissions() {
         </div>
       )}
 
-      {/* Cierre mensual: resumen del traspaso Operaciones → Revenue */}
-      {activeTab === 'cierre' && (
-        <>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <StatCard label="Por pasar a Revenue" value={money(cierreStats.porPasar)} sub="Netas que cuadran con el saldo" valueClass="text-emerald-600" />
-            <StatCard label="Netas por revisar" value={money(cierreStats.porRevisar)} sub={`${cierreStats.tripsRevisar} viaje${cierreStats.tripsRevisar !== 1 ? 's' : ''} · saldo no cuadra`} valueClass="text-red-600" />
-            <StatCard label="Brutas por confirmar" value={money(cierreStats.brutasPorConfirmar)} sub="Depósito directo a Revenue" valueClass="text-orange-500" />
-            <StatCard label="Viajes en cierre" value={cierreGroups.length} sub="Terminados y aún no en Revenue" />
-          </div>
-          <div className="bg-stone-50 border border-stone-200 rounded-xl px-4 py-3 text-sm text-stone-600">
-            Las comisiones <strong>netas</strong> entran a <strong>Operaciones</strong>; pásalas a <strong>Revenue</strong> solo cuando el saldo del cliente cuadre con las netas.
-            Las <strong>brutas</strong> se depositan directo a Revenue: solo valida que el depósito ya haya llegado.
-          </div>
-        </>
-      )}
-
       {/* Lista agrupada por agente */}
       <div className="bg-white rounded-2xl border border-stone-100 overflow-hidden">
-        {/* Encabezado de columnas (no aplica al cierre mensual, que va por viaje) */}
-        {activeTab !== 'cierre' && (
+        {/* Encabezado de columnas */}
         <div className="flex items-center gap-3 px-4 py-2.5 border-b border-stone-100">
           <span className="w-7 flex-shrink-0" />
           <span className="w-8 flex-shrink-0" />
@@ -789,10 +595,6 @@ export default function InternalCommissions() {
           <span className="w-32 flex-shrink-0 text-right text-[10px] font-bold uppercase tracking-wider text-stone-400">Agente</span>
           <span className="w-40 flex-shrink-0 text-right text-[10px] font-bold uppercase tracking-wider text-stone-400">Acción</span>
         </div>
-        )}
-
-        {/* Pestaña "Cierre mensual": una tarjeta por viaje con veredicto de traspaso */}
-        {activeTab === 'cierre' && cierreGroups.map(renderCierreCard)}
 
         {/* Pestaña "Pagadas": agrupada por fecha de pago (dropdown por fecha) */}
         {activeTab === 'pagadas' && dateGroups.map(({ date, list }) => {
@@ -821,12 +623,12 @@ export default function InternalCommissions() {
                   <p className="text-sm font-bold text-green-600">{money(sumAgent(list))}</p>
                 </div>
               </button>
-              {isOpen && sortedRows(list).map(renderRow)}
+              {isOpen && sortedRows(list).map(r => renderRow(r))}
             </div>
           );
         })}
 
-        {activeTab !== 'pagadas' && activeTab !== 'cierre' && groups.map(({ agent, list }) => {
+        {activeTab !== 'pagadas' && groups.map(({ agent, list }) => {
           const isOpen = expanded.has(agent);
           return (
             <div key={agent} className="border-b border-stone-100 last:border-0">
@@ -856,6 +658,9 @@ export default function InternalCommissions() {
                 const refDate = trip?.end_date || trip?.start_date;
                 const fin = tripFinancials[tripId] || { gross: 0, net: 0, clientIn: 0, nomadOut: 0, saldo: 0 };
                 const matchesNet = Math.abs(fin.saldo - fin.net) < 1;
+                // Veredicto del traspaso Operaciones → Revenue para las comisiones netas
+                const verdict = transferVerdict(fin.net, fin.saldo);
+                const showVerdict = fin.net > 0 && (activeTab === 'pagadas_agencia' || activeTab === 'confirmadas');
                 return (
                   <div key={tripId} className="border-t border-stone-100 bg-stone-50/30">
                     <button onClick={() => toggleTrip(tripId)} className="w-full flex items-center gap-3 pl-10 pr-4 py-2.5 hover:bg-stone-100/60 transition-colors text-left">
@@ -871,6 +676,20 @@ export default function InternalCommissions() {
                           {rows.length} comisión{rows.length !== 1 ? 'es' : ''}{refDate ? ` · ${formatDate(refDate, 'yyyy-MM-dd')}` : ''}
                         </p>
                       </div>
+                      {showVerdict && (
+                        <span
+                          title={verdict.type === 'pasar'
+                            ? `Pasar ${money(verdict.netTotal)} de Operaciones a Revenue`
+                            : `Saldo ${money(fin.saldo)} vs netas ${money(fin.net)} — faltan ${money(verdict.shortfall)}`}
+                          className={`hidden sm:inline-flex items-center gap-1 text-[10px] font-bold tracking-wider px-2 py-1 rounded-md flex-shrink-0 ${
+                            verdict.type === 'pasar' ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'
+                          }`}
+                        >
+                          {verdict.type === 'pasar'
+                            ? <><ArrowRightLeft className="w-3 h-3" /> Pasar {money(verdict.netTotal)}</>
+                            : <><AlertTriangle className="w-3 h-3" /> Revisar saldo</>}
+                        </span>
+                      )}
                       <div className="text-right">
                         <p className="text-[10px] font-bold uppercase tracking-wider text-stone-400">Total</p>
                         <p className="text-sm font-bold text-stone-700">{money(tripTotal)}</p>
@@ -881,10 +700,22 @@ export default function InternalCommissions() {
                       </div>
                     </button>
 
-                    {tripOpen && sortedRows(rows).map(renderRow)}
+                    {tripOpen && sortedRows(rows).map(r => renderRow(r, verdict))}
 
                     {tripOpen && (
                       <div className="pl-12 pr-4 py-3 border-t border-stone-100 bg-white">
+                        {fin.net > 0 && (
+                          <div className={`mb-2 rounded-lg border px-3 py-2 ${verdict.type === 'pasar' ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'}`}>
+                            <p className={`text-[10px] font-bold uppercase tracking-wider ${verdict.type === 'pasar' ? 'text-emerald-500' : 'text-red-500'}`}>
+                              Comisiones netas · traspaso Operaciones → Revenue
+                            </p>
+                            <p className={`text-sm font-semibold mt-0.5 flex items-center gap-1.5 ${verdict.type === 'pasar' ? 'text-emerald-700' : 'text-red-700'}`}>
+                              {verdict.type === 'pasar'
+                                ? <><ArrowRightLeft className="w-4 h-4 flex-shrink-0" /> Cuadra — pasar {money(fin.net)} de Operaciones a Revenue</>
+                                : <><AlertTriangle className="w-4 h-4 flex-shrink-0" /> No cuadra — saldo {money(fin.saldo)} vs netas {money(fin.net)}, faltan {money(verdict.shortfall)}. Revisar con el agente antes de pasar a Revenue.</>}
+                            </p>
+                          </div>
+                        )}
                         <div className="flex flex-wrap items-stretch gap-2">
                           <div className="flex-1 min-w-[130px] rounded-lg bg-orange-50 border border-orange-100 px-3 py-2">
                             <p className="text-[10px] font-bold uppercase tracking-wider text-orange-400">Comisión bruta</p>
@@ -916,10 +747,10 @@ export default function InternalCommissions() {
           );
         })}
 
-        {(activeTab === 'cierre' ? cierreGroups.length === 0 : activeTab === 'pagadas' ? dateGroups.length === 0 : groups.length === 0) && (
+        {(activeTab === 'pagadas' ? dateGroups.length === 0 : groups.length === 0) && (
           <div className="p-10 text-center text-stone-400">
             <DollarSign className="w-10 h-10 mx-auto mb-3 text-stone-200" />
-            <p className="text-sm">{activeTab === 'cierre' ? 'No hay viajes pendientes de traspaso o depósito' : 'No hay comisiones en esta etapa'}</p>
+            <p className="text-sm">No hay comisiones en esta etapa</p>
           </div>
         )}
       </div>
