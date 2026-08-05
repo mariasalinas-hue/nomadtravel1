@@ -196,6 +196,24 @@ export default function InternalCommissions() {
     }
     setFlags(s, data, isNetService(s) ? 'Traspaso a Revenue registrado' : 'Depósito confirmado');
   };
+
+  // Traspaso de TODO el viaje: pasa todas las netas pendientes a Revenue de una vez
+  const registerTripTransfer = async (netRows) => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    for (const r of netRows) {
+      const s = r.service;
+      await updateServiceMutation.mutateAsync({
+        id: s.id,
+        data: {
+          paid_to_agency: true,
+          commission_paid: true,
+          revenue_transfer_date: s.revenue_transfer_date || todayStr,
+          revenue_transfer_amount: s.commission || 0,
+        },
+      });
+    }
+    toast.success('Traspaso a Revenue registrado');
+  };
   const undoConfirm = (s) => setFlags(s, { commission_paid: false, paid_to_agent: false, paid_to_agent_date: null, revenue_transfer_date: null, revenue_transfer_amount: null });
   // Admin paga su parte al agente (registra la fecha de pago)
   const payAgent = (s) => setFlags(s, {
@@ -458,17 +476,26 @@ export default function InternalCommissions() {
           )}
           {r.stage === 'pagadas_agencia' && (
             <div className="flex items-center gap-1">
-              {netBlocked ? (
-                <span
-                  title="El saldo del cliente no cuadra con las comisiones netas. Revisa el viaje con el agente antes de pasar el dinero a Revenue."
-                  className="text-[10px] font-bold tracking-wider px-2.5 py-1 rounded-md bg-red-50 text-red-600 flex items-center gap-1 whitespace-nowrap"
-                >
-                  <AlertTriangle className="w-3 h-3" /> Revisar saldo
-                </span>
+              {isNetService(s) ? (
+                netBlocked ? (
+                  <span
+                    title="El saldo del cliente no cuadra con las comisiones netas. Revisa el viaje con el agente antes de pasar el dinero a Revenue."
+                    className="text-[10px] font-bold tracking-wider px-2.5 py-1 rounded-md bg-red-50 text-red-600 flex items-center gap-1 whitespace-nowrap"
+                  >
+                    <AlertTriangle className="w-3 h-3" /> Revisar saldo
+                  </span>
+                ) : (
+                  <span
+                    title="Se pasa junto con el traspaso del viaje (botón arriba)"
+                    className="text-[10px] font-bold tracking-wider px-2.5 py-1 rounded-md bg-emerald-50 text-emerald-600 flex items-center gap-1 whitespace-nowrap"
+                  >
+                    <ArrowRightLeft className="w-3 h-3" /> En traspaso
+                  </span>
+                )
               ) : (
                 <Button size="sm" onClick={() => confirmReceipt(s)} disabled={updateServiceMutation.isPending}
                   className="h-7 rounded-lg text-xs text-white px-2 whitespace-nowrap" style={{ backgroundColor: '#2E442A' }}>
-                  <Check className="w-3 h-3 mr-1" /> {isNetService(s) ? 'Confirmar traspaso' : 'Confirmar recepción'}
+                  <Check className="w-3 h-3 mr-1" /> Confirmar recepción
                 </Button>
               )}
               <button onClick={() => undoPaidToAgency(s)} title="Deshacer" className="p-1 rounded text-stone-300 hover:text-stone-500">
@@ -661,6 +688,9 @@ export default function InternalCommissions() {
                 // Veredicto del traspaso Operaciones → Revenue para las comisiones netas
                 const verdict = transferVerdict(fin.net, fin.saldo);
                 const showVerdict = fin.net > 0 && (activeTab === 'pagadas_agencia' || activeTab === 'confirmadas');
+                // Netas del viaje aún pendientes de pasar a Revenue (para el botón único)
+                const pendingNetRows = rows.filter(r => isNetService(r.service) && r.stage === 'pagadas_agencia');
+                const pendingNetTotal = pendingNetRows.reduce((sum, r) => sum + (r.service.commission || 0), 0);
                 return (
                   <div key={tripId} className="border-t border-stone-100 bg-stone-50/30">
                     <button onClick={() => toggleTrip(tripId)} className="w-full flex items-center gap-3 pl-10 pr-4 py-2.5 hover:bg-stone-100/60 transition-colors text-left">
@@ -706,14 +736,29 @@ export default function InternalCommissions() {
                       <div className="pl-12 pr-4 py-3 border-t border-stone-100 bg-white">
                         {fin.net > 0 && (
                           <div className={`mb-2 rounded-lg border px-3 py-2 ${verdict.type === 'pasar' ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'}`}>
-                            <p className={`text-[10px] font-bold uppercase tracking-wider ${verdict.type === 'pasar' ? 'text-emerald-500' : 'text-red-500'}`}>
-                              Comisiones netas · traspaso Operaciones → Revenue
-                            </p>
-                            <p className={`text-sm font-semibold mt-0.5 flex items-center gap-1.5 ${verdict.type === 'pasar' ? 'text-emerald-700' : 'text-red-700'}`}>
-                              {verdict.type === 'pasar'
-                                ? <><ArrowRightLeft className="w-4 h-4 flex-shrink-0" /> Cuadra — pasar {money(fin.net)} de Operaciones a Revenue</>
-                                : <><AlertTriangle className="w-4 h-4 flex-shrink-0" /> No cuadra — saldo {money(fin.saldo)} vs netas {money(fin.net)}, faltan {money(verdict.shortfall)}. Revisar con el agente antes de pasar a Revenue.</>}
-                            </p>
+                            <div className="flex items-center justify-between gap-3 flex-wrap">
+                              <div className="min-w-0">
+                                <p className={`text-[10px] font-bold uppercase tracking-wider ${verdict.type === 'pasar' ? 'text-emerald-500' : 'text-red-500'}`}>
+                                  Comisiones netas · traspaso Operaciones → Revenue
+                                </p>
+                                <p className={`text-sm font-semibold mt-0.5 flex items-center gap-1.5 ${verdict.type === 'pasar' ? 'text-emerald-700' : 'text-red-700'}`}>
+                                  {verdict.type === 'pasar'
+                                    ? <><ArrowRightLeft className="w-4 h-4 flex-shrink-0" /> Cuadra — pasar {money(fin.net)} de Operaciones a Revenue</>
+                                    : <><AlertTriangle className="w-4 h-4 flex-shrink-0" /> No cuadra — saldo {money(fin.saldo)} vs netas {money(fin.net)}, faltan {money(verdict.shortfall)}. Revisar con el agente antes de pasar a Revenue.</>}
+                                </p>
+                              </div>
+                              {verdict.type === 'pasar' && pendingNetRows.length > 0 && (
+                                <Button
+                                  size="sm"
+                                  onClick={() => registerTripTransfer(pendingNetRows)}
+                                  disabled={updateServiceMutation.isPending}
+                                  className="h-8 rounded-lg text-xs text-white px-3 whitespace-nowrap flex-shrink-0"
+                                  style={{ backgroundColor: '#2E442A' }}
+                                >
+                                  <ArrowRightLeft className="w-3.5 h-3.5 mr-1.5" /> Registrar traspaso {money(pendingNetTotal)}
+                                </Button>
+                              )}
+                            </div>
                           </div>
                         )}
                         <div className="flex flex-wrap items-stretch gap-2">
