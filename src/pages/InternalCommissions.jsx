@@ -7,7 +7,7 @@ import { updateSoldTripTotalsFromServices } from '@/components/utils/soldTripRec
 import { toast } from 'sonner';
 import {
   Loader2, Search, DollarSign, Users, Calendar, ArrowUpDown, Check, Undo2,
-  ChevronDown, ChevronUp, FileText, ArrowRightLeft, AlertTriangle,
+  ChevronDown, ChevronUp, FileText, ArrowRightLeft, AlertTriangle, Pencil,
   Hotel, Plane, Car, Compass, Ship, Train, Briefcase, Package,
 } from 'lucide-react';
 import { Input } from "@/components/ui/input";
@@ -23,7 +23,6 @@ const STAGE_LABELS = { proximas: 'Estimada', por_cobrar: 'Por cobrar', pagadas_a
 
 const money = (n) => `$${Math.round(n).toLocaleString()}`;
 
-const IATA_LABELS = { montecito: 'Montecito', iata_nomad: 'IATA Nomad', nomad: 'IATA Nomad' };
 
 const RESERVED_BY_LABELS = {
   virtuoso: 'Virtuoso', preferred_partner: 'Preferred Partner', tbo: 'TBO',
@@ -71,11 +70,6 @@ const getChannelRaw = (service) => {
     || service.cruise_provider || m.cruise_provider
     || service.train_provider || m.train_provider || '';
 };
-const getChannel = (service) => {
-  const raw = getChannelRaw(service);
-  if (!raw) return '—';
-  return CHANNEL_LABELS[raw] || raw;
-};
 // Opciones de canal para el selector del reporte
 const CHANNEL_OPTIONS = Object.entries(CHANNEL_LABELS).map(([value, label]) => ({ value, label }));
 
@@ -115,6 +109,7 @@ export default function InternalCommissions() {
   const [selected, setSelected] = useState([]); // service ids (solo en "Por pagar")
   const [invoiceOpen, setInvoiceOpen] = useState(false);
   const [reportTripId, setReportTripId] = useState(null); // reporte de auditoría por viaje
+  const [editingCommission, setEditingCommission] = useState(null); // edición inline del monto
 
   const queryClient = useQueryClient();
 
@@ -303,6 +298,17 @@ export default function InternalCommissions() {
     { payment_type: value === 'sin' ? null : value },
     value === 'neto' ? 'Marcada como NETA' : value === 'bruto' ? 'Marcada como BRUTA' : 'Tipo quitado'
   );
+  // Corregir IATA (Nomad / Montecito) y canal servicio por servicio
+  const setBookedBy = (s, value) => setFlags(s, { booked_by: value });
+  const setChannel = (s, value) => setFlags(s, { reserved_by: value });
+  // Edición inline del monto de la comisión (recalcula totales del viaje)
+  const saveCommission = (s) => {
+    if (!editingCommission || editingCommission.id !== s.id) { setEditingCommission(null); return; }
+    const value = parseFloat(editingCommission.value);
+    setEditingCommission(null);
+    if (isNaN(value) || value < 0) { toast.error('El monto debe ser un número válido'); return; }
+    if (value !== (s.commission || 0)) updateServiceMutation.mutate({ id: s.id, data: { commission: value } });
+  };
 
   // ---- Filas derivadas de los servicios ----
   const rows = useMemo(() => {
@@ -471,7 +477,6 @@ export default function InternalCommissions() {
     const s = r.service;
     const Icon = SERVICE_ICONS[s.service_type] || Package;
     const iconColors = SERVICE_ICON_COLORS[s.service_type] || SERVICE_ICON_COLORS.otro;
-    const channel = getChannel(s);
     // Comisión neta cuyo viaje no cuadra: no se puede pasar a Revenue todavía
     const netBlocked = isNetService(s) && verdict?.type === 'revisar';
 
@@ -518,16 +523,48 @@ export default function InternalCommissions() {
           </Select>
         </div>
 
-        <div className="w-20 flex-shrink-0 hidden lg:block">
-          <span className="text-xs font-medium text-stone-600">{IATA_LABELS[r.iata] || r.iata}</span>
+        <div className="w-20 flex-shrink-0 hidden lg:block" onClick={(e) => e.stopPropagation()}>
+          <Select value={s.booked_by || 'iata_nomad'} onValueChange={(v) => setBookedBy(s, v)}>
+            <SelectTrigger className="h-6 px-2 rounded-md text-xs" title="IATA"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="iata_nomad">IATA Nomad</SelectItem>
+              <SelectItem value="montecito">Montecito</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
-        <div className="w-24 flex-shrink-0 hidden lg:block min-w-0">
-          <span className="text-xs text-stone-500 block truncate" title={channel}>{channel}</span>
+        <div className="w-24 flex-shrink-0 hidden lg:block min-w-0" onClick={(e) => e.stopPropagation()}>
+          <Select value={getChannelRaw(s) || '__none__'} onValueChange={(v) => setChannel(s, v === '__none__' ? null : v)}>
+            <SelectTrigger className="h-6 px-2 rounded-md text-xs" title="Canal"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__none__">—</SelectItem>
+              {CHANNEL_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+              {getChannelRaw(s) && !CHANNEL_OPTIONS.some(o => o.value === getChannelRaw(s)) && (
+                <SelectItem value={getChannelRaw(s)}>{getChannelRaw(s)}</SelectItem>
+              )}
+            </SelectContent>
+          </Select>
         </div>
 
-        <div className="w-20 flex-shrink-0 text-right hidden sm:block">
-          <span className="text-sm font-semibold text-stone-700">{money(s.commission || 0)}</span>
+        <div className="w-20 flex-shrink-0 text-right hidden sm:block" onClick={(e) => e.stopPropagation()}>
+          {editingCommission?.id === s.id ? (
+            <Input
+              type="number" step="0.01" min="0" autoFocus
+              value={editingCommission.value}
+              onChange={(e) => setEditingCommission({ id: s.id, value: e.target.value })}
+              onBlur={() => saveCommission(s)}
+              onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') setEditingCommission(null); }}
+              className="h-7 w-20 text-right text-sm rounded-lg px-2"
+            />
+          ) : (
+            <button
+              onClick={() => setEditingCommission({ id: s.id, value: s.commission || 0 })}
+              className="inline-flex items-center gap-1 text-sm font-semibold text-stone-700 px-2 py-1 rounded-lg border border-stone-200 bg-white hover:border-blue-400 hover:text-blue-600 transition-colors"
+              title="Editar comisión"
+            >
+              {money(s.commission || 0)} <Pencil className="w-3 h-3 text-stone-400" />
+            </button>
+          )}
         </div>
 
         <div className="w-32 flex-shrink-0 text-right">

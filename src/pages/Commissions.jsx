@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import AgentInvoiceGenerator from '@/components/commissions/AgentInvoiceGenerator';
 import { splitFor, agentPct } from '@/components/utils/commissions';
 import { isOwnerEmail } from '@/config/ownerEmails';
@@ -95,15 +96,14 @@ const CHANNEL_LABELS = {
   consofly: 'Consofly',
 };
 
-const getChannel = (service) => {
+const getChannelRaw = (service) => {
   const m = service.metadata || {};
-  const raw = service.reserved_by || m.reserved_by
+  return service.reserved_by || m.reserved_by
     || service.flight_consolidator || m.flight_consolidator
     || service.cruise_provider || m.cruise_provider
-    || service.train_provider || m.train_provider;
-  if (!raw) return '—';
-  return CHANNEL_LABELS[raw] || raw;
+    || service.train_provider || m.train_provider || '';
 };
+const CHANNEL_OPTIONS = Object.entries(CHANNEL_LABELS).map(([value, label]) => ({ value, label }));
 
 // Subtítulo descriptivo del servicio (sin duplicar el canal)
 const getSubtitle = (service) => {
@@ -250,6 +250,14 @@ export default function Commissions() {
       data: { paid_to_agency: false, paid_to_agency_date: null }
     });
   };
+
+  // Editar tipo (neto/bruto), IATA (Nomad/Montecito) y canal de la comisión
+  const setPaymentType = (service, value) =>
+    updateServiceMutation.mutate({ id: service.id, data: { payment_type: value === 'sin' ? null : value } });
+  const setBookedBy = (service, value) =>
+    updateServiceMutation.mutate({ id: service.id, data: { booked_by: value } });
+  const setChannel = (service, value) =>
+    updateServiceMutation.mutate({ id: service.id, data: { reserved_by: value } });
 
   // Edición inline de la comisión (clic en el monto)
   const saveCommission = (service) => {
@@ -402,10 +410,8 @@ export default function Commissions() {
     const Icon = SERVICE_ICONS[service.service_type] || Package;
     const iconColors = SERVICE_ICON_COLORS[service.service_type] || SERVICE_ICON_COLORS.otro;
     const split = splitForService(service);
-    const isNeto = service.payment_type === 'neto';
     const bucket = bucketOf(service);
-
-    const channel = getChannel(service);
+    const channelRaw = getChannelRaw(service);
 
     return (
       <div key={service.id} className="flex items-center gap-3 px-4 py-3 border-t border-stone-100 bg-stone-50/40">
@@ -420,23 +426,52 @@ export default function Commissions() {
           <p className="text-xs text-stone-400 truncate">{getSubtitle(service)}</p>
         </div>
 
-        {/* Tipo */}
-        <div className="w-14 flex-shrink-0 hidden md:block">
-          <span className={`text-[10px] font-bold tracking-wider ${isNeto ? 'text-green-600' : 'text-orange-500'}`}>
-            {isNeto ? 'NETO' : 'BRUTO'}
-          </span>
+        {/* Tipo (editable) */}
+        <div className="w-16 flex-shrink-0 hidden md:block">
+          <Select value={service.payment_type || 'sin'} onValueChange={(v) => setPaymentType(service, v)}>
+            <SelectTrigger
+              className={`h-6 px-2 rounded-md text-[10px] font-bold tracking-wider ${
+                service.payment_type === 'neto'
+                  ? 'border-green-200 bg-green-50 text-green-600'
+                  : service.payment_type === 'bruto'
+                    ? 'border-orange-200 bg-orange-50 text-orange-600'
+                    : 'border-amber-200 bg-amber-50 text-amber-600'
+              }`}
+              title="Tipo de comisión"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="neto">NETO</SelectItem>
+              <SelectItem value="bruto">BRUTO</SelectItem>
+              <SelectItem value="sin">Sin tipo</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
-        {/* IATA */}
-        <div className="w-20 flex-shrink-0 hidden lg:block">
-          <span className="text-xs font-medium text-stone-600">
-            {split.bookedBy === 'montecito' ? 'Montecito' : 'Nomad'}
-          </span>
+        {/* IATA (editable) */}
+        <div className="w-24 flex-shrink-0 hidden lg:block">
+          <Select value={service.booked_by || 'iata_nomad'} onValueChange={(v) => setBookedBy(service, v)}>
+            <SelectTrigger className="h-6 px-2 rounded-md text-xs" title="IATA"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="iata_nomad">IATA Nomad</SelectItem>
+              <SelectItem value="montecito">Montecito</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
-        {/* Canal */}
+        {/* Canal (editable) */}
         <div className="w-28 flex-shrink-0 hidden lg:block min-w-0">
-          <span className="text-xs text-stone-500 block truncate" title={channel}>{channel}</span>
+          <Select value={channelRaw || '__none__'} onValueChange={(v) => setChannel(service, v === '__none__' ? null : v)}>
+            <SelectTrigger className="h-6 px-2 rounded-md text-xs" title="Canal"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__none__">—</SelectItem>
+              {CHANNEL_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+              {channelRaw && !CHANNEL_OPTIONS.some(o => o.value === channelRaw) && (
+                <SelectItem value={channelRaw}>{channelRaw}</SelectItem>
+              )}
+            </SelectContent>
+          </Select>
         </div>
 
         {/* Comisión (editable con clic) */}
@@ -660,8 +695,8 @@ export default function Commissions() {
           <span className="w-7 flex-shrink-0" />
           <span className="w-8 flex-shrink-0" />
           <span className="flex-1 min-w-0 text-[10px] font-bold uppercase tracking-wider text-stone-400">Servicio</span>
-          <span className="w-14 flex-shrink-0 hidden md:block text-[10px] font-bold uppercase tracking-wider text-stone-400">Tipo</span>
-          <span className="w-20 flex-shrink-0 hidden lg:block text-[10px] font-bold uppercase tracking-wider text-stone-400">IATA</span>
+          <span className="w-16 flex-shrink-0 hidden md:block text-[10px] font-bold uppercase tracking-wider text-stone-400">Tipo</span>
+          <span className="w-24 flex-shrink-0 hidden lg:block text-[10px] font-bold uppercase tracking-wider text-stone-400">IATA</span>
           <span className="w-28 flex-shrink-0 hidden lg:block text-[10px] font-bold uppercase tracking-wider text-stone-400">Canal</span>
           <span className="w-24 flex-shrink-0 hidden sm:block text-right text-[10px] font-bold uppercase tracking-wider text-stone-400 leading-tight">Comisión total</span>
           <span className="w-36 flex-shrink-0 text-right text-[10px] font-bold uppercase tracking-wider text-stone-400">Mi parte</span>
