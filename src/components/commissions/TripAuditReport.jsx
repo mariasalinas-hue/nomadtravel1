@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
-import { X, Download, Loader2, ArrowRightLeft, AlertTriangle } from 'lucide-react';
+import { X, Download, Loader2, ArrowRightLeft, AlertTriangle, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { formatDate } from '@/lib/dateUtils';
 
@@ -17,21 +17,25 @@ const methodLabel = (m) => METHOD_LABELS[m] || m || '—';
 const GREEN = '#2E442A';
 const GOLD = '#C9A84C';
 
+const typeColor = (raw) => (raw === 'neto' ? '#059669' : raw === 'bruto' ? '#ea580c' : '#d97706');
+
 /**
  * Reporte de auditoría de comisiones de un viaje. Muestra el desglose completo
  * (comisiones, pagos del cliente, pagos a proveedores, saldo) y el veredicto del
- * traspaso, para poder detectar dónde está el descuadre. Se puede descargar en PDF
- * para mandárselo al agente.
+ * traspaso, para detectar dónde está el descuadre. Se puede editar el tipo y el
+ * canal de cada comisión desde aquí, y descargar en PDF para el agente.
  *
- * data = { trip, agentName, fin, verdict, services[], clientPayments[], supplierPayments[] }
+ * data = { trip, agentName, fin, verdict, netPending, services[], clientPayments[], supplierPayments[] }
  */
-export default function TripAuditReport({ open, data, onClose }) {
+export default function TripAuditReport({ open, data, channelOptions = [], onUpdateService, onClose }) {
   const [generating, setGenerating] = useState(false);
+  const [printing, setPrinting] = useState(false);
   if (!open || !data) return null;
 
-  const { trip, agentName, fin, verdict, services = [], clientPayments = [], supplierPayments = [] } = data;
+  const { trip, agentName, fin, verdict, netPending = 0, services = [], clientPayments = [], supplierPayments = [] } = data;
   const cuadra = verdict.type !== 'revisar';
   const hasNet = fin.net > 0;
+  const sinTipoCount = services.filter(s => s.paymentTypeRaw === 'sin').length;
 
   const totalPrice = trip?.total_price || 0;
   const totalPaidClient = trip?.total_paid_by_client || 0;
@@ -41,8 +45,11 @@ export default function TripAuditReport({ open, data, onClose }) {
   const fileName = `Auditoria_${clientName.replace(/\s+/g, '_')}.pdf`;
 
   const handleDownloadPDF = async () => {
+    setPrinting(true);
+    // esperar a que el DOM cambie los selectores por texto plano
+    await new Promise(r => setTimeout(r, 60));
     const element = document.getElementById('trip-audit-report');
-    if (!element) return;
+    if (!element) { setPrinting(false); return; }
     setGenerating(true);
     try {
       if (document.fonts?.ready) await document.fonts.ready;
@@ -80,6 +87,7 @@ export default function TripAuditReport({ open, data, onClose }) {
       console.error('Error generando PDF de auditoría:', err);
     } finally {
       setGenerating(false);
+      setPrinting(false);
     }
   };
 
@@ -88,6 +96,10 @@ export default function TripAuditReport({ open, data, onClose }) {
   const box = { flex: '1 1 150px', border: '1px solid #eee', borderRadius: '10px', padding: '10px 12px' };
   const boxLabel = { fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#9ca3af' };
   const boxValue = { fontSize: '16px', fontWeight: 700, marginTop: '2px' };
+  const selectStyle = (raw) => ({
+    fontSize: '11px', fontWeight: 700, color: typeColor(raw), border: '1px solid #e5e7eb',
+    borderRadius: '6px', padding: '2px 4px', background: '#fff', cursor: 'pointer',
+  });
 
   return (
     <div
@@ -100,7 +112,7 @@ export default function TripAuditReport({ open, data, onClose }) {
         onClick={(e) => e.stopPropagation()}
       >
         {/* Barra superior (no entra al PDF) */}
-        <div className="flex items-center justify-between px-5 py-3 border-b border-stone-100 sticky top-0 bg-white rounded-t-2xl">
+        <div className="flex items-center justify-between px-5 py-3 border-b border-stone-100 sticky top-0 bg-white rounded-t-2xl z-10">
           <p className="text-sm font-bold text-stone-700">Reporte de auditoría · {clientName}</p>
           <div className="flex items-center gap-2">
             <Button size="sm" onClick={handleDownloadPDF} disabled={generating} className="rounded-lg text-white" style={{ backgroundColor: GREEN }}>
@@ -112,6 +124,14 @@ export default function TripAuditReport({ open, data, onClose }) {
             </button>
           </div>
         </div>
+
+        {/* Aviso de comisiones sin tipo (no entra al PDF) */}
+        {sinTipoCount > 0 && !printing && (
+          <div className="mx-5 mt-3 rounded-lg px-3 py-2 text-xs flex items-center gap-2" style={{ background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e' }}>
+            <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+            Hay <strong>{sinTipoCount}</strong> comisión{sinTipoCount !== 1 ? 'es' : ''} <strong>sin tipo</strong>. Corrige el tipo (Neto/Bruto) abajo para que el traspaso cuadre bien.
+          </div>
+        )}
 
         {/* Contenido del reporte (esto es lo que se captura al PDF) */}
         <div id="trip-audit-report" style={{ color: '#1c1c1e' }}>
@@ -134,7 +154,7 @@ export default function TripAuditReport({ open, data, onClose }) {
             </div>
 
             {/* Veredicto del traspaso */}
-            {hasNet && (
+            {hasNet && netPending > 0 && (
               <div style={{
                 marginTop: '16px', borderRadius: '10px', padding: '12px 14px',
                 background: cuadra ? '#ecfdf5' : '#fef2f2',
@@ -145,8 +165,15 @@ export default function TripAuditReport({ open, data, onClose }) {
                 </p>
                 <p style={{ fontSize: '14px', fontWeight: 700, marginTop: '4px', display: 'flex', alignItems: 'center', gap: '6px', color: cuadra ? '#047857' : '#b91c1c' }}>
                   {cuadra
-                    ? <><ArrowRightLeft size={16} /> Cuadra — pasar {money(fin.net)} de Operaciones a Revenue</>
+                    ? <><ArrowRightLeft size={16} /> Cuadra — pasar {money(netPending)} de Operaciones a Revenue</>
                     : <><AlertTriangle size={16} /> No cuadra — saldo {money(fin.saldo)} vs netas {money(fin.net)}, faltan {money(verdict.shortfall)}</>}
+                </p>
+              </div>
+            )}
+            {hasNet && netPending <= 0 && (
+              <div style={{ marginTop: '16px', borderRadius: '10px', padding: '10px 14px', background: '#ecfdf5', border: '1px solid #a7f3d0' }}>
+                <p style={{ fontSize: '12px', fontWeight: 700, color: '#047857', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Check size={16} /> Las comisiones netas ya están en Revenue — no hay nada pendiente de traspasar.
                 </p>
               </div>
             )}
@@ -197,7 +224,7 @@ export default function TripAuditReport({ open, data, onClose }) {
             )}
           </div>
 
-          {/* Bloque 2: servicios y comisiones */}
+          {/* Bloque 2: servicios y comisiones (tipo y canal editables) */}
           <div className="pdf-block" style={{ padding: '8px 28px 20px', background: '#fff' }}>
             <p style={{ fontSize: '12px', fontWeight: 700, color: GREEN, margin: '8px 0' }}>Servicios y comisiones</p>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -213,10 +240,40 @@ export default function TripAuditReport({ open, data, onClose }) {
               </thead>
               <tbody>
                 {services.map(s => (
-                  <tr key={s.id}>
+                  <tr key={s.id} style={s.paymentTypeRaw === 'sin' && !printing ? { background: '#fffbeb' } : undefined}>
                     <td style={cell}>{s.name}</td>
-                    <td style={{ ...cell, fontWeight: 700, color: s.isNet ? '#059669' : '#ea580c' }}>{s.type}</td>
-                    <td style={{ ...cell, color: '#6b7280' }}>{s.channel}</td>
+                    <td style={cell}>
+                      {printing ? (
+                        <span style={{ fontWeight: 700, color: typeColor(s.paymentTypeRaw) }}>{s.type}</span>
+                      ) : (
+                        <select
+                          value={s.paymentTypeRaw}
+                          onChange={(e) => onUpdateService?.(s.id, { payment_type: e.target.value === 'sin' ? null : e.target.value })}
+                          style={selectStyle(s.paymentTypeRaw)}
+                        >
+                          <option value="neto">Neto</option>
+                          <option value="bruto">Bruto</option>
+                          <option value="sin">Sin tipo</option>
+                        </select>
+                      )}
+                    </td>
+                    <td style={cell}>
+                      {printing ? (
+                        <span style={{ color: '#6b7280' }}>{(channelOptions.find(o => o.value === s.channelRaw)?.label) || s.channelRaw || '—'}</span>
+                      ) : (
+                        <select
+                          value={s.channelRaw || ''}
+                          onChange={(e) => onUpdateService?.(s.id, { reserved_by: e.target.value || null })}
+                          style={{ fontSize: '11px', color: '#374151', border: '1px solid #e5e7eb', borderRadius: '6px', padding: '2px 4px', background: '#fff', cursor: 'pointer', maxWidth: '130px' }}
+                        >
+                          <option value="">—</option>
+                          {channelOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                          {s.channelRaw && !channelOptions.some(o => o.value === s.channelRaw) && (
+                            <option value={s.channelRaw}>{s.channelRaw}</option>
+                          )}
+                        </select>
+                      )}
+                    </td>
                     <td style={{ ...cell, textAlign: 'right', fontWeight: 600 }}>{money(s.commission)}</td>
                     <td style={{ ...cell, textAlign: 'right' }}>{money(s.agentShare)}</td>
                     <td style={{ ...cell, textAlign: 'right', color: '#6b7280' }}>{s.stageLabel}</td>

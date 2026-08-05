@@ -64,15 +64,20 @@ const getServiceName = (service) => {
   }
 };
 
-const getChannel = (service) => {
+const getChannelRaw = (service) => {
   const m = service.metadata || {};
-  const raw = service.reserved_by || m.reserved_by
+  return service.reserved_by || m.reserved_by
     || service.flight_consolidator || m.flight_consolidator
     || service.cruise_provider || m.cruise_provider
-    || service.train_provider || m.train_provider;
+    || service.train_provider || m.train_provider || '';
+};
+const getChannel = (service) => {
+  const raw = getChannelRaw(service);
   if (!raw) return '—';
   return CHANNEL_LABELS[raw] || raw;
 };
+// Opciones de canal para el selector del reporte
+const CHANNEL_OPTIONS = Object.entries(CHANNEL_LABELS).map(([value, label]) => ({ value, label }));
 
 // 5 etapas del ciclo de vida — idéntico a Mis Comisiones
 const today = new Date();
@@ -109,7 +114,7 @@ export default function InternalCommissions() {
   const [expandedDates, setExpandedDates] = useState(() => new Set());
   const [selected, setSelected] = useState([]); // service ids (solo en "Por pagar")
   const [invoiceOpen, setInvoiceOpen] = useState(false);
-  const [reportData, setReportData] = useState(null); // reporte de auditoría por viaje
+  const [reportTripId, setReportTripId] = useState(null); // reporte de auditoría por viaje
 
   const queryClient = useQueryClient();
 
@@ -173,6 +178,21 @@ export default function InternalCommissions() {
     return map;
   }, [tripServices, clientPayments, supplierPayments]);
 
+  // Netas que TODAVÍA no están en Revenue (viaje terminado, tipo neto y sin
+  // confirmar). Solo esto es lo que falta traspasar: lo ya pagado/confirmado NO
+  // se vuelve a contar.
+  const netPendingByTrip = useMemo(() => {
+    const map = {};
+    tripServices.forEach(s => {
+      if (!(s.commission > 0) || s.payment_type !== 'neto' || s.commission_paid) return;
+      if (!tripEnded(tripsMap[s.sold_trip_id])) return;
+      const e = (map[s.sold_trip_id] = map[s.sold_trip_id] || { amount: 0, services: [] });
+      e.amount += s.commission || 0;
+      e.services.push(s);
+    });
+    return map;
+  }, [tripServices, tripsMap]);
+
   const updateServiceMutation = useMutation({
     mutationFn: ({ id, data }) => supabaseAPI.entities.TripService.update(id, data),
     onSuccess: async (_, variables) => {
@@ -202,10 +222,9 @@ export default function InternalCommissions() {
   };
 
   // Traspaso de TODO el viaje: pasa todas las netas pendientes a Revenue de una vez
-  const registerTripTransfer = async (netRows) => {
+  const registerTripTransfer = async (netServices) => {
     const todayStr = new Date().toISOString().split('T')[0];
-    for (const r of netRows) {
-      const s = r.service;
+    for (const s of netServices) {
       await updateServiceMutation.mutateAsync({
         id: s.id,
         data: {
@@ -219,8 +238,13 @@ export default function InternalCommissions() {
     toast.success('Traspaso a Revenue registrado');
   };
 
-  // Arma el payload del reporte de auditoría de un viaje (para verlo / bajar PDF)
-  const openReport = (tripId) => {
+  // Payload del reporte de auditoría (derivado en vivo: si editas tipo/canal se
+  // actualiza solo). Se ordena poniendo primero lo "Sin tipo" para que salte a
+  // la vista y se corrija.
+  const TYPE_ORDER = { sin: 0, neto: 1, bruto: 2 };
+  const reportData = useMemo(() => {
+    if (!reportTripId) return null;
+    const tripId = reportTripId;
     const trip = tripsMap[tripId];
     const agentEmail = (trip?.created_by || '').toLowerCase();
     const agentName = usersByEmail[agentEmail]?.full_name || trip?.created_by || 'Sin asignar';
@@ -228,17 +252,21 @@ export default function InternalCommissions() {
       .filter(s => s.sold_trip_id === tripId && (s.commission || 0) > 0)
       .map(s => {
         const split = splitFor(s, agentEmail);
+        const paymentTypeRaw = s.payment_type === 'neto' ? 'neto' : s.payment_type === 'bruto' ? 'bruto' : 'sin';
         return {
           id: s.id,
           name: getServiceName(s),
-          channel: getChannel(s),
-          type: s.payment_type === 'neto' ? 'Neto' : s.payment_type === 'bruto' ? 'Bruto' : 'Sin tipo',
+          channelRaw: getChannelRaw(s),
+          paymentTypeRaw,
+          type: paymentTypeRaw === 'neto' ? 'Neto' : paymentTypeRaw === 'bruto' ? 'Bruto' : 'Sin tipo',
           isNet: isNetService(s),
+          inRevenue: !!(s.commission_paid || s.paid_to_agent),
           commission: s.commission || 0,
           agentShare: split.agent,
           stageLabel: STAGE_LABELS[stageOf(s, trip)] || '—',
         };
-      });
+      })
+      .sort((a, b) => (TYPE_ORDER[a.paymentTypeRaw] - TYPE_ORDER[b.paymentTypeRaw]) || b.commission - a.commission);
     const cPays = clientPayments
       .filter(p => p.sold_trip_id === tripId)
       .map(p => ({ date: p.date, method: p.method, amount: p.amount_usd_fixed || p.amount || 0, excluded: p.method === 'tarjeta_cliente' }))
@@ -252,8 +280,13 @@ export default function InternalCommissions() {
       .sort((a, b) => (a.date || '').localeCompare(b.date || ''));
     const fin = tripFinancials[tripId] || { gross: 0, net: 0, clientIn: 0, nomadOut: 0, saldo: 0 };
     const verdict = transferVerdict(fin.net, fin.saldo);
-    setReportData({ trip, agentName, fin, verdict, services: svcs, clientPayments: cPays, supplierPayments: sPays });
-  };
+    // Netas del viaje que aún NO están en Revenue (lo que realmente falta pasar)
+    const netPending = svcs.filter(s => s.isNet && !s.inRevenue).reduce((a, s) => a + s.commission, 0);
+    return { trip, agentName, fin, verdict, netPending, services: svcs, clientPayments: cPays, supplierPayments: sPays };
+  }, [reportTripId, tripServices, clientPayments, supplierPayments, tripFinancials, tripsMap, usersByEmail]);
+
+  // Editar tipo/canal de una comisión desde el reporte
+  const updateFromReport = (serviceId, patch) => updateServiceMutation.mutate({ id: serviceId, data: patch });
   const undoConfirm = (s) => setFlags(s, { commission_paid: false, paid_to_agent: false, paid_to_agent_date: null, revenue_transfer_date: null, revenue_transfer_amount: null });
   // Admin paga su parte al agente (registra la fecha de pago)
   const payAgent = (s) => setFlags(s, {
@@ -725,12 +758,12 @@ export default function InternalCommissions() {
                 const refDate = trip?.end_date || trip?.start_date;
                 const fin = tripFinancials[tripId] || { gross: 0, net: 0, clientIn: 0, nomadOut: 0, saldo: 0 };
                 const matchesNet = Math.abs(fin.saldo - fin.net) < 1;
-                // Veredicto del traspaso Operaciones → Revenue para las comisiones netas
+                // El cuadre se evalúa sobre el total de netas vs saldo (invariante),
+                // pero lo que falta traspasar es SOLO lo que aún no está en Revenue.
                 const verdict = transferVerdict(fin.net, fin.saldo);
-                const showVerdict = fin.net > 0 && (activeTab === 'pagadas_agencia' || activeTab === 'confirmadas');
-                // Netas del viaje aún pendientes de pasar a Revenue (para el botón único)
-                const pendingNetRows = rows.filter(r => isNetService(r.service) && r.stage === 'pagadas_agencia');
-                const pendingNetTotal = pendingNetRows.reduce((sum, r) => sum + (r.service.commission || 0), 0);
+                const pend = netPendingByTrip[tripId] || { amount: 0, services: [] };
+                const pendingNetTotal = pend.amount;
+                const showVerdict = pendingNetTotal > 0;
                 return (
                   <div key={tripId} className="border-t border-stone-100 bg-stone-50/30">
                     <button onClick={() => toggleTrip(tripId)} className="w-full flex items-center gap-3 pl-10 pr-4 py-2.5 hover:bg-stone-100/60 transition-colors text-left">
@@ -749,14 +782,14 @@ export default function InternalCommissions() {
                       {showVerdict && (
                         <span
                           title={verdict.type === 'pasar'
-                            ? `Pasar ${money(verdict.netTotal)} de Operaciones a Revenue`
+                            ? `Pasar ${money(pendingNetTotal)} de Operaciones a Revenue`
                             : `Saldo ${money(fin.saldo)} vs netas ${money(fin.net)} — faltan ${money(verdict.shortfall)}`}
                           className={`hidden sm:inline-flex items-center gap-1 text-[10px] font-bold tracking-wider px-2 py-1 rounded-md flex-shrink-0 ${
                             verdict.type === 'pasar' ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'
                           }`}
                         >
                           {verdict.type === 'pasar'
-                            ? <><ArrowRightLeft className="w-3 h-3" /> Pasar {money(verdict.netTotal)}</>
+                            ? <><ArrowRightLeft className="w-3 h-3" /> Pasar {money(pendingNetTotal)}</>
                             : <><AlertTriangle className="w-3 h-3" /> Revisar saldo</>}
                         </span>
                       )}
@@ -776,11 +809,11 @@ export default function InternalCommissions() {
                       <div className="pl-12 pr-4 py-3 border-t border-stone-100 bg-white">
                         <div className="flex items-center justify-between mb-2">
                           <p className="text-[10px] font-bold uppercase tracking-wider text-stone-400">Resumen del viaje</p>
-                          <Button size="sm" variant="outline" onClick={() => openReport(tripId)} className="h-7 rounded-lg text-xs border-stone-300">
+                          <Button size="sm" variant="outline" onClick={() => setReportTripId(tripId)} className="h-7 rounded-lg text-xs border-stone-300">
                             <FileText className="w-3.5 h-3.5 mr-1.5" /> Ver reporte de auditoría
                           </Button>
                         </div>
-                        {fin.net > 0 && (
+                        {pendingNetTotal > 0 && (
                           <div className={`mb-2 rounded-lg border px-3 py-2 ${verdict.type === 'pasar' ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'}`}>
                             <div className="flex items-center justify-between gap-3 flex-wrap">
                               <div className="min-w-0">
@@ -789,14 +822,14 @@ export default function InternalCommissions() {
                                 </p>
                                 <p className={`text-sm font-semibold mt-0.5 flex items-center gap-1.5 ${verdict.type === 'pasar' ? 'text-emerald-700' : 'text-red-700'}`}>
                                   {verdict.type === 'pasar'
-                                    ? <><ArrowRightLeft className="w-4 h-4 flex-shrink-0" /> Cuadra — pasar {money(fin.net)} de Operaciones a Revenue</>
+                                    ? <><ArrowRightLeft className="w-4 h-4 flex-shrink-0" /> Cuadra — pasar {money(pendingNetTotal)} de Operaciones a Revenue</>
                                     : <><AlertTriangle className="w-4 h-4 flex-shrink-0" /> No cuadra — saldo {money(fin.saldo)} vs netas {money(fin.net)}, faltan {money(verdict.shortfall)}. Revisar con el agente antes de pasar a Revenue.</>}
                                 </p>
                               </div>
-                              {verdict.type === 'pasar' && pendingNetRows.length > 0 && (
+                              {verdict.type === 'pasar' && pend.services.length > 0 && (
                                 <Button
                                   size="sm"
-                                  onClick={() => registerTripTransfer(pendingNetRows)}
+                                  onClick={() => registerTripTransfer(pend.services)}
                                   disabled={updateServiceMutation.isPending}
                                   className="h-8 rounded-lg text-xs text-white px-3 whitespace-nowrap flex-shrink-0"
                                   style={{ backgroundColor: '#2E442A' }}
@@ -854,11 +887,13 @@ export default function InternalCommissions() {
         onMarkAsPaid={paySelected}
       />
 
-      {/* Reporte de auditoría por viaje (ver / descargar PDF) */}
+      {/* Reporte de auditoría por viaje (ver / editar tipo·canal / descargar PDF) */}
       <TripAuditReport
         open={!!reportData}
         data={reportData}
-        onClose={() => setReportData(null)}
+        channelOptions={CHANNEL_OPTIONS}
+        onUpdateService={updateFromReport}
+        onClose={() => setReportTripId(null)}
       />
     </div>
   );
