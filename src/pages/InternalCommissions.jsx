@@ -15,8 +15,11 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import AgentCommissionInvoice from '@/components/commissions/AgentCommissionInvoice';
+import TripAuditReport from '@/components/commissions/TripAuditReport';
 // ---- Misma lógica de cálculo y etiquetas que "Mis Comisiones" (fuente única) ----
 import { splitFor, agentPct, isNetService, transferVerdict } from '@/components/utils/commissions';
+
+const STAGE_LABELS = { proximas: 'Estimada', por_cobrar: 'Por cobrar', pagadas_agencia: 'Por confirmar', confirmadas: 'Por pagar', pagadas: 'Pagada' };
 
 const money = (n) => `$${Math.round(n).toLocaleString()}`;
 
@@ -106,6 +109,7 @@ export default function InternalCommissions() {
   const [expandedDates, setExpandedDates] = useState(() => new Set());
   const [selected, setSelected] = useState([]); // service ids (solo en "Por pagar")
   const [invoiceOpen, setInvoiceOpen] = useState(false);
+  const [reportData, setReportData] = useState(null); // reporte de auditoría por viaje
 
   const queryClient = useQueryClient();
 
@@ -213,6 +217,42 @@ export default function InternalCommissions() {
       });
     }
     toast.success('Traspaso a Revenue registrado');
+  };
+
+  // Arma el payload del reporte de auditoría de un viaje (para verlo / bajar PDF)
+  const openReport = (tripId) => {
+    const trip = tripsMap[tripId];
+    const agentEmail = (trip?.created_by || '').toLowerCase();
+    const agentName = usersByEmail[agentEmail]?.full_name || trip?.created_by || 'Sin asignar';
+    const svcs = tripServices
+      .filter(s => s.sold_trip_id === tripId && (s.commission || 0) > 0)
+      .map(s => {
+        const split = splitFor(s, agentEmail);
+        return {
+          id: s.id,
+          name: getServiceName(s),
+          channel: getChannel(s),
+          type: s.payment_type === 'neto' ? 'Neto' : s.payment_type === 'bruto' ? 'Bruto' : 'Sin tipo',
+          isNet: isNetService(s),
+          commission: s.commission || 0,
+          agentShare: split.agent,
+          stageLabel: STAGE_LABELS[stageOf(s, trip)] || '—',
+        };
+      });
+    const cPays = clientPayments
+      .filter(p => p.sold_trip_id === tripId)
+      .map(p => ({ date: p.date, method: p.method, amount: p.amount_usd_fixed || p.amount || 0, excluded: p.method === 'tarjeta_cliente' }))
+      .sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+    const sPays = supplierPayments
+      .filter(p => p.sold_trip_id === tripId)
+      .map(p => {
+        const svc = tripServices.find(s => s.id === p.trip_service_id);
+        return { date: p.date, method: p.method, amount: p.amount || 0, excluded: p.method === 'tarjeta_cliente', label: svc ? getServiceName(svc) : (p.concept || p.description || '—') };
+      })
+      .sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+    const fin = tripFinancials[tripId] || { gross: 0, net: 0, clientIn: 0, nomadOut: 0, saldo: 0 };
+    const verdict = transferVerdict(fin.net, fin.saldo);
+    setReportData({ trip, agentName, fin, verdict, services: svcs, clientPayments: cPays, supplierPayments: sPays });
   };
   const undoConfirm = (s) => setFlags(s, { commission_paid: false, paid_to_agent: false, paid_to_agent_date: null, revenue_transfer_date: null, revenue_transfer_amount: null });
   // Admin paga su parte al agente (registra la fecha de pago)
@@ -734,6 +774,12 @@ export default function InternalCommissions() {
 
                     {tripOpen && (
                       <div className="pl-12 pr-4 py-3 border-t border-stone-100 bg-white">
+                        <div className="flex items-center justify-between mb-2">
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-stone-400">Resumen del viaje</p>
+                          <Button size="sm" variant="outline" onClick={() => openReport(tripId)} className="h-7 rounded-lg text-xs border-stone-300">
+                            <FileText className="w-3.5 h-3.5 mr-1.5" /> Ver reporte de auditoría
+                          </Button>
+                        </div>
                         {fin.net > 0 && (
                           <div className={`mb-2 rounded-lg border px-3 py-2 ${verdict.type === 'pasar' ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'}`}>
                             <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -806,6 +852,13 @@ export default function InternalCommissions() {
         onClose={() => setInvoiceOpen(false)}
         commissions={invoiceCommissions}
         onMarkAsPaid={paySelected}
+      />
+
+      {/* Reporte de auditoría por viaje (ver / descargar PDF) */}
+      <TripAuditReport
+        open={!!reportData}
+        data={reportData}
+        onClose={() => setReportData(null)}
       />
     </div>
   );
