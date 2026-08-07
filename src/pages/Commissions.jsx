@@ -167,8 +167,7 @@ export default function Commissions() {
       if (tripIds.length === 0) return [];
       return supabaseAPI.entities.TripService.filter({ sold_trip_id: tripIds });
     },
-    enabled: !!user,
-    refetchOnWindowFocus: true
+    enabled: !!user
   });
 
   const { data: soldTrips = [], isLoading: tripsLoading } = useQuery({
@@ -178,8 +177,7 @@ export default function Commissions() {
       if (isAdmin) return supabaseAPI.entities.SoldTrip.list();
       return supabaseAPI.entities.SoldTrip.filter({ created_by: user.email });
     },
-    enabled: !!user,
-    refetchOnWindowFocus: true
+    enabled: !!user
   });
 
   // Pagos (de cliente y a proveedores) para calcular el saldo por viaje.
@@ -197,8 +195,7 @@ export default function Commissions() {
       if (tripIds.length === 0) return [];
       return supabaseAPI.entities.ClientPayment.filter({ sold_trip_id: tripIds });
     },
-    enabled: !!user && soldTrips.length > 0,
-    refetchOnWindowFocus: true
+    enabled: !!user && soldTrips.length > 0
   });
   const { data: supplierPayments = [] } = useQuery({
     queryKey: ['allSupplierPayments', user?.email, isAdmin],
@@ -211,8 +208,7 @@ export default function Commissions() {
       if (tripIds.length === 0) return [];
       return supabaseAPI.entities.SupplierPayment.filter({ sold_trip_id: tripIds });
     },
-    enabled: !!user && soldTrips.length > 0,
-    refetchOnWindowFocus: true
+    enabled: !!user && soldTrips.length > 0
   });
 
   // Resumen financiero por viaje: comisión bruta/neta y saldo en cuenta.
