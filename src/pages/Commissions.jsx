@@ -154,12 +154,18 @@ export default function Commissions() {
     queryKey: ['allServices', user?.email, isAdmin],
     queryFn: async () => {
       if (!user) return [];
-      const allTrips = isAdmin
-        ? await supabaseAPI.entities.SoldTrip.list()
-        : await supabaseAPI.entities.SoldTrip.filter({ created_by: user.email });
-      const tripIds = allTrips.map(t => t.id);
-      const allSvcs = await supabaseAPI.entities.TripService.list();
-      return allSvcs.filter(s => tripIds.includes(s.sold_trip_id));
+      if (isAdmin) {
+        // Admin ve todo: se traen todos los servicios y se filtran a viajes existentes
+        const allTrips = await supabaseAPI.entities.SoldTrip.list();
+        const tripIdSet = new Set(allTrips.map(t => t.id));
+        const allSvcs = await supabaseAPI.entities.TripService.list();
+        return allSvcs.filter(s => tripIdSet.has(s.sold_trip_id));
+      }
+      // Agente: solo los servicios de SUS viajes (filtro IN en el servidor)
+      const myTrips = await supabaseAPI.entities.SoldTrip.filter({ created_by: user.email });
+      const tripIds = myTrips.map(t => t.id);
+      if (tripIds.length === 0) return [];
+      return supabaseAPI.entities.TripService.filter({ sold_trip_id: tripIds });
     },
     enabled: !!user,
     refetchOnWindowFocus: true
@@ -176,13 +182,20 @@ export default function Commissions() {
     refetchOnWindowFocus: true
   });
 
-  // Pagos (de cliente y a proveedores) para calcular el saldo por viaje
-  const tripIdSet = new Set(soldTrips.map(t => t.id));
+  // Pagos (de cliente y a proveedores) para calcular el saldo por viaje.
+  // El agente solo trae los pagos de SUS viajes (filtro IN en el servidor); el
+  // admin sí baja todo porque ve todos los viajes.
+  const tripIds = useMemo(() => soldTrips.map(t => t.id), [soldTrips]);
   const { data: clientPayments = [] } = useQuery({
     queryKey: ['allClientPayments', user?.email, isAdmin],
     queryFn: async () => {
-      const all = await supabaseAPI.entities.ClientPayment.list();
-      return all.filter(p => tripIdSet.has(p.sold_trip_id));
+      if (isAdmin) {
+        const tripIdSet = new Set(tripIds);
+        const all = await supabaseAPI.entities.ClientPayment.list();
+        return all.filter(p => tripIdSet.has(p.sold_trip_id));
+      }
+      if (tripIds.length === 0) return [];
+      return supabaseAPI.entities.ClientPayment.filter({ sold_trip_id: tripIds });
     },
     enabled: !!user && soldTrips.length > 0,
     refetchOnWindowFocus: true
@@ -190,8 +203,13 @@ export default function Commissions() {
   const { data: supplierPayments = [] } = useQuery({
     queryKey: ['allSupplierPayments', user?.email, isAdmin],
     queryFn: async () => {
-      const all = await supabaseAPI.entities.SupplierPayment.list();
-      return all.filter(p => tripIdSet.has(p.sold_trip_id));
+      if (isAdmin) {
+        const tripIdSet = new Set(tripIds);
+        const all = await supabaseAPI.entities.SupplierPayment.list();
+        return all.filter(p => tripIdSet.has(p.sold_trip_id));
+      }
+      if (tripIds.length === 0) return [];
+      return supabaseAPI.entities.SupplierPayment.filter({ sold_trip_id: tripIds });
     },
     enabled: !!user && soldTrips.length > 0,
     refetchOnWindowFocus: true

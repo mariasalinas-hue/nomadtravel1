@@ -80,26 +80,35 @@ export default function Dashboard() {
     queryKey: ['services', soldTripIds],
     queryFn: async () => {
       if (soldTripIds.length === 0) return [];
-      return supabaseAPI.entities.TripService.list();
+      // Admin ve todo; el agente solo trae los servicios de SUS viajes (IN en el servidor)
+      if (isAdmin) return supabaseAPI.entities.TripService.list();
+      return supabaseAPI.entities.TripService.filter({ sold_trip_id: soldTripIds });
     },
     enabled: soldTripIds.length > 0
   });
 
   // Filter services to only show user's trips
-  const services = allServices.filter(service => 
-    soldTripIds.includes(service.sold_trip_id)
-  );
+  const soldTripIdSet = new Set(soldTripIds);
+  const services = allServices.filter(service => soldTripIdSet.has(service.sold_trip_id));
 
   const { data: allClientPayments = [] } = useQuery({
-    queryKey: ['clientPayments'],
-    queryFn: () => supabaseAPI.entities.ClientPayment.list(),
-    enabled: !!user
+    queryKey: ['clientPayments', user?.email, isAdmin, soldTripIds],
+    queryFn: async () => {
+      if (isAdmin) return supabaseAPI.entities.ClientPayment.list();
+      if (soldTripIds.length === 0) return [];
+      return supabaseAPI.entities.ClientPayment.filter({ sold_trip_id: soldTripIds });
+    },
+    enabled: !!user && !soldLoading
   });
 
   const { data: allSupplierPayments = [] } = useQuery({
-    queryKey: ['supplierPayments'],
-    queryFn: () => supabaseAPI.entities.SupplierPayment.list(),
-    enabled: !!user
+    queryKey: ['supplierPayments', user?.email, isAdmin, soldTripIds],
+    queryFn: async () => {
+      if (isAdmin) return supabaseAPI.entities.SupplierPayment.list();
+      if (soldTripIds.length === 0) return [];
+      return supabaseAPI.entities.SupplierPayment.filter({ sold_trip_id: soldTripIds });
+    },
+    enabled: !!user && !soldLoading
   });
 
   // --- Time filter (year + month) applied to the 4 stat cards ---
