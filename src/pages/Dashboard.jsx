@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from 'react';
+import { useState, useContext } from 'react';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { supabaseAPI } from '@/api/supabaseClient';
@@ -14,6 +14,7 @@ import ActiveReminders from '@/components/dashboard/ActiveReminders';
 import { parseLocalDate, formatDate } from '@/components/utils/dateHelpers';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useSpoofableUser } from '@/contexts/SpoofContext';
+import { isNetService, splitFor, transferVerdict } from '@/components/utils/commissions';
 
 export default function Dashboard() {
   const { viewMode } = useContext(ViewModeContext);
@@ -171,35 +172,39 @@ export default function Dashboard() {
       return endDate && !isNaN(endDate.getTime()) && isPast(endDate);
     })
     .map(trip => {
-      const totalPrice = trip.total_price || 0;
-      const totalPaidByClient = trip.total_paid_by_client || 0;
-      const clientBalance = totalPaidByClient - totalPrice;
+      // Netas del viaje aún no cobradas por el agente. Se usa la MISMA definición
+      // de "neto" que Comisiones (el tipo del servicio), no un flag de pago a
+      // proveedor, para que el Dashboard no muestre un conjunto distinto.
+      const netServices = services.filter(s =>
+        s.sold_trip_id === trip.id && isNetService(s) && (s.commission || 0) > 0 && !s.paid_to_agent
+      );
+      if (netServices.length === 0) return null;
 
-      const tripServices = services.filter(s => s.sold_trip_id === trip.id);
-      const supplierPaymentsForTrip = allSupplierPayments.filter(p => p.sold_trip_id === trip.id);
+      // Comisión neta total del viaje (base del cuadre) y la parte del agente
+      // (con el reparto real: 50% / 85% / 100% para dueñas).
+      const tripNet = netServices.reduce((sum, s) => sum + (s.commission || 0), 0);
+      const agentShare = netServices.reduce((sum, s) => sum + splitFor(s, trip.created_by).agent, 0);
 
-      const netCommissionsPending = tripServices.reduce((sum, service) => {
-        const hasNetoPayment = supplierPaymentsForTrip.some(
-          p => p.trip_service_id === service.id && p.payment_type === 'neto'
-        );
+      // Saldo real en la cuenta = lo que pagó el cliente − lo que Nomad pagó a
+      // proveedores (excluyendo tarjeta del cliente), igual que en Comisiones.
+      const clientIn = allClientPayments
+        .filter(p => p.sold_trip_id === trip.id && p.method !== 'tarjeta_cliente')
+        .reduce((sum, p) => sum + (p.amount_usd_fixed || p.amount || 0), 0);
+      const nomadOut = allSupplierPayments
+        .filter(p => p.sold_trip_id === trip.id && p.method !== 'tarjeta_cliente')
+        .reduce((sum, p) => sum + (p.amount || 0), 0);
+      const saldo = clientIn - nomadOut;
 
-        if (!service.paid_to_agent && hasNetoPayment) {
-          return sum + ((service.commission || 0) * 0.5);
-        }
-        return sum;
-      }, 0);
+      // El cuadre compara el saldo contra la comisión neta COMPLETA (mismo
+      // criterio que el traspaso en Comisiones Internas), no contra la mitad.
+      const status = transferVerdict(tripNet, saldo).type === 'revisar' ? 'review' : 'ready';
 
-      if (netCommissionsPending > 0) {
-        const status = clientBalance >= netCommissionsPending ? 'ready' : 'review';
-        
-        return {
-          ...trip,
-          clientBalance,
-          netCommissionsPending,
-          status
-        };
-      }
-      return null;
+      return {
+        ...trip,
+        clientBalance: saldo,
+        netCommissionsPending: agentShare,
+        status
+      };
     })
     .filter(Boolean)
     .sort((a, b) => {
