@@ -167,7 +167,9 @@ export default function InternalCommissions() {
     });
     supplierPayments.forEach(p => {
       if (p.method === 'tarjeta_cliente') return;
-      ensure(p.sold_trip_id).nomadOut += (p.amount || 0);
+      // Todo está en USD; se prefiere el valor USD fijo igual que en el lado del
+      // cliente para que el saldo no mezcle campos (hoy proveedor solo trae amount).
+      ensure(p.sold_trip_id).nomadOut += (p.amount_usd_fixed || p.amount || 0);
     });
     Object.values(map).forEach(e => { e.saldo = e.clientIn - e.nomadOut; });
     return map;
@@ -270,7 +272,7 @@ export default function InternalCommissions() {
       .filter(p => p.sold_trip_id === tripId)
       .map(p => {
         const svc = tripServices.find(s => s.id === p.trip_service_id);
-        return { date: p.date, method: p.method, amount: p.amount || 0, excluded: p.method === 'tarjeta_cliente', label: svc ? getServiceName(svc) : (p.concept || p.description || '—') };
+        return { date: p.date, method: p.method, amount: p.amount_usd_fixed || p.amount || 0, excluded: p.method === 'tarjeta_cliente', label: svc ? getServiceName(svc) : (p.concept || p.description || '—') };
       })
       .sort((a, b) => (a.date || '').localeCompare(b.date || ''));
     const fin = tripFinancials[tripId] || { gross: 0, net: 0, clientIn: 0, nomadOut: 0, saldo: 0 };

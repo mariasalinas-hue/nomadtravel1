@@ -192,7 +192,7 @@ export default function Dashboard() {
         .reduce((sum, p) => sum + (p.amount_usd_fixed || p.amount || 0), 0);
       const nomadOut = allSupplierPayments
         .filter(p => p.sold_trip_id === trip.id && p.method !== 'tarjeta_cliente')
-        .reduce((sum, p) => sum + (p.amount || 0), 0);
+        .reduce((sum, p) => sum + (p.amount_usd_fixed || p.amount || 0), 0);
       const saldo = clientIn - nomadOut;
 
       // El cuadre compara el saldo contra la comisión neta COMPLETA (mismo

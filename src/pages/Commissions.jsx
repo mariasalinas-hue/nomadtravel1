@@ -216,7 +216,8 @@ export default function Commissions() {
     });
     supplierPayments.forEach(p => {
       if (p.method === 'tarjeta_cliente') return; // pagado con tarjeta del cliente, no sale de Nomad
-      ensure(p.sold_trip_id).nomadOut += (p.amount || 0);
+      // Todo en USD; se prefiere el valor USD fijo igual que el lado del cliente
+      ensure(p.sold_trip_id).nomadOut += (p.amount_usd_fixed || p.amount || 0);
     });
 
     Object.values(map).forEach(e => { e.saldo = e.clientIn - e.nomadOut; });
