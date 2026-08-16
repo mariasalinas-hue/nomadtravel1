@@ -102,7 +102,8 @@ export default function QuoteBuilder() {
   const addService = async (dayKey, type) => {
     try {
       const created = await supabaseAPI.entities.TripService.create({
-        trip_id: tripId, service_type: type, service_name: '', price: 0, commission: 0, start_date: dayKey, metadata: {},
+        trip_id: tripId, service_type: type, service_name: '', price: 0, commission: 0, start_date: dayKey,
+        metadata: type === 'hotel' ? { check_in: dayKey } : {}, // el hotel entra ese día
         ...(user?.primaryEmailAddress?.emailAddress ? { created_by: user.primaryEmailAddress.emailAddress } : {}),
       });
       setServices((rs) => [...rs, flatten(created)]);
@@ -133,6 +134,32 @@ export default function QuoteBuilder() {
     setPanelLocal(panelId, field, value, meta);
     if (persist) persistNow(panelId, field, value, meta);
   };
+  // Guarda varios campos de metadata a la vez (ej. check_out + nights + check_in)
+  const onPanelSetMeta = (obj, persist) => {
+    if (!panelId) return;
+    setSvcLocal(panelId, (r) => ({ ...r, metadata: { ...r.metadata, ...obj } }));
+    if (persist) {
+      const r = servicesRef.current.find((x) => x.id === panelId);
+      persistSvc(panelId, { metadata: { ...(r?.metadata || {}), ...obj } });
+    }
+  };
+
+  // Días que cubre cada hotel (para marcar sutilmente las noches en el itinerario)
+  const hotelCont = useMemo(() => {
+    const map = {};
+    services.forEach((s) => {
+      if (s.service_type !== 'hotel' || !s.start_date) return;
+      let nights = parseInt(s.metadata?.nights, 10);
+      if ((!nights || Number.isNaN(nights)) && s.metadata?.check_out) {
+        const a = parseLocalDate(s.start_date), b = parseLocalDate(s.metadata.check_out);
+        if (a && b) nights = Math.round((b - a) / 86400000);
+      }
+      if (!nights || nights <= 1) return;
+      const name = s.service_name || s.metadata?.hotel_name || 'Hotel';
+      for (let off = 1; off < nights; off++) map[shiftDateStr(s.start_date, off)] = name;
+    });
+    return map;
+  }, [services]);
 
   // ---- persistencia viaje (fechas + info por día) ----
   const persistTrip = (patch) => supabaseAPI.entities.Trip.update(tripId, patch).catch(() => toast.error('No se pudo guardar'));
@@ -302,12 +329,13 @@ export default function QuoteBuilder() {
                         </td>
                         {visibleTypes.map((t) => {
                           const cell = byKey[`${key}|${t}`] || [];
+                          const cont = t === 'hotel' ? hotelCont[key] : null;
                           return (
                             <td key={t} className="px-1.5 py-1.5">
                               <Droppable droppableId={`${key}|${t}`} isDropDisabled={!!draggingType && draggingType !== t}>
                                 {(prov, snap) => (
                                   <div ref={prov.innerRef} {...prov.droppableProps}
-                                    className={`space-y-1 rounded-lg transition-colors ${snap.isDraggingOver ? 'ring-2 ring-emerald-300 bg-emerald-50/50' : ''}`}>
+                                    className={`space-y-1 rounded-lg transition-colors ${snap.isDraggingOver ? 'ring-2 ring-emerald-300 bg-emerald-50/50' : cont ? 'bg-emerald-50/40' : ''}`}>
                                     {cell.map((s, idx) => (
                                       <Draggable key={s.id} draggableId={s.id} index={idx}>
                                         {(dp) => (
@@ -328,6 +356,11 @@ export default function QuoteBuilder() {
                                       </Draggable>
                                     ))}
                                     {prov.placeholder}
+                                    {cont && cell.length === 0 && (
+                                      <div className="text-[10px] text-emerald-600/80 px-1 flex items-center gap-1 truncate" title={`Continúa en ${cont}`}>
+                                        <span className="opacity-50">▸</span> {cont}
+                                      </div>
+                                    )}
                                     <button onClick={() => addService(key, t)} className="w-full flex items-center justify-center gap-1 text-[11px] text-stone-300 hover:text-stone-600 rounded-lg border border-dashed border-stone-200 hover:border-stone-300 py-1 transition-colors">
                                       <Plus className="w-3 h-3" /> {cell.length === 0 ? TYPE_LABEL[t] : ''}
                                     </button>
@@ -371,6 +404,7 @@ export default function QuoteBuilder() {
       <ServiceDetailPanel
         service={panelService}
         onSet={onPanelSet}
+        onSetMeta={onPanelSetMeta}
         onDelete={() => { if (panelId) { deleteService(panelId); setPanelId(null); } }}
         onClose={() => setPanelId(null)}
       />
