@@ -315,7 +315,7 @@ export default function InternalCommissions() {
   // ---- Filas derivadas de los servicios ----
   const rows = useMemo(() => {
     return tripServices
-      .filter(s => (s.commission || 0) > 0)
+      .filter(s => s.sold_trip_id && (s.commission || 0) > 0) // excluye servicios de cotización (aún sin venta)
       .map(s => {
         const trip = tripsMap[s.sold_trip_id];
         const agentEmail = (trip?.created_by || '').toLowerCase();

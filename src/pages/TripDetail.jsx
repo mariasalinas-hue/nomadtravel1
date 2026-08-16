@@ -1,13 +1,13 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { supabaseAPI } from '@/api/supabaseClient';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { formatDate } from '@/lib/dateUtils';
 import { es } from 'date-fns/locale';
-import { 
-  ArrowLeft, MapPin, Calendar, Users, DollarSign, 
-  Loader2, Edit2, Sparkles
+import {
+  ArrowLeft, MapPin, Calendar, Users, DollarSign,
+  Loader2, Edit2, Sparkles, Table2
 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -118,7 +118,15 @@ export default function TripDetail() {
           </h1>
           <p className="text-stone-500 text-sm">{trip.client_name}</p>
         </div>
-        <Button 
+        <Button
+          onClick={() => window.open(`${createPageUrl('QuoteBuilder')}?trip_id=${tripId}`, '_blank')}
+          className="rounded-xl text-white"
+          style={{ backgroundColor: '#2E442A' }}
+        >
+          <Table2 className="w-4 h-4 mr-2" />
+          Abrir Cotizador
+        </Button>
+        <Button
           onClick={() => setFormOpen(true)}
           variant="outline"
           className="rounded-xl"

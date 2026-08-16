@@ -128,7 +128,7 @@ export default function AdminSearch() {
 
     const out = [];
 
-    data.services.forEach(s => {
+    data.services.filter(s => s.sold_trip_id).forEach(s => { // excluye servicios de cotización (aún sin venta)
       const trip = tripsMap[s.sold_trip_id];
       out.push({
         kind: 'servicio',
