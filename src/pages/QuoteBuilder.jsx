@@ -5,10 +5,11 @@ import { useUser } from '@clerk/clerk-react';
 import { parseLocalDate, formatDate } from '@/lib/dateUtils';
 import { es } from 'date-fns/locale';
 import { toast } from 'sonner';
-import { Loader2, ArrowLeft, Eye, CheckCircle2, Calendar, Columns3, Plus, Trash2, Check, GripVertical } from 'lucide-react';
+import { Loader2, ArrowLeft, Eye, CheckCircle2, Calendar, Columns3, Plus, Trash2, Check, GripVertical, Maximize2 } from 'lucide-react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { Button } from '@/components/ui/button';
 import CityPicker from '@/components/quote/CityPicker';
+import ServiceDetailPanel from '@/components/quote/ServiceDetailPanel';
 
 const GREEN = '#2E442A';
 
@@ -111,6 +112,26 @@ export default function QuoteBuilder() {
     const prev = servicesRef.current;
     setServices((rs) => rs.filter((r) => r.id !== id));
     try { await supabaseAPI.entities.TripService.delete(id); } catch { toast.error('No se pudo eliminar'); setServices(prev); }
+  };
+
+  // ---- panel de detalle ----
+  const [panelId, setPanelId] = useState(null);
+  const panelService = services.find((s) => s.id === panelId) || null;
+  const setPanelLocal = (id, field, value, meta) =>
+    setSvcLocal(id, (r) => (meta ? { ...r, metadata: { ...r.metadata, [field]: value } } : { ...r, [field]: value }));
+  const persistNow = (id, field, value, meta) => {
+    if (meta) {
+      const r = servicesRef.current.find((x) => x.id === id);
+      persistSvc(id, { metadata: { ...(r?.metadata || {}), [field]: value } });
+    } else {
+      const val = field === 'price' || field === 'commission' ? parseFloat(value) || 0 : value;
+      persistSvc(id, { [field]: val });
+    }
+  };
+  const onPanelSet = (field, value, meta, persist) => {
+    if (!panelId) return;
+    setPanelLocal(panelId, field, value, meta);
+    if (persist) persistNow(panelId, field, value, meta);
   };
 
   // ---- persistencia viaje (fechas + info por día) ----
@@ -297,6 +318,7 @@ export default function QuoteBuilder() {
                                               </span>
                                               <input className={cellName} placeholder="Nombre…" value={s.service_name || ''}
                                                 onChange={(e) => setSvcLocal(s.id, (r) => ({ ...r, service_name: e.target.value }))} onBlur={() => saveSvcField(s.id, 'service_name')} />
+                                              <button onClick={() => setPanelId(s.id)} title="Ver detalle" className="opacity-0 group-hover/svc:opacity-100 p-0.5 rounded text-stone-300 hover:text-stone-700"><Maximize2 className="w-3 h-3" /></button>
                                               <button onClick={() => deleteService(s.id)} title="Eliminar" className="opacity-0 group-hover/svc:opacity-100 p-0.5 rounded text-stone-300 hover:text-red-600"><Trash2 className="w-3 h-3" /></button>
                                             </div>
                                             <input type="number" step="0.01" min="0" placeholder="$0" className={cellPrice} value={s.price ?? 0}
@@ -345,6 +367,13 @@ export default function QuoteBuilder() {
           <p className="text-xs text-stone-400 mt-3">Se guarda automáticamente. Pasa el mouse sobre una fila para <strong>insertar</strong> o <strong>quitar un día</strong> (las fechas se recorren solas). Siguiente: arrastrar servicios entre días, panel de detalle, preview y Vender.</p>
         </div>
       </main>
+
+      <ServiceDetailPanel
+        service={panelService}
+        onSet={onPanelSet}
+        onDelete={() => { if (panelId) { deleteService(panelId); setPanelId(null); } }}
+        onClose={() => setPanelId(null)}
+      />
     </div>
   );
 }
