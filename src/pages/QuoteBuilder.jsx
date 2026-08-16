@@ -5,7 +5,8 @@ import { useUser } from '@clerk/clerk-react';
 import { parseLocalDate, formatDate } from '@/lib/dateUtils';
 import { es } from 'date-fns/locale';
 import { toast } from 'sonner';
-import { Loader2, ArrowLeft, Eye, CheckCircle2, Calendar, Columns3, Plus, Trash2, Check } from 'lucide-react';
+import { Loader2, ArrowLeft, Eye, CheckCircle2, Calendar, Columns3, Plus, Trash2, Check, GripVertical } from 'lucide-react';
+import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { Button } from '@/components/ui/button';
 import CityPicker from '@/components/quote/CityPicker';
 
@@ -165,6 +166,20 @@ export default function QuoteBuilder() {
 
   const toggleType = (t) => setVisibleTypes((prev) => (prev.includes(t) ? prev.filter((x) => x !== t) : ALL_TYPES.filter((v) => prev.includes(v) || v === t)));
 
+  // ---- arrastrar servicios entre días (mismo tipo) ----
+  const [draggingType, setDraggingType] = useState(null);
+  const onDragStart = (start) => setDraggingType(start.source.droppableId.split('|')[1]);
+  const onDragEnd = (result) => {
+    setDraggingType(null);
+    const { source, destination, draggableId } = result;
+    if (!destination) return;
+    const [srcDay, srcType] = source.droppableId.split('|');
+    const [destDay, destType] = destination.droppableId.split('|');
+    if (srcType !== destType || srcDay === destDay) return; // solo mover de día, mismo tipo
+    setSvcLocal(draggableId, (r) => ({ ...r, start_date: destDay }));
+    persistSvc(draggableId, { start_date: destDay });
+  };
+
   if (!tripId) return <div className="min-h-screen flex items-center justify-center text-stone-500">Falta el parámetro trip_id.</div>;
   if (tripLoading) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin" style={{ color: GREEN }} /></div>;
   if (!trip) return <div className="min-h-screen flex items-center justify-center text-stone-500">Cotización no encontrada.</div>;
@@ -231,6 +246,7 @@ export default function QuoteBuilder() {
 
           <div className="bg-white rounded-2xl border border-stone-200 overflow-hidden">
             <div className="overflow-x-auto">
+              <DragDropContext onDragStart={onDragStart} onDragEnd={onDragEnd}>
               <table className="w-full border-collapse" style={{ minWidth: 960 }}>
                 <thead>
                   <tr className="bg-stone-50 text-[10px] font-bold uppercase tracking-wider text-stone-400">
@@ -267,22 +283,35 @@ export default function QuoteBuilder() {
                           const cell = byKey[`${key}|${t}`] || [];
                           return (
                             <td key={t} className="px-1.5 py-1.5">
-                              <div className="space-y-1">
-                                {cell.map((s) => (
-                                  <div key={s.id} className="group/svc rounded-lg border border-stone-100 bg-stone-50/60 px-1.5 py-1">
-                                    <div className="flex items-start gap-1">
-                                      <input className={cellName} placeholder="Nombre…" value={s.service_name || ''}
-                                        onChange={(e) => setSvcLocal(s.id, (r) => ({ ...r, service_name: e.target.value }))} onBlur={() => saveSvcField(s.id, 'service_name')} />
-                                      <button onClick={() => deleteService(s.id)} title="Eliminar" className="opacity-0 group-hover/svc:opacity-100 p-0.5 rounded text-stone-300 hover:text-red-600"><Trash2 className="w-3 h-3" /></button>
-                                    </div>
-                                    <input type="number" step="0.01" min="0" placeholder="$0" className={cellPrice} value={s.price ?? 0}
-                                      onChange={(e) => setSvcLocal(s.id, (r) => ({ ...r, price: e.target.value }))} onBlur={() => saveSvcField(s.id, 'price')} />
+                              <Droppable droppableId={`${key}|${t}`} isDropDisabled={!!draggingType && draggingType !== t}>
+                                {(prov, snap) => (
+                                  <div ref={prov.innerRef} {...prov.droppableProps}
+                                    className={`space-y-1 rounded-lg transition-colors ${snap.isDraggingOver ? 'ring-2 ring-emerald-300 bg-emerald-50/50' : ''}`}>
+                                    {cell.map((s, idx) => (
+                                      <Draggable key={s.id} draggableId={s.id} index={idx}>
+                                        {(dp) => (
+                                          <div ref={dp.innerRef} {...dp.draggableProps} className="group/svc rounded-lg border border-stone-100 bg-stone-50/60 px-1.5 py-1">
+                                            <div className="flex items-start gap-1">
+                                              <span {...dp.dragHandleProps} className="mt-0.5 text-stone-300 hover:text-stone-500 cursor-grab" title="Arrastrar a otro día">
+                                                <GripVertical className="w-3 h-3" />
+                                              </span>
+                                              <input className={cellName} placeholder="Nombre…" value={s.service_name || ''}
+                                                onChange={(e) => setSvcLocal(s.id, (r) => ({ ...r, service_name: e.target.value }))} onBlur={() => saveSvcField(s.id, 'service_name')} />
+                                              <button onClick={() => deleteService(s.id)} title="Eliminar" className="opacity-0 group-hover/svc:opacity-100 p-0.5 rounded text-stone-300 hover:text-red-600"><Trash2 className="w-3 h-3" /></button>
+                                            </div>
+                                            <input type="number" step="0.01" min="0" placeholder="$0" className={cellPrice} value={s.price ?? 0}
+                                              onChange={(e) => setSvcLocal(s.id, (r) => ({ ...r, price: e.target.value }))} onBlur={() => saveSvcField(s.id, 'price')} />
+                                          </div>
+                                        )}
+                                      </Draggable>
+                                    ))}
+                                    {prov.placeholder}
+                                    <button onClick={() => addService(key, t)} className="w-full flex items-center justify-center gap-1 text-[11px] text-stone-300 hover:text-stone-600 rounded-lg border border-dashed border-stone-200 hover:border-stone-300 py-1 transition-colors">
+                                      <Plus className="w-3 h-3" /> {cell.length === 0 ? TYPE_LABEL[t] : ''}
+                                    </button>
                                   </div>
-                                ))}
-                                <button onClick={() => addService(key, t)} className="w-full flex items-center justify-center gap-1 text-[11px] text-stone-300 hover:text-stone-600 rounded-lg border border-dashed border-stone-200 hover:border-stone-300 py-1 transition-colors">
-                                  <Plus className="w-3 h-3" /> {cell.length === 0 ? TYPE_LABEL[t] : ''}
-                                </button>
-                              </div>
+                                )}
+                              </Droppable>
                             </td>
                           );
                         })}
@@ -302,6 +331,7 @@ export default function QuoteBuilder() {
                   </tfoot>
                 )}
               </table>
+              </DragDropContext>
             </div>
           </div>
 
