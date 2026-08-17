@@ -17,7 +17,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import AgentCommissionInvoice from '@/components/commissions/AgentCommissionInvoice';
 import TripAuditReport from '@/components/commissions/TripAuditReport';
 // ---- Misma lógica de cálculo y etiquetas que "Mis Comisiones" (fuente única) ----
-import { splitFor, agentPct, isNetService, transferVerdict } from '@/components/utils/commissions';
+import { splitFor, agentPct, isNetService, transferVerdict, paymentTypeOf } from '@/components/utils/commissions';
 
 const STAGE_LABELS = { proximas: 'Estimada', por_cobrar: 'Por cobrar', pagadas_agencia: 'Por confirmar', confirmadas: 'Por pagar', pagadas: 'Pagada' };
 
@@ -158,7 +158,7 @@ export default function InternalCommissions() {
     tripServices.forEach(s => {
       if (!(s.commission > 0)) return;
       const e = ensure(s.sold_trip_id);
-      if (s.payment_type === 'neto') e.net += s.commission;
+      if (isNetService(s)) e.net += s.commission;
       else e.gross += s.commission;
     });
     clientPayments.forEach(p => {
@@ -181,7 +181,7 @@ export default function InternalCommissions() {
   const netPendingByTrip = useMemo(() => {
     const map = {};
     tripServices.forEach(s => {
-      if (!(s.commission > 0) || s.payment_type !== 'neto' || s.commission_paid) return;
+      if (!(s.commission > 0) || !isNetService(s) || s.commission_paid) return;
       if (!tripEnded(tripsMap[s.sold_trip_id])) return;
       const e = (map[s.sold_trip_id] = map[s.sold_trip_id] || { amount: 0, services: [] });
       e.amount += s.commission || 0;
@@ -249,7 +249,8 @@ export default function InternalCommissions() {
       .filter(s => s.sold_trip_id === tripId && (s.commission || 0) > 0)
       .map(s => {
         const split = splitFor(s, agentEmail);
-        const paymentTypeRaw = s.payment_type === 'neto' ? 'neto' : s.payment_type === 'bruto' ? 'bruto' : 'sin';
+        const pt = paymentTypeOf(s);
+        const paymentTypeRaw = pt === 'neto' ? 'neto' : pt === 'bruto' ? 'bruto' : 'sin';
         return {
           id: s.id,
           name: getServiceName(s),
@@ -282,8 +283,17 @@ export default function InternalCommissions() {
     return { trip, agentName, fin, verdict, netPending, services: svcs, clientPayments: cPays, supplierPayments: sPays };
   }, [reportTripId, tripServices, clientPayments, supplierPayments, tripFinancials, tripsMap, usersByEmail]);
 
-  // Editar tipo/canal de una comisión desde el reporte
-  const updateFromReport = (serviceId, patch) => updateServiceMutation.mutate({ id: serviceId, data: patch });
+  // Editar tipo/canal de una comisión desde el reporte. El tipo (payment_type)
+  // vive en metadata (igual que en Corsario), así que lo fusionamos ahí.
+  const updateFromReport = (serviceId, patch) => {
+    if ('payment_type' in patch) {
+      const s = tripServices.find(x => x.id === serviceId);
+      const { payment_type, ...rest } = patch;
+      updateServiceMutation.mutate({ id: serviceId, data: { ...rest, metadata: { ...(s?.metadata || {}), payment_type } } });
+      return;
+    }
+    updateServiceMutation.mutate({ id: serviceId, data: patch });
+  };
   const undoConfirm = (s) => setFlags(s, { commission_paid: false, paid_to_agent: false, paid_to_agent_date: null, revenue_transfer_date: null, revenue_transfer_amount: null });
   // Admin paga su parte al agente (registra la fecha de pago)
   const payAgent = (s) => setFlags(s, {
@@ -294,10 +304,12 @@ export default function InternalCommissions() {
   }, 'Pagada al agente');
   const undoPay = (s) => setFlags(s, { paid_to_agent: false, paid_to_agent_date: null });
 
-  // Corregir el tipo de comisión (neto / bruto) servicio por servicio
+  // Corregir el tipo de comisión (neto / bruto) servicio por servicio.
+  // Corsario (ServiceForm) guarda el tipo en metadata; escribimos ahí (fusionando
+  // el resto del metadata) para que Corsario y Comisiones siempre coincidan.
   const setPaymentType = (s, value) => setFlags(
     s,
-    { payment_type: value === 'sin' ? null : value },
+    { metadata: { ...(s.metadata || {}), payment_type: value === 'sin' ? null : value } },
     value === 'neto' ? 'Marcada como NETA' : value === 'bruto' ? 'Marcada como BRUTA' : 'Tipo quitado'
   );
   // Corregir IATA (Nomad / Montecito) y canal servicio por servicio
@@ -504,12 +516,12 @@ export default function InternalCommissions() {
         </div>
 
         <div className="w-24 flex-shrink-0 hidden md:block" onClick={(e) => e.stopPropagation()}>
-          <Select value={s.payment_type || 'sin'} onValueChange={(v) => setPaymentType(s, v)}>
+          <Select value={paymentTypeOf(s) || 'sin'} onValueChange={(v) => setPaymentType(s, v)}>
             <SelectTrigger
               className={`h-6 px-2 rounded-md text-[10px] font-bold tracking-wider ${
-                s.payment_type === 'neto'
+                paymentTypeOf(s) === 'neto'
                   ? 'border-green-200 bg-green-50 text-green-600'
-                  : s.payment_type === 'bruto'
+                  : paymentTypeOf(s) === 'bruto'
                     ? 'border-orange-200 bg-orange-50 text-orange-600'
                     : 'border-amber-200 bg-amber-50 text-amber-600'
               }`}

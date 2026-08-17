@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import AgentInvoiceGenerator from '@/components/commissions/AgentInvoiceGenerator';
-import { splitFor, agentPct } from '@/components/utils/commissions';
+import { splitFor, agentPct, paymentTypeOf } from '@/components/utils/commissions';
 import { isOwnerEmail } from '@/config/ownerEmails';
 
 const RESERVED_BY_LABELS = {
@@ -221,7 +221,7 @@ export default function Commissions() {
     allServices.forEach(s => {
       if (!(s.commission > 0)) return;
       const e = ensure(s.sold_trip_id);
-      if (s.payment_type === 'neto') e.net += s.commission;
+      if (paymentTypeOf(s) === 'neto') e.net += s.commission;
       else e.gross += s.commission;
     });
     clientPayments.forEach(p => {
@@ -266,9 +266,10 @@ export default function Commissions() {
     });
   };
 
-  // Editar tipo (neto/bruto), IATA (Nomad/Montecito) y canal de la comisión
+  // Editar tipo (neto/bruto), IATA (Nomad/Montecito) y canal de la comisión.
+  // El tipo vive en metadata (igual que en Corsario) para que ambos coincidan.
   const setPaymentType = (service, value) =>
-    updateServiceMutation.mutate({ id: service.id, data: { payment_type: value === 'sin' ? null : value } });
+    updateServiceMutation.mutate({ id: service.id, data: { metadata: { ...(service.metadata || {}), payment_type: value === 'sin' ? null : value } } });
   const setBookedBy = (service, value) =>
     updateServiceMutation.mutate({ id: service.id, data: { booked_by: value } });
   const setChannel = (service, value) =>
@@ -357,8 +358,8 @@ export default function Commissions() {
     const label = formatDate(new Date(year, month, 1), 'MMM yyyy', { locale: es });
     return label.charAt(0).toUpperCase() + label.slice(1);
   })();
-  const porCobrarNeto = sumAgentShare(buckets.por_cobrar.filter(s => s.payment_type === 'neto'));
-  const porCobrarBruto = sumAgentShare(buckets.por_cobrar.filter(s => s.payment_type !== 'neto'));
+  const porCobrarNeto = sumAgentShare(buckets.por_cobrar.filter(s => paymentTypeOf(s) === 'neto'));
+  const porCobrarBruto = sumAgentShare(buckets.por_cobrar.filter(s => paymentTypeOf(s) !== 'neto'));
 
   // ---- Búsqueda + agrupación por viaje ----
   const q = search.toLowerCase();
@@ -443,12 +444,12 @@ export default function Commissions() {
 
         {/* Tipo (editable) */}
         <div className="w-16 flex-shrink-0 hidden md:block">
-          <Select value={service.payment_type || 'sin'} onValueChange={(v) => setPaymentType(service, v)}>
+          <Select value={paymentTypeOf(service) || 'sin'} onValueChange={(v) => setPaymentType(service, v)}>
             <SelectTrigger
               className={`h-6 px-2 rounded-md text-[10px] font-bold tracking-wider ${
-                service.payment_type === 'neto'
+                paymentTypeOf(service) === 'neto'
                   ? 'border-green-200 bg-green-50 text-green-600'
-                  : service.payment_type === 'bruto'
+                  : paymentTypeOf(service) === 'bruto'
                     ? 'border-orange-200 bg-orange-50 text-orange-600'
                     : 'border-amber-200 bg-amber-50 text-amber-600'
               }`}

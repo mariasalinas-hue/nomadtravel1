@@ -42,9 +42,14 @@ export const agentPct = (split, commission) => {
   return Math.round((split.agent / commission) * 100);
 };
 
+// Tipo de comisión del servicio ('neto' | 'bruto' | null). Corsario (ServiceForm)
+// lo guarda en metadata; algunas ediciones viejas lo dejaron en la columna base.
+// Leemos metadata primero y caemos a la columna base para no perder ninguno.
+export const paymentTypeOf = (s) => s?.metadata?.payment_type ?? s?.payment_type ?? null;
+
 // ¿El servicio tiene comisión neta? (fuente única de la definición de "neto":
 // el tipo marcado en el servicio, editable en Comisiones Internas).
-export const isNetService = (s) => s.payment_type === 'neto';
+export const isNetService = (s) => paymentTypeOf(s) === 'neto';
 
 // Tolerancia (USD) para considerar que el saldo del cliente "cuadra" con las
 // comisiones netas.
