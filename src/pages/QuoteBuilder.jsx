@@ -5,7 +5,7 @@ import { useUser } from '@clerk/clerk-react';
 import { parseLocalDate, formatDate } from '@/lib/dateUtils';
 import { es } from 'date-fns/locale';
 import { toast } from 'sonner';
-import { Loader2, ArrowLeft, Eye, CheckCircle2, Calendar, Columns3, Plus, Trash2, Check, GripVertical, Maximize2 } from 'lucide-react';
+import { Loader2, ArrowLeft, Eye, CheckCircle2, Calendar, Columns3, Plus, Trash2, Check, GripVertical, Maximize2, Plane, PlaneLanding } from 'lucide-react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { Button } from '@/components/ui/button';
 import CityPicker from '@/components/quote/CityPicker';
@@ -32,6 +32,7 @@ const money = (n) => `$${Math.round(Number(n) || 0).toLocaleString()}`;
 const flatten = (s) => ({ ...s, metadata: s.metadata || {}, price: s.price ?? s.total_price ?? 0 });
 const toKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const shiftDateStr = (str, delta) => { const d = parseLocalDate(str); if (!d) return str; d.setDate(d.getDate() + delta); return toKey(d); };
+const dayOffsetStr = (a, b) => { const da = parseLocalDate(a), db = parseLocalDate(b); if (!da || !db) return 0; return Math.round((db - da) / 86400000); };
 
 const buildDays = (startStr, endStr) => {
   const s = parseLocalDate(startStr); const e = parseLocalDate(endStr);
@@ -157,6 +158,20 @@ export default function QuoteBuilder() {
       if (!nights || nights <= 1) return;
       const name = s.service_name || s.metadata?.hotel_name || 'Hotel';
       for (let off = 1; off < nights; off++) map[shiftDateStr(s.start_date, off)] = name;
+    });
+    return map;
+  }, [services]);
+
+  // Vuelos que llegan en un día distinto al de salida (cruce de husos horarios):
+  // se marca "Llega …" en la columna de Vuelos del día de llegada.
+  const flightArrivals = useMemo(() => {
+    const map = {};
+    services.forEach((s) => {
+      if (s.service_type !== 'vuelo' || !s.start_date) return;
+      const arr = s.metadata?.arrival_date;
+      if (!arr || arr <= s.start_date) return;
+      const name = s.service_name || s.metadata?.airline || 'Vuelo';
+      (map[arr] = map[arr] || []).push({ name, time: s.metadata?.arrival_time || '' });
     });
     return map;
   }, [services]);
@@ -330,12 +345,19 @@ export default function QuoteBuilder() {
                         {visibleTypes.map((t) => {
                           const cell = byKey[`${key}|${t}`] || [];
                           const cont = t === 'hotel' ? hotelCont[key] : null;
+                          const arrivals = t === 'vuelo' ? (flightArrivals[key] || []) : [];
                           return (
                             <td key={t} className="px-1.5 py-1.5">
                               <Droppable droppableId={`${key}|${t}`} isDropDisabled={!!draggingType && draggingType !== t}>
                                 {(prov, snap) => (
                                   <div ref={prov.innerRef} {...prov.droppableProps}
                                     className={`space-y-1 rounded-lg transition-colors ${snap.isDraggingOver ? 'ring-2 ring-emerald-300 bg-emerald-50/50' : cont ? 'bg-emerald-50/40' : ''}`}>
+                                    {arrivals.map((a, ai) => (
+                                      <div key={`arr-${ai}`} title={`Llega ${a.name}${a.time ? ' · ' + a.time : ''}`}
+                                        className="text-[10px] text-sky-700 bg-sky-50 border border-sky-100 rounded px-1.5 py-0.5 flex items-center gap-1 truncate">
+                                        <PlaneLanding className="w-2.5 h-2.5 flex-shrink-0" /> Llega {a.name}{a.time ? ` · ${a.time}` : ''}
+                                      </div>
+                                    ))}
                                     {cell.map((s, idx) => (
                                       <Draggable key={s.id} draggableId={s.id} index={idx}>
                                         {(dp) => (
@@ -349,6 +371,14 @@ export default function QuoteBuilder() {
                                               <button onClick={() => setPanelId(s.id)} title="Ver detalle" className="opacity-0 group-hover/svc:opacity-100 p-0.5 rounded text-stone-300 hover:text-stone-700"><Maximize2 className="w-3 h-3" /></button>
                                               <button onClick={() => deleteService(s.id)} title="Eliminar" className="opacity-0 group-hover/svc:opacity-100 p-0.5 rounded text-stone-300 hover:text-red-600"><Trash2 className="w-3 h-3" /></button>
                                             </div>
+                                            {s.service_type === 'vuelo' && (s.metadata?.departure_time || s.metadata?.arrival_time) && (
+                                              <div className="text-[10px] text-stone-400 px-1 flex items-center gap-1 tabular-nums whitespace-nowrap" title="Salida → Llegada">
+                                                <Plane className="w-2.5 h-2.5 flex-shrink-0" /> {s.metadata?.departure_time || '—'} → {s.metadata?.arrival_time || '—'}
+                                                {s.metadata?.arrival_date && dayOffsetStr(s.start_date, s.metadata.arrival_date) > 0 && (
+                                                  <span className="text-amber-600 font-semibold">+{dayOffsetStr(s.start_date, s.metadata.arrival_date)}</span>
+                                                )}
+                                              </div>
+                                            )}
                                             <input type="number" step="0.01" min="0" placeholder="$0" className={cellPrice} value={s.price ?? 0}
                                               onChange={(e) => setSvcLocal(s.id, (r) => ({ ...r, price: e.target.value }))} onBlur={() => saveSvcField(s.id, 'price')} />
                                           </div>

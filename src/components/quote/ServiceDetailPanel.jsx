@@ -13,6 +13,7 @@ import { TYPE_FIELDS, COMMON_OPERAR, AMENITIES } from './serviceFields';
 const TYPE_LABEL = { hotel: 'Hotel', vuelo: 'Vuelo', traslado: 'Traslado', tour: 'Tour', tren: 'Tren', crucero: 'Crucero', dmc: 'DMC', otro: 'Otro' };
 const inputTypeFor = (k) => (k === 'number' ? 'number' : k === 'date' ? 'date' : k === 'time' ? 'time' : k === 'datetime' ? 'datetime-local' : 'text');
 const diffNights = (a, b) => { const da = parseLocalDate(a), db = parseLocalDate(b); if (!da || !db) return ''; const n = Math.round((db - da) / 86400000); return n > 0 ? n : ''; };
+const dayDiff = (a, b) => { const da = parseLocalDate(a), db = parseLocalDate(b); if (!da || !db) return 0; return Math.round((db - da) / 86400000); };
 
 export default function ServiceDetailPanel({ service, onSet, onSetMeta, onDelete, onClose }) {
   const [showOp, setShowOp] = useState(false);
@@ -65,6 +66,22 @@ export default function ServiceDetailPanel({ service, onSet, onSetMeta, onDelete
           <label className="text-[11px] font-semibold uppercase tracking-wide text-stone-400">{f.label}</label>
           <Input type="date" min={startDate || undefined} value={metaVal('check_out')} className="h-9 rounded-lg text-sm"
             onChange={(e) => { const co = e.target.value; onSetMeta({ check_out: co, check_in: startDate, nights: diffNights(startDate, co) }, true); }} />
+        </div>
+      );
+    }
+    if (f.kind === 'arrival') {
+      const arr = metaVal('arrival_date') || startDate;
+      const offset = dayDiff(startDate, arr);
+      return (
+        <div key={f.key} className="space-y-1">
+          <label className="text-[11px] font-semibold uppercase tracking-wide text-stone-400">{f.label}</label>
+          <Input type="date" min={startDate || undefined} value={arr} className="h-9 rounded-lg text-sm"
+            onChange={(e) => onSetMeta({ arrival_date: e.target.value }, true)} />
+          {offset > 0 && (
+            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-600">
+              +{offset} día{offset !== 1 ? 's' : ''} · llega {formatDate(parseLocalDate(arr), 'EEE d MMM', { locale: es })}
+            </span>
+          )}
         </div>
       );
     }

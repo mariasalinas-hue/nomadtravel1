@@ -14,6 +14,17 @@ export const SELECTS = {
     { value: 'privado', label: 'Privado' },
     { value: 'compartido', label: 'Compartido' },
   ],
+  flight_class: [
+    { value: 'Economy', label: 'Economy' },
+    { value: 'Premium Economy', label: 'Premium Economy' },
+    { value: 'Business', label: 'Business' },
+    { value: 'Primera', label: 'Primera' },
+  ],
+  baggage: [
+    { value: 'incluidas', label: 'Maletas incluidas' },
+    { value: 'carry_on', label: 'Solo equipaje de mano' },
+    { value: 'no_incluidas', label: 'Sin maletas' },
+  ],
   payment_type: [
     { value: 'bruto', label: 'Bruto' },
     { value: 'neto', label: 'Neto' },
@@ -44,6 +55,35 @@ export const HOTEL_CHAINS = [
   { value: 'mandarin_oriental', label: 'Mandarin Oriental' }, { value: 'otro', label: 'Otro' },
 ];
 
+// Aerolíneas precargadas — misma lista que Corsario (ServiceForm). Se combinan
+// con las que el admin agregue (ServiceDropdownOption categoría 'airline').
+export const AIRLINES = [
+  'Aer Lingus', 'Aeroflot', 'Aerolineas Argentinas', 'Aeroméxico', 'Air Asia', 'Air Asia X',
+  'Air Canada', 'Air Caraïbes', 'Air China', 'Air Europa', 'Air France', 'Air India',
+  'Air India Express', 'Air Japan', 'Air Malta', 'Air New Zealand', 'Air Serbia',
+  'Air Tahiti Nui', 'Air Transat', 'Alaska Airlines', 'Allegiant Air', 'American Airlines',
+  'ANA – All Nippon Airways', 'Asiana Airlines', 'Austrian Airlines', 'Avianca',
+  'Azul Brazilian Airlines', 'Batik Air', 'British Airways', 'Brussels Airlines',
+  'Bulgaria Air', 'Cabo Verde Airlines', 'Cathay Pacific', 'Cebu Pacific', 'China Airlines',
+  'China Eastern', 'China Southern', 'Condor', 'Copa Airlines', 'Corsair', 'Croatia Airlines',
+  'Delta Air Lines', 'EasyJet', 'Edelweiss Air', 'EgyptAir', 'El Al', 'Emirates',
+  'Ethiopian Airlines', 'Etihad Airways', 'Eurowings', 'EVA Air', 'Fiji Airways', 'Finnair',
+  'Flair Airlines', 'FlyDubai', 'Frontier Airlines', 'Garuda Indonesia', 'Gol Linhas Aéreas',
+  'Gulf Air', 'Hainan Airlines', 'Hawaiian Airlines', 'Iberia', 'Icelandair', 'IndiGo',
+  'ITA Airways', 'Japan Airlines (JAL)', 'Jeju Air', 'JetBlue', 'Jetstar', 'KLM', 'Korean Air',
+  'Kuwait Airways', 'La Compagnie', 'LATAM Airlines', 'Lion Air', 'LOT Polish Airlines',
+  'Lufthansa', 'Luxair', 'Malaysia Airlines', 'Middle East Airlines (MEA)', 'Norwegian Air',
+  'Oman Air', 'Philippine Airlines', 'Porter Airlines', 'Qantas', 'Qatar Airways',
+  'Royal Air Maroc', 'Royal Brunei Airlines', 'Royal Jordanian', 'Ryanair', 'S7 Airlines',
+  'Saudia', 'Scandinavian Airlines (SAS)', 'Scoot', 'Shenzhen Airlines', 'Singapore Airlines',
+  'Sky Airline', 'South African Airways', 'Southwest Airlines', 'SpiceJet', 'Spirit Airlines',
+  'SriLankan Airlines', 'Sun Country Airlines', 'Swiss International Air Lines', 'TAP Air Portugal',
+  'TAROM', 'Thai Airways', 'Transavia', 'Turkish Airlines', 'United Airlines', 'Uzbekistan Airways',
+  'VietJet Air', 'Vietnam Airlines', 'Virgin Atlantic', 'Virgin Australia', 'Viva Aerobus',
+  'Volaris', 'Vueling', 'WestJet', 'Wizz Air', 'XiamenAir',
+];
+export const AIRLINE_OPTIONS = AIRLINES.map((a) => ({ value: a, label: a }));
+
 export const AMENITIES = [
   'Desayuno para 2', 'Upgrade de habitación', 'Crédito de hotel', 'Crédito de spa',
   'Late check-out', 'Early check-in', 'Traslado', 'Cena para 2', 'Amenidad de bienvenida',
@@ -70,8 +110,17 @@ export const TYPE_FIELDS = {
     ],
   },
   vuelo: {
-    esencial: [m('airline', 'Aerolínea'), m('route', 'Ruta')],
-    operar: [m('flight_number', '# Vuelo'), m('flight_date', 'Fecha', 'date'), m('departure_time', 'Salida', 'time'), m('arrival_time', 'Llegada', 'time'), m('flight_class', 'Clase'), m('passengers', 'Pasajeros', 'number'), m('flight_reservation_number', '# Reserva')],
+    esencial: [
+      { key: 'airline', label: 'Aerolínea', kind: 'catalog', catalog: 'airline', baseOptions: AIRLINE_OPTIONS, meta: true },
+      m('route', 'Ruta'),
+      m('flight_class', 'Clase', 'select', SELECTS.flight_class),
+      { key: 'departure', label: 'Salida (día del itinerario)', kind: 'readonly_date', meta: true },
+      m('departure_time', 'Hora de salida', 'time'),
+      { key: 'arrival_date', label: 'Fecha de llegada', kind: 'arrival', meta: true },
+      m('arrival_time', 'Hora de llegada', 'time'),
+      m('layover', 'Tiempo en conexión (escala)'),
+    ],
+    operar: [m('flight_number', '# Vuelo'), m('baggage', 'Maletas', 'select', SELECTS.baggage), m('seats', 'Asientos'), m('passengers', 'Pasajeros', 'number'), m('flight_reservation_number', '# Reserva')],
   },
   traslado: {
     esencial: [m('transfer_type', 'Tipo', 'select', SELECTS.transfer_type), m('transfer_origin', 'Origen'), m('transfer_destination', 'Destino')],
