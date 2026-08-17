@@ -25,6 +25,13 @@ export const SELECTS = {
     { value: 'carry_on', label: 'Solo equipaje de mano' },
     { value: 'no_incluidas', label: 'Sin maletas' },
   ],
+  cabin_type: [
+    { value: 'interior', label: 'Interior' },
+    { value: 'ocean_view', label: 'Vista al Mar' },
+    { value: 'balcony', label: 'Balcón' },
+    { value: 'suite', label: 'Suite' },
+    { value: 'haven', label: 'Haven / Exclusivo' },
+  ],
   payment_type: [
     { value: 'bruto', label: 'Bruto' },
     { value: 'neto', label: 'Neto' },
@@ -84,6 +91,57 @@ export const AIRLINES = [
 ];
 export const AIRLINE_OPTIONS = AIRLINES.map((a) => ({ value: a, label: a }));
 
+// Líneas de crucero (navieras) — misma lista y valores que Corsario, para que
+// al Vender el valor case 1:1. Se combinan con las de admin (categoría 'cruise_line').
+export const CRUISE_LINES = [
+  { value: 'royal_caribbean', label: 'Royal Caribbean' }, { value: 'carnival', label: 'Carnival Cruise Line' },
+  { value: 'norwegian', label: 'Norwegian Cruise Line' }, { value: 'msc', label: 'MSC Cruceros' },
+  { value: 'princess', label: 'Princess Cruises' }, { value: 'celebrity', label: 'Celebrity Cruises' },
+  { value: 'holland_america', label: 'Holland America Line' }, { value: 'disney', label: 'Disney Cruise Line' },
+  { value: 'virgin_voyages', label: 'Virgin Voyages' }, { value: 'costa', label: 'Costa Cruceros' },
+  { value: 'cunard', label: 'Cunard' }, { value: 'silversea', label: 'Silversea' },
+  { value: 'regent', label: 'Regent Seven Seas' }, { value: 'oceania', label: 'Oceania Cruises' },
+  { value: 'seabourn', label: 'Seabourn' }, { value: 'viking', label: 'Viking Ocean Cruises' },
+  { value: 'azamara', label: 'Azamara' }, { value: 'explora', label: 'Explora Journeys' },
+  { value: 'ritz_carlton_yacht', label: 'Ritz-Carlton Yacht Collection' }, { value: 'windstar', label: 'Windstar Cruises' },
+  { value: 'ponant', label: 'Ponant' }, { value: 'hurtigruten', label: 'Hurtigruten' },
+];
+
+// Barcos precargados (lista curada de las principales navieras de lujo/premium).
+// En Corsario el barco es texto libre, así que aquí guardamos el NOMBRE tal cual
+// (value = label). Crece con lo que el admin agregue (categoría 'cruise_ship').
+const SHIP_NAMES = [
+  // Explora Journeys
+  'Explora I', 'Explora II',
+  // Regent Seven Seas
+  'Seven Seas Explorer', 'Seven Seas Splendor', 'Seven Seas Grandeur', 'Seven Seas Mariner', 'Seven Seas Voyager', 'Seven Seas Navigator',
+  // Silversea
+  'Silver Nova', 'Silver Ray', 'Silver Moon', 'Silver Dawn', 'Silver Muse', 'Silver Whisper', 'Silver Shadow',
+  // Seabourn
+  'Seabourn Ovation', 'Seabourn Encore', 'Seabourn Sojourn', 'Seabourn Quest', 'Seabourn Pursuit', 'Seabourn Venture',
+  // Oceania
+  'Vista', 'Allura', 'Marina', 'Riviera', 'Sirena', 'Nautica', 'Insignia', 'Regatta',
+  // Viking Ocean
+  'Viking Star', 'Viking Sky', 'Viking Sea', 'Viking Jupiter', 'Viking Venus', 'Viking Neptune',
+  // Ritz-Carlton Yacht Collection
+  'Evrima', 'Ilma', 'Luminara',
+  // Ponant
+  'Le Commandant Charcot', 'Le Bougainville', 'Le Lapérouse', 'Le Bellot', 'Le Dumont-d’Urville',
+  // Cunard
+  'Queen Mary 2', 'Queen Victoria', 'Queen Elizabeth', 'Queen Anne',
+  // Virgin Voyages
+  'Scarlet Lady', 'Valiant Lady', 'Resilient Lady', 'Brilliant Lady',
+  // Celebrity
+  'Celebrity Beyond', 'Celebrity Apex', 'Celebrity Edge', 'Celebrity Ascent',
+  // Royal Caribbean
+  'Icon of the Seas', 'Utopia of the Seas', 'Wonder of the Seas', 'Symphony of the Seas',
+  // Norwegian
+  'Norwegian Prima', 'Norwegian Viva', 'Norwegian Aqua',
+  // Disney
+  'Disney Wish', 'Disney Treasure', 'Disney Fantasy', 'Disney Dream',
+];
+export const CRUISE_SHIP_OPTIONS = SHIP_NAMES.map((s) => ({ value: s, label: s }));
+
 export const AMENITIES = [
   'Desayuno para 2', 'Upgrade de habitación', 'Crédito de hotel', 'Crédito de spa',
   'Late check-out', 'Early check-in', 'Traslado', 'Cena para 2', 'Amenidad de bienvenida',
@@ -123,7 +181,7 @@ export const TYPE_FIELDS = {
     operar: [m('flight_number', '# Vuelo'), m('baggage', 'Maletas', 'select', SELECTS.baggage), m('seats', 'Asientos'), m('passengers', 'Pasajeros', 'number'), m('flight_reservation_number', '# Reserva')],
   },
   traslado: {
-    esencial: [m('transfer_type', 'Tipo', 'select', SELECTS.transfer_type), m('transfer_origin', 'Origen'), m('transfer_destination', 'Destino')],
+    esencial: [m('transfer_type', 'Tipo', 'select', SELECTS.transfer_type), m('transfer_origin', 'Origen'), m('transfer_destination', 'Destino'), m('max_luggage', 'Maletas (máximo)', 'number')],
     operar: [m('vehicle', 'Vehículo'), m('transfer_datetime', 'Fecha y hora', 'datetime'), m('transfer_passengers', 'Pasajeros', 'number')],
   },
   tour: {
@@ -131,12 +189,23 @@ export const TYPE_FIELDS = {
     operar: [m('tour_duration', 'Duración'), m('tour_includes', 'Incluye', 'textarea'), m('tour_people', 'Personas', 'number'), m('tour_reservation_number', '# Reserva')],
   },
   crucero: {
-    esencial: [m('cruise_line', 'Línea'), m('cruise_ship', 'Barco'), m('cruise_nights', 'Noches', 'number')],
-    operar: [m('cruise_itinerary', 'Itinerario', 'textarea'), m('cruise_departure_port', 'Puerto de salida'), m('cruise_arrival_port', 'Puerto de llegada'), m('cruise_departure_date', 'Fecha de salida', 'date'), m('cruise_arrival_date', 'Fecha de llegada', 'date'), m('cruise_cabin_type', 'Tipo de cabina'), m('cruise_cabin_number', '# Cabina'), m('cruise_passengers', 'Pasajeros', 'number'), m('cruise_reservation_number', '# Reserva')],
+    esencial: [
+      { key: 'cruise_line', label: 'Línea (naviera)', kind: 'catalog', catalog: 'cruise_line', baseOptions: CRUISE_LINES, meta: true },
+      { key: 'cruise_ship', label: 'Barco', kind: 'catalog', catalog: 'cruise_ship', baseOptions: CRUISE_SHIP_OPTIONS, valueIsLabel: true, meta: true },
+      m('cruise_nights', 'Noches', 'number'),
+    ],
+    operar: [m('cruise_itinerary', 'Itinerario', 'textarea'), m('cruise_departure_port', 'Puerto de salida'), m('cruise_arrival_port', 'Puerto de llegada'), m('cruise_departure_date', 'Fecha de salida', 'date'), m('cruise_arrival_date', 'Fecha de llegada', 'date'), m('cruise_cabin_type', 'Tipo de cabina', 'select', SELECTS.cabin_type), m('cruise_cabin_number', '# Cabina'), m('cruise_passengers', 'Pasajeros', 'number'), m('cruise_reservation_number', '# Reserva')],
   },
   tren: {
-    esencial: [m('train_operator', 'Operador'), m('train_route', 'Ruta')],
-    operar: [m('train_number', '# Tren'), m('train_date', 'Fecha', 'date'), m('train_departure_time', 'Salida', 'time'), m('train_arrival_time', 'Llegada', 'time'), m('train_class', 'Clase'), m('train_passengers', 'Pasajeros', 'number'), m('train_reservation_number', '# Reserva')],
+    esencial: [
+      m('train_operator', 'Operador'),
+      m('train_route', 'Ruta'),
+      m('train_departure_time', 'Hora de salida', 'time'),
+      m('train_arrival_time', 'Hora de llegada', 'time'),
+      m('train_class', 'Clase'),
+      m('train_transfers', 'Trasbordos', 'number'),
+    ],
+    operar: [m('train_number', '# Tren'), m('train_date', 'Fecha', 'date'), m('train_passengers', 'Pasajeros', 'number'), m('train_reservation_number', '# Reserva')],
   },
   dmc: {
     esencial: [m('dmc_name', 'DMC'), m('dmc_destination', 'Destino')],

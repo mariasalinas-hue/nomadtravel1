@@ -25,7 +25,10 @@ export default function ServiceDetailPanel({ service, onSet, onSetMeta, onDelete
   const valOf = (f) => (f.meta ? service?.metadata?.[f.key] : service?.[f.key]) ?? '';
 
   const catalogOptions = (f) => {
-    const admin = adminOptions.filter((o) => o.category === f.catalog && o.is_active).map((o) => ({ value: o.value, label: o.label || o.value }));
+    // valueIsLabel: el valor guardado es el NOMBRE visible (p. ej. barcos, que en
+    // Corsario son texto libre), no un value interno tipo snake_case.
+    const admin = adminOptions.filter((o) => o.category === f.catalog && o.is_active)
+      .map((o) => { const lbl = o.label || o.value; return f.valueIsLabel ? { value: lbl, label: lbl } : { value: o.value, label: lbl }; });
     const seen = new Set();
     const out = [];
     [...(f.baseOptions || []), ...admin].forEach((o) => { if (!seen.has(o.value)) { seen.add(o.value); out.push(o); } });
