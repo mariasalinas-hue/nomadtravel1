@@ -32,6 +32,9 @@ const DEFAULT_TYPES = ['hotel', 'vuelo', 'traslado', 'tour'];
 
 const money = (n) => `$${Math.round(Number(n) || 0).toLocaleString()}`;
 const flatten = (s) => ({ ...s, metadata: s.metadata || {}, price: s.price ?? s.total_price ?? 0 });
+// Un servicio "con contenido" es el que ya tiene nombre o algún monto. Las filas
+// vacías (creadas con "+ Tipo" pero sin llenar) no cuentan como servicios reales.
+const hasContent = (s) => !!(s.service_name && s.service_name.trim()) || Number(s.price) > 0 || Number(s.commission) > 0;
 const toKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const shiftDateStr = (str, delta) => { const d = parseLocalDate(str); if (!d) return str; d.setDate(d.getDate() + delta); return toKey(d); };
 const dayOffsetStr = (a, b) => { const da = parseLocalDate(a), db = parseLocalDate(b); if (!da || !db) return 0; return Math.round((db - da) / 86400000); };
@@ -66,6 +69,20 @@ export default function QuoteBuilder() {
   const servicesRef = useRef(services);
   useEffect(() => { servicesRef.current = services; }, [services]);
   useEffect(() => { if (loadedServices) setServices(loadedServices); }, [loadedServices]);
+
+  // Limpieza única: borra filas vacías (sin nombre ni monto) que quedaron FUERA
+  // del rango de fechas del viaje (basura de clics en "+ Tipo" con fechas viejas).
+  const cleanedRef = useRef(false);
+  useEffect(() => {
+    if (cleanedRef.current || !loadedServices || !trip?.start_date || !trip?.end_date) return;
+    const keys = new Set(buildDays(trip.start_date, trip.end_date).map(toKey));
+    const junk = (servicesRef.current || []).filter((s) => !hasContent(s) && (!s.start_date || !keys.has(s.start_date)));
+    cleanedRef.current = true;
+    if (junk.length === 0) return;
+    const ids = new Set(junk.map((j) => j.id));
+    setServices((ss) => ss.filter((s) => !ids.has(s.id)));
+    junk.forEach((j) => supabaseAPI.entities.TripService.delete(j.id).catch(() => {}));
+  }, [loadedServices, trip]);
 
   const [range, setRange] = useState({ start: '', end: '' });
   useEffect(() => { if (trip) setRange({ start: trip.start_date || '', end: trip.end_date || '' }); }, [trip]);
@@ -220,14 +237,14 @@ export default function QuoteBuilder() {
   };
   const draftByType = useMemo(() => {
     const m = {};
-    draft.forEach((s) => { (m[s.service_type] = m[s.service_type] || []).push(s); });
+    draft.filter(hasContent).forEach((s) => { (m[s.service_type] = m[s.service_type] || []).push(s); });
     Object.values(m).forEach((list) => list.sort((a, b) => (a.start_date || '').localeCompare(b.start_date || '')));
     return m;
   }, [draft]);
-  // Pestañas de tipo disponibles (según lo que ya está en la cotización)
-  const typeTabs = useMemo(() => ALL_TYPES.filter((t) => services.some((s) => s.service_type === t)), [services]);
+  // Pestañas de tipo disponibles (solo tipos con servicios reales, no filas vacías)
+  const typeTabs = useMemo(() => ALL_TYPES.filter((t) => services.some((s) => s.service_type === t && hasContent(s))), [services]);
   const typeCounts = useMemo(() => {
-    const m = {}; services.forEach((s) => { m[s.service_type] = (m[s.service_type] || 0) + 1; }); return m;
+    const m = {}; services.filter(hasContent).forEach((s) => { m[s.service_type] = (m[s.service_type] || 0) + 1; }); return m;
   }, [services]);
   const draftDirty = useMemo(() => {
     if (draft.length === 0) return false;
