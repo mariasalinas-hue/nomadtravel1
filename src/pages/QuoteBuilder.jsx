@@ -10,6 +10,7 @@ import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { Button } from '@/components/ui/button';
 import CityPicker from '@/components/quote/CityPicker';
 import ServiceDetailPanel from '@/components/quote/ServiceDetailPanel';
+import { pricingView, applyTotal, applyType } from '@/lib/quotePricing';
 
 const GREEN = '#2E442A';
 
@@ -143,6 +144,28 @@ export default function QuoteBuilder() {
       const r = servicesRef.current.find((x) => x.id === panelId);
       persistSvc(panelId, { metadata: { ...(r?.metadata || {}), ...obj } });
     }
+  };
+
+  // Aplica un patch de precio (price/commission base + payment_type/commission_auto
+  // en metadata) de forma atómica. Lo usan el panel de detalle y la casilla.
+  const setPricing = (id, patch) => {
+    const has = (k) => Object.prototype.hasOwnProperty.call(patch, k);
+    const metaPatch = {
+      ...(has('payment_type') ? { payment_type: patch.payment_type } : {}),
+      ...(has('commission_auto') ? { commission_auto: patch.commission_auto } : {}),
+    };
+    setSvcLocal(id, (r) => ({
+      ...r,
+      ...(has('price') ? { price: patch.price } : {}),
+      ...(has('commission') ? { commission: patch.commission } : {}),
+      metadata: { ...r.metadata, ...metaPatch },
+    }));
+    const r = servicesRef.current.find((x) => x.id === id);
+    persistSvc(id, {
+      ...(has('price') ? { price: Number(patch.price) || 0 } : {}),
+      ...(has('commission') ? { commission: Number(patch.commission) || 0 } : {}),
+      metadata: { ...(r?.metadata || {}), ...metaPatch },
+    });
   };
 
   // Días que cubre cada hotel (para marcar sutilmente las noches en el itinerario)
@@ -380,7 +403,23 @@ export default function QuoteBuilder() {
                                               </div>
                                             )}
                                             <input type="number" step="0.01" min="0" placeholder="$0" className={cellPrice} value={s.price ?? 0}
-                                              onChange={(e) => setSvcLocal(s.id, (r) => ({ ...r, price: e.target.value }))} onBlur={() => saveSvcField(s.id, 'price')} />
+                                              title={pricingView(s).pt === 'neto' ? 'Total final (neto + comisión)' : 'Total (bruto)'}
+                                              onChange={(e) => setSvcLocal(s.id, (r) => ({ ...r, price: e.target.value }))} onBlur={() => setPricing(s.id, applyTotal(s, s.price))} />
+                                            {(() => {
+                                              const pv = pricingView(s);
+                                              return (
+                                                <div className="flex items-center justify-between gap-1 px-1 pt-0.5">
+                                                  <button type="button" title="Cambiar bruto/neto"
+                                                    onClick={() => setPricing(s.id, applyType(s, pv.pt === 'neto' ? 'bruto' : 'neto'))}
+                                                    className={`text-[9px] font-bold px-1 py-0.5 rounded ${pv.pt === 'neto' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
+                                                    {pv.pt === 'neto' ? 'NETO' : 'BRUTO'}
+                                                  </button>
+                                                  <span className="text-[9px] text-stone-400 tabular-nums truncate" title="Comisión">
+                                                    Com {money(pv.commission)}{pv.auto ? ' · 8%' : ''}
+                                                  </span>
+                                                </div>
+                                              );
+                                            })()}
                                           </div>
                                         )}
                                       </Draggable>
@@ -435,6 +474,7 @@ export default function QuoteBuilder() {
         service={panelService}
         onSet={onPanelSet}
         onSetMeta={onPanelSetMeta}
+        onApplyPricing={(patch) => { if (panelId) setPricing(panelId, patch); }}
         onDelete={() => { if (panelId) { deleteService(panelId); setPanelId(null); } }}
         onClose={() => setPanelId(null)}
       />

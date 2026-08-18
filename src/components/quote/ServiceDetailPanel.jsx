@@ -9,13 +9,14 @@ import { formatDate, parseLocalDate } from '@/lib/dateUtils';
 import { es } from 'date-fns/locale';
 import { useServiceDropdownOptions } from '@/hooks/useServiceDropdownOptions';
 import { TYPE_FIELDS, COMMON_OPERAR, AMENITIES } from './serviceFields';
+import PricingBlock from './PricingBlock';
 
 const TYPE_LABEL = { hotel: 'Hotel', vuelo: 'Vuelo', traslado: 'Traslado', tour: 'Tour', tren: 'Tren', crucero: 'Crucero', dmc: 'DMC', otro: 'Otro' };
 const inputTypeFor = (k) => (k === 'number' ? 'number' : k === 'date' ? 'date' : k === 'time' ? 'time' : k === 'datetime' ? 'datetime-local' : 'text');
 const diffNights = (a, b) => { const da = parseLocalDate(a), db = parseLocalDate(b); if (!da || !db) return ''; const n = Math.round((db - da) / 86400000); return n > 0 ? n : ''; };
 const dayDiff = (a, b) => { const da = parseLocalDate(a), db = parseLocalDate(b); if (!da || !db) return 0; return Math.round((db - da) / 86400000); };
 
-export default function ServiceDetailPanel({ service, onSet, onSetMeta, onDelete, onClose }) {
+export default function ServiceDetailPanel({ service, onSet, onSetMeta, onApplyPricing, onDelete, onClose }) {
   const [showOp, setShowOp] = useState(false);
   const { data: adminOptions = [] } = useServiceDropdownOptions();
   const type = service?.service_type || 'otro';
@@ -149,10 +150,7 @@ export default function ServiceDetailPanel({ service, onSet, onSetMeta, onDelete
 
             <div className="space-y-3">
               {Field({ key: 'service_name', label: 'Nombre', kind: 'text', meta: false })}
-              <div className="grid grid-cols-2 gap-3">
-                {Field({ key: 'price', label: 'Precio (USD)', kind: 'number', meta: false })}
-                {Field({ key: 'commission', label: 'Comisión (USD)', kind: 'number', meta: false })}
-              </div>
+              <PricingBlock service={service} onApply={onApplyPricing} />
               {cfg.esencial.map(Field)}
               {Field({ key: 'client_description', label: 'Descripción para el cliente', kind: 'textarea', meta: true })}
             </div>
