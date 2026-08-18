@@ -5,11 +5,13 @@ import { useUser } from '@clerk/clerk-react';
 import { parseLocalDate, formatDate } from '@/lib/dateUtils';
 import { es } from 'date-fns/locale';
 import { toast } from 'sonner';
-import { Loader2, ArrowLeft, Eye, CheckCircle2, Calendar, Columns3, Plus, Trash2, Check, GripVertical, Maximize2, Plane, PlaneLanding } from 'lucide-react';
+import { Loader2, ArrowLeft, Eye, CheckCircle2, Calendar, Columns3, Plus, Trash2, Check, GripVertical, Maximize2, Plane, PlaneLanding, FolderOpen } from 'lucide-react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent } from '@/components/ui/dialog';
 import CityPicker from '@/components/quote/CityPicker';
 import ServiceDetailPanel from '@/components/quote/ServiceDetailPanel';
+import ServiceEditor from '@/components/quote/ServiceEditor';
 import { pricingView, applyTotal, applyType } from '@/lib/quotePricing';
 
 const GREEN = '#2E442A';
@@ -120,6 +122,12 @@ export default function QuoteBuilder() {
   // ---- panel de detalle ----
   const [panelId, setPanelId] = useState(null);
   const panelService = services.find((s) => s.id === panelId) || null;
+
+  // ---- folder por tipo (edita un borrador; nada cambia hasta Guardar) ----
+  const [folderOpen, setFolderOpen] = useState(false);
+  const [folderType, setFolderType] = useState('hotel');
+  const [draft, setDraft] = useState([]);
+  const [savingFolder, setSavingFolder] = useState(false);
   const setPanelLocal = (id, field, value, meta) =>
     setSvcLocal(id, (r) => (meta ? { ...r, metadata: { ...r.metadata, [field]: value } } : { ...r, [field]: value }));
   const persistNow = (id, field, value, meta) => {
@@ -167,6 +175,56 @@ export default function QuoteBuilder() {
       metadata: { ...(r?.metadata || {}), ...metaPatch },
     });
   };
+
+  // ---- folder por tipo: handlers que escriben SOLO en el borrador ----
+  const openFolder = () => {
+    setDraft(servicesRef.current.map((s) => ({ ...s, metadata: { ...(s.metadata || {}) } })));
+    const first = ALL_TYPES.find((t) => servicesRef.current.some((s) => s.service_type === t)) || 'hotel';
+    setFolderType(first);
+    setFolderOpen(true);
+  };
+  const draftSet = (id, field, value, meta) =>
+    setDraft((ds) => ds.map((r) => (r.id === id ? (meta ? { ...r, metadata: { ...r.metadata, [field]: value } } : { ...r, [field]: value }) : r)));
+  const draftSetMeta = (id, obj) =>
+    setDraft((ds) => ds.map((r) => (r.id === id ? { ...r, metadata: { ...r.metadata, ...obj } } : r)));
+  const draftApplyPricing = (id, patch) => {
+    const has = (k) => Object.prototype.hasOwnProperty.call(patch, k);
+    const metaPatch = {
+      ...(has('payment_type') ? { payment_type: patch.payment_type } : {}),
+      ...(has('commission_auto') ? { commission_auto: patch.commission_auto } : {}),
+    };
+    setDraft((ds) => ds.map((r) => (r.id === id ? {
+      ...r,
+      ...(has('price') ? { price: patch.price } : {}),
+      ...(has('commission') ? { commission: patch.commission } : {}),
+      metadata: { ...r.metadata, ...metaPatch },
+    } : r)));
+  };
+  const editedFields = (d) => ({ service_name: d.service_name, price: Number(d.price) || 0, commission: Number(d.commission) || 0, metadata: d.metadata || {} });
+  const saveFolder = async () => {
+    setSavingFolder(true);
+    try {
+      const changed = draft.filter((d) => {
+        const cur = servicesRef.current.find((s) => s.id === d.id);
+        return cur && JSON.stringify(editedFields(cur)) !== JSON.stringify(editedFields(d));
+      });
+      // Recién aquí se refleja en la tabla principal
+      setServices((ss) => ss.map((s) => { const d = draft.find((x) => x.id === s.id); return d ? { ...s, ...editedFields(d) } : s; }));
+      for (const d of changed) await persistSvc(d.id, editedFields(d));
+      toast.success(changed.length ? `Guardado (${changed.length} servicio${changed.length !== 1 ? 's' : ''})` : 'Sin cambios');
+      setFolderOpen(false);
+    } finally {
+      setSavingFolder(false);
+    }
+  };
+  const draftByType = useMemo(() => {
+    const m = {};
+    draft.forEach((s) => { (m[s.service_type] = m[s.service_type] || []).push(s); });
+    Object.values(m).forEach((list) => list.sort((a, b) => (a.start_date || '').localeCompare(b.start_date || '')));
+    return m;
+  }, [draft]);
+  const folderTypes = useMemo(() => ALL_TYPES.filter((t) => (draftByType[t] || []).length > 0), [draftByType]);
+  const activeFolderType = folderTypes.includes(folderType) ? folderType : (folderTypes[0] || 'hotel');
 
   // Días que cubre cada hotel (para marcar sutilmente las noches en el itinerario)
   const hotelCont = useMemo(() => {
@@ -304,6 +362,9 @@ export default function QuoteBuilder() {
           <input type="date" value={range.end || ''} onChange={(e) => saveRange({ ...range, end: e.target.value })} className="text-sm text-stone-700 bg-transparent outline-none" />
         </div>
         <span className="text-xs text-stone-500">{days.length > 0 ? `${days.length} día${days.length !== 1 ? 's' : ''} · las filas se crean solas` : 'Pon las fechas del viaje para generar los días'}</span>
+        <button onClick={openFolder} className="flex items-center gap-1.5 text-xs font-semibold text-white rounded-lg px-3 py-2 hover:opacity-90" style={{ backgroundColor: GREEN }} title="Ver y editar los servicios agrupados por tipo">
+          <FolderOpen className="w-4 h-4" /> Servicios por tipo
+        </button>
         <span className="flex-1" />
         <div className="relative">
           <button onClick={() => setColMenu((o) => !o)} className="flex items-center gap-1.5 text-xs font-semibold text-stone-600 border border-stone-200 bg-white rounded-lg px-3 py-2 hover:bg-stone-50"><Columns3 className="w-4 h-4" /> Columnas</button>
@@ -478,6 +539,62 @@ export default function QuoteBuilder() {
         onDelete={() => { if (panelId) { deleteService(panelId); setPanelId(null); } }}
         onClose={() => setPanelId(null)}
       />
+
+      {/* Folder por tipo: edita un borrador; nada cambia en la tabla hasta Guardar */}
+      <Dialog open={folderOpen} onOpenChange={(o) => { if (!o) setFolderOpen(false); }}>
+        <DialogContent className="max-w-4xl p-0 rounded-2xl overflow-hidden max-h-[88vh] flex flex-col gap-0">
+          <div className="px-5 py-3 border-b border-stone-100 flex items-center justify-between flex-shrink-0">
+            <h2 className="text-base font-bold text-stone-800">Servicios por tipo</h2>
+            <span className="text-xs text-stone-400 hidden sm:block">Edita y presiona <strong>Guardar</strong> para aplicar a la tabla</span>
+          </div>
+
+          {folderTypes.length > 0 ? (
+            <>
+              <div className="px-4 pt-2 flex gap-1 flex-wrap border-b border-stone-100 flex-shrink-0">
+                {folderTypes.map((t) => {
+                  const active = activeFolderType === t;
+                  return (
+                    <button key={t} onClick={() => setFolderType(t)}
+                      className={`px-3 py-2 rounded-t-lg text-sm font-semibold border-b-2 transition-colors flex items-center gap-1.5 ${active ? 'border-stone-800 text-stone-800' : 'border-transparent text-stone-400 hover:text-stone-600'}`}>
+                      {TYPE_LABEL[t]}
+                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${active ? 'bg-stone-800 text-white' : 'bg-stone-100 text-stone-500'}`}>{(draftByType[t] || []).length}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3 bg-stone-50">
+                {(draftByType[activeFolderType] || []).map((s) => (
+                  <div key={s.id} className="bg-white rounded-xl border border-stone-200 p-4">
+                    <div className="flex items-center gap-1.5 mb-3 text-xs text-stone-400">
+                      <span className="font-semibold text-emerald-700 uppercase tracking-wide">{TYPE_LABEL[s.service_type]}</span>
+                      {s.start_date && <span>· {formatDate(parseLocalDate(s.start_date), 'EEE d MMM', { locale: es })}</span>}
+                      {dayInfo[s.start_date]?.city && <span className="truncate">· {dayInfo[s.start_date].city}</span>}
+                    </div>
+                    <ServiceEditor
+                      service={s}
+                      onSet={(f, v, m) => draftSet(s.id, f, v, m)}
+                      onSetMeta={(obj) => draftSetMeta(s.id, obj)}
+                      onApplyPricing={(patch) => draftApplyPricing(s.id, patch)}
+                    />
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            <div className="flex-1 px-5 py-12 text-center text-stone-400 text-sm">
+              Aún no hay servicios en la cotización. Agrégalos en la tabla y aquí aparecerán agrupados por tipo.
+            </div>
+          )}
+
+          <div className="px-5 py-3 border-t border-stone-100 flex items-center justify-end gap-2 bg-white flex-shrink-0">
+            <Button variant="outline" onClick={() => setFolderOpen(false)} className="rounded-xl" disabled={savingFolder}>Cancelar</Button>
+            <Button onClick={saveFolder} disabled={savingFolder || folderTypes.length === 0} className="rounded-xl text-white" style={{ backgroundColor: GREEN }}>
+              {savingFolder ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Check className="w-4 h-4 mr-1.5" />} Guardar
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
