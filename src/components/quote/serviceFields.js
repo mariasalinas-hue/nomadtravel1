@@ -217,9 +217,9 @@ export const TYPE_FIELDS = {
   },
 };
 
-// Comunes a todos, en la sección "Para operar (opcional)"
+// Comunes a todos, en la sección "Para operar (opcional)".
+// El tipo bruto/neto se maneja en el bloque de precio, no aquí.
 export const COMMON_OPERAR = [
-  m('payment_type', 'Tipo de comisión', 'select', SELECTS.payment_type),
   m('booked_by', 'IATA', 'select', SELECTS.booked_by),
   { key: 'notes', label: 'Notas internas', kind: 'textarea', meta: false },
 ];

@@ -20,7 +20,7 @@ const dayDiff = (a, b) => { const da = parseLocalDate(a), db = parseLocalDate(b)
 // cada campo) y el folder por tipo (guarda en un borrador hasta apretar Guardar).
 // Los handlers reciben (field, value, meta, persist) / (obj, persist) / (patch);
 // cada contexto decide si persiste o no.
-export default function ServiceEditor({ service, onSet, onSetMeta, onApplyPricing, onDelete }) {
+export default function ServiceEditor({ service, onSet, onSetMeta, onApplyPricing, onDelete, grid = false }) {
   const [showOp, setShowOp] = useState(false);
   const { data: adminOptions = [] } = useServiceDropdownOptions();
   const type = service?.service_type || 'otro';
@@ -142,20 +142,25 @@ export default function ServiceEditor({ service, onSet, onSetMeta, onApplyPricin
     );
   };
 
+  const gridCls = grid ? 'grid grid-cols-1 lg:grid-cols-2 gap-x-4 gap-y-3' : 'space-y-3';
+  const wide = grid ? 'lg:col-span-2' : '';
+  const isWide = (f) => f.kind === 'amenities' || f.kind === 'textarea';
+  const cell = (node, full) => <div key={node.key} className={full ? wide : undefined}>{node}</div>;
+
   return (
     <div className="space-y-5">
-      <div className="space-y-3">
-        {Field({ key: 'service_name', label: 'Nombre', kind: 'text', meta: false })}
-        <PricingBlock service={service} onApply={onApplyPricing} />
-        {cfg.esencial.map(Field)}
-        {Field({ key: 'client_description', label: 'Descripción para el cliente', kind: 'textarea', meta: true })}
+      <div className={gridCls}>
+        {cell(Field({ key: 'service_name', label: 'Nombre', kind: 'text', meta: false }), true)}
+        <div className={wide}><PricingBlock service={service} onApply={onApplyPricing} /></div>
+        {cfg.esencial.map((f) => cell(Field(f), isWide(f)))}
+        {cell(Field({ key: 'client_description', label: 'Descripción para el cliente', kind: 'textarea', meta: true }), true)}
       </div>
 
       <div className="border-t border-stone-100 pt-3">
         <button onClick={() => setShowOp((o) => !o)} className="flex items-center gap-2 text-sm font-semibold text-stone-600">
           <ChevronDown className={`w-4 h-4 transition-transform ${showOp ? 'rotate-180' : ''}`} /> Para operar (opcional)
         </button>
-        {showOp && <div className="space-y-3 mt-3">{cfg.operar.map(Field)}{COMMON_OPERAR.map(Field)}</div>}
+        {showOp && <div className={`${gridCls} mt-3`}>{[...cfg.operar, ...COMMON_OPERAR].map((f) => cell(Field(f), isWide(f)))}</div>}
       </div>
 
       {onDelete && (

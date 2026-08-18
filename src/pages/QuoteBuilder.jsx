@@ -5,10 +5,9 @@ import { useUser } from '@clerk/clerk-react';
 import { parseLocalDate, formatDate } from '@/lib/dateUtils';
 import { es } from 'date-fns/locale';
 import { toast } from 'sonner';
-import { Loader2, ArrowLeft, Eye, CheckCircle2, Calendar, Columns3, Plus, Trash2, Check, GripVertical, Maximize2, Plane, PlaneLanding, FolderOpen } from 'lucide-react';
+import { Loader2, ArrowLeft, Eye, CheckCircle2, Calendar, Columns3, Plus, Trash2, Check, GripVertical, Maximize2, Plane, PlaneLanding } from 'lucide-react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent } from '@/components/ui/dialog';
 import CityPicker from '@/components/quote/CityPicker';
 import ServiceDetailPanel from '@/components/quote/ServiceDetailPanel';
 import ServiceEditor from '@/components/quote/ServiceEditor';
@@ -123,9 +122,8 @@ export default function QuoteBuilder() {
   const [panelId, setPanelId] = useState(null);
   const panelService = services.find((s) => s.id === panelId) || null;
 
-  // ---- folder por tipo (edita un borrador; nada cambia hasta Guardar) ----
-  const [folderOpen, setFolderOpen] = useState(false);
-  const [folderType, setFolderType] = useState('hotel');
+  // ---- pestañas por tipo (editan un borrador; nada cambia hasta Guardar) ----
+  const [mainTab, setMainTab] = useState('itinerario'); // 'itinerario' | tipo de servicio
   const [draft, setDraft] = useState([]);
   const [savingFolder, setSavingFolder] = useState(false);
   const setPanelLocal = (id, field, value, meta) =>
@@ -176,13 +174,10 @@ export default function QuoteBuilder() {
     });
   };
 
-  // ---- folder por tipo: handlers que escriben SOLO en el borrador ----
-  const openFolder = () => {
-    setDraft(servicesRef.current.map((s) => ({ ...s, metadata: { ...(s.metadata || {}) } })));
-    const first = ALL_TYPES.find((t) => servicesRef.current.some((s) => s.service_type === t)) || 'hotel';
-    setFolderType(first);
-    setFolderOpen(true);
-  };
+  // ---- pestañas por tipo: handlers que escriben SOLO en el borrador ----
+  const seedDraft = () => servicesRef.current.map((s) => ({ ...s, metadata: { ...(s.metadata || {}) } }));
+  const goType = (t) => { setDraft((d) => (d.length === 0 ? seedDraft() : d)); setMainTab(t); };
+  const discardDraft = () => setDraft(seedDraft());
   const draftSet = (id, field, value, meta) =>
     setDraft((ds) => ds.map((r) => (r.id === id ? (meta ? { ...r, metadata: { ...r.metadata, [field]: value } } : { ...r, [field]: value }) : r)));
   const draftSetMeta = (id, obj) =>
@@ -209,10 +204,11 @@ export default function QuoteBuilder() {
         return cur && JSON.stringify(editedFields(cur)) !== JSON.stringify(editedFields(d));
       });
       // Recién aquí se refleja en la tabla principal
-      setServices((ss) => ss.map((s) => { const d = draft.find((x) => x.id === s.id); return d ? { ...s, ...editedFields(d) } : s; }));
+      const merged = servicesRef.current.map((s) => { const d = draft.find((x) => x.id === s.id); return d ? { ...s, ...editedFields(d) } : s; });
+      setServices(merged);
       for (const d of changed) await persistSvc(d.id, editedFields(d));
+      setDraft(merged.map((s) => ({ ...s, metadata: { ...(s.metadata || {}) } })));
       toast.success(changed.length ? `Guardado (${changed.length} servicio${changed.length !== 1 ? 's' : ''})` : 'Sin cambios');
-      setFolderOpen(false);
     } finally {
       setSavingFolder(false);
     }
@@ -223,8 +219,16 @@ export default function QuoteBuilder() {
     Object.values(m).forEach((list) => list.sort((a, b) => (a.start_date || '').localeCompare(b.start_date || '')));
     return m;
   }, [draft]);
-  const folderTypes = useMemo(() => ALL_TYPES.filter((t) => (draftByType[t] || []).length > 0), [draftByType]);
-  const activeFolderType = folderTypes.includes(folderType) ? folderType : (folderTypes[0] || 'hotel');
+  // Pestañas de tipo disponibles (según lo que ya está en la cotización)
+  const typeTabs = useMemo(() => ALL_TYPES.filter((t) => services.some((s) => s.service_type === t)), [services]);
+  const typeCounts = useMemo(() => {
+    const m = {}; services.forEach((s) => { m[s.service_type] = (m[s.service_type] || 0) + 1; }); return m;
+  }, [services]);
+  const draftDirty = useMemo(() => {
+    if (draft.length === 0) return false;
+    return draft.some((d) => { const cur = services.find((s) => s.id === d.id); return cur && JSON.stringify(editedFields(cur)) !== JSON.stringify(editedFields(d)); });
+  }, [draft, services]);
+  const activeTab = mainTab !== 'itinerario' && !typeTabs.includes(mainTab) ? 'itinerario' : mainTab;
 
   // Días que cubre cada hotel (para marcar sutilmente las noches en el itinerario)
   const hotelCont = useMemo(() => {
@@ -362,28 +366,48 @@ export default function QuoteBuilder() {
           <input type="date" value={range.end || ''} onChange={(e) => saveRange({ ...range, end: e.target.value })} className="text-sm text-stone-700 bg-transparent outline-none" />
         </div>
         <span className="text-xs text-stone-500">{days.length > 0 ? `${days.length} día${days.length !== 1 ? 's' : ''} · las filas se crean solas` : 'Pon las fechas del viaje para generar los días'}</span>
-        <button onClick={openFolder} className="flex items-center gap-1.5 text-xs font-semibold text-white rounded-lg px-3 py-2 hover:opacity-90" style={{ backgroundColor: GREEN }} title="Ver y editar los servicios agrupados por tipo">
-          <FolderOpen className="w-4 h-4" /> Servicios por tipo
-        </button>
         <span className="flex-1" />
-        <div className="relative">
-          <button onClick={() => setColMenu((o) => !o)} className="flex items-center gap-1.5 text-xs font-semibold text-stone-600 border border-stone-200 bg-white rounded-lg px-3 py-2 hover:bg-stone-50"><Columns3 className="w-4 h-4" /> Columnas</button>
-          {colMenu && (
-            <div className="absolute right-0 mt-1 w-44 bg-white border border-stone-200 rounded-xl shadow-lg z-30 p-1">
-              {SERVICE_TYPES.map((t) => {
-                const on = visibleTypes.includes(t.value);
-                return (
-                  <button key={t.value} onClick={() => toggleType(t.value)} className="w-full flex items-center gap-2 px-2.5 py-1.5 text-sm text-stone-700 rounded-lg hover:bg-stone-50">
-                    <span className={`w-4 h-4 rounded border flex items-center justify-center ${on ? 'bg-stone-800 border-stone-800' : 'border-stone-300'}`}>{on && <Check className="w-3 h-3 text-white" />}</span>{t.label}
-                  </button>
-                );
-              })}
-            </div>
-          )}
+        {activeTab === 'itinerario' && (
+          <div className="relative">
+            <button onClick={() => setColMenu((o) => !o)} className="flex items-center gap-1.5 text-xs font-semibold text-stone-600 border border-stone-200 bg-white rounded-lg px-3 py-2 hover:bg-stone-50"><Columns3 className="w-4 h-4" /> Columnas</button>
+            {colMenu && (
+              <div className="absolute right-0 mt-1 w-44 bg-white border border-stone-200 rounded-xl shadow-lg z-30 p-1">
+                {SERVICE_TYPES.map((t) => {
+                  const on = visibleTypes.includes(t.value);
+                  return (
+                    <button key={t.value} onClick={() => toggleType(t.value)} className="w-full flex items-center gap-2 px-2.5 py-1.5 text-sm text-stone-700 rounded-lg hover:bg-stone-50">
+                      <span className={`w-4 h-4 rounded border flex items-center justify-center ${on ? 'bg-stone-800 border-stone-800' : 'border-stone-300'}`}>{on && <Check className="w-3 h-3 text-white" />}</span>{t.label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Pestañas: Itinerario (tabla) + una por cada tipo con servicios */}
+      <div className="max-w-[1400px] mx-auto w-full px-5 pt-3">
+        <div className="flex items-end gap-1 border-b border-stone-200 overflow-x-auto">
+          <button onClick={() => setMainTab('itinerario')}
+            className={`px-3.5 py-2 text-sm font-semibold whitespace-nowrap border-b-2 transition-colors ${activeTab === 'itinerario' ? 'border-stone-800 text-stone-800' : 'border-transparent text-stone-400 hover:text-stone-600'}`}>
+            Itinerario
+          </button>
+          {typeTabs.map((t) => {
+            const on = activeTab === t;
+            return (
+              <button key={t} onClick={() => goType(t)}
+                className={`px-3.5 py-2 text-sm font-semibold whitespace-nowrap border-b-2 transition-colors flex items-center gap-1.5 ${on ? 'border-stone-800 text-stone-800' : 'border-transparent text-stone-400 hover:text-stone-600'}`}>
+                {TYPE_LABEL[t]}
+                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${on ? 'bg-stone-800 text-white' : 'bg-stone-100 text-stone-500'}`}>{typeCounts[t]}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
       <main className="flex-1">
+        {activeTab === 'itinerario' && (
         <div className="max-w-[1400px] mx-auto px-5 py-4">
           {svcError && (
             <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
@@ -529,6 +553,44 @@ export default function QuoteBuilder() {
 
           <p className="text-xs text-stone-400 mt-3">Se guarda automáticamente. Pasa el mouse sobre una fila para <strong>insertar</strong> o <strong>quitar un día</strong> (las fechas se recorren solas). Siguiente: arrastrar servicios entre días, panel de detalle, preview y Vender.</p>
         </div>
+        )}
+
+        {activeTab !== 'itinerario' && (
+        <div className="max-w-[1400px] mx-auto px-5 py-4">
+          <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+            <div>
+              <h2 className="text-lg font-bold text-stone-800">{TYPE_LABEL[activeTab]}</h2>
+              <p className="text-xs text-stone-400">{(draftByType[activeTab] || []).length} servicio{(draftByType[activeTab] || []).length !== 1 ? 's' : ''} en la cotización</p>
+            </div>
+            <div className="flex items-center gap-2">
+              {draftDirty && <span className="text-xs text-amber-600 font-medium hidden sm:inline">Cambios sin guardar</span>}
+              <Button variant="outline" onClick={discardDraft} disabled={savingFolder || !draftDirty} className="rounded-xl">Descartar</Button>
+              <Button onClick={saveFolder} disabled={savingFolder} className="rounded-xl text-white" style={{ backgroundColor: GREEN }}>
+                {savingFolder ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Check className="w-4 h-4 mr-1.5" />} Guardar
+              </Button>
+            </div>
+          </div>
+          <div className="space-y-3">
+            {(draftByType[activeTab] || []).map((s) => (
+              <div key={s.id} className="bg-white rounded-2xl border border-stone-200 p-5">
+                <div className="flex items-center gap-1.5 mb-4 text-xs">
+                  <span className="font-bold text-emerald-700 uppercase tracking-wide">{TYPE_LABEL[s.service_type]}</span>
+                  {s.start_date && <span className="text-stone-400">· {formatDate(parseLocalDate(s.start_date), 'EEE d MMM', { locale: es })}</span>}
+                  {dayInfo[s.start_date]?.city && <span className="text-stone-400 truncate">· {dayInfo[s.start_date].city}</span>}
+                </div>
+                <ServiceEditor grid service={s}
+                  onSet={(f, v, m) => draftSet(s.id, f, v, m)}
+                  onSetMeta={(obj) => draftSetMeta(s.id, obj)}
+                  onApplyPricing={(patch) => draftApplyPricing(s.id, patch)} />
+              </div>
+            ))}
+            {(draftByType[activeTab] || []).length === 0 && (
+              <p className="text-center text-stone-400 text-sm py-10">Sin servicios de este tipo.</p>
+            )}
+          </div>
+          <p className="text-xs text-stone-400 mt-4">Los cambios aquí <strong>no tocan la tabla</strong> hasta que presiones <strong>Guardar</strong>.</p>
+        </div>
+        )}
       </main>
 
       <ServiceDetailPanel
@@ -539,62 +601,6 @@ export default function QuoteBuilder() {
         onDelete={() => { if (panelId) { deleteService(panelId); setPanelId(null); } }}
         onClose={() => setPanelId(null)}
       />
-
-      {/* Folder por tipo: edita un borrador; nada cambia en la tabla hasta Guardar */}
-      <Dialog open={folderOpen} onOpenChange={(o) => { if (!o) setFolderOpen(false); }}>
-        <DialogContent className="max-w-4xl p-0 rounded-2xl overflow-hidden max-h-[88vh] flex flex-col gap-0">
-          <div className="px-5 py-3 border-b border-stone-100 flex items-center justify-between flex-shrink-0">
-            <h2 className="text-base font-bold text-stone-800">Servicios por tipo</h2>
-            <span className="text-xs text-stone-400 hidden sm:block">Edita y presiona <strong>Guardar</strong> para aplicar a la tabla</span>
-          </div>
-
-          {folderTypes.length > 0 ? (
-            <>
-              <div className="px-4 pt-2 flex gap-1 flex-wrap border-b border-stone-100 flex-shrink-0">
-                {folderTypes.map((t) => {
-                  const active = activeFolderType === t;
-                  return (
-                    <button key={t} onClick={() => setFolderType(t)}
-                      className={`px-3 py-2 rounded-t-lg text-sm font-semibold border-b-2 transition-colors flex items-center gap-1.5 ${active ? 'border-stone-800 text-stone-800' : 'border-transparent text-stone-400 hover:text-stone-600'}`}>
-                      {TYPE_LABEL[t]}
-                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${active ? 'bg-stone-800 text-white' : 'bg-stone-100 text-stone-500'}`}>{(draftByType[t] || []).length}</span>
-                    </button>
-                  );
-                })}
-              </div>
-
-              <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3 bg-stone-50">
-                {(draftByType[activeFolderType] || []).map((s) => (
-                  <div key={s.id} className="bg-white rounded-xl border border-stone-200 p-4">
-                    <div className="flex items-center gap-1.5 mb-3 text-xs text-stone-400">
-                      <span className="font-semibold text-emerald-700 uppercase tracking-wide">{TYPE_LABEL[s.service_type]}</span>
-                      {s.start_date && <span>· {formatDate(parseLocalDate(s.start_date), 'EEE d MMM', { locale: es })}</span>}
-                      {dayInfo[s.start_date]?.city && <span className="truncate">· {dayInfo[s.start_date].city}</span>}
-                    </div>
-                    <ServiceEditor
-                      service={s}
-                      onSet={(f, v, m) => draftSet(s.id, f, v, m)}
-                      onSetMeta={(obj) => draftSetMeta(s.id, obj)}
-                      onApplyPricing={(patch) => draftApplyPricing(s.id, patch)}
-                    />
-                  </div>
-                ))}
-              </div>
-            </>
-          ) : (
-            <div className="flex-1 px-5 py-12 text-center text-stone-400 text-sm">
-              Aún no hay servicios en la cotización. Agrégalos en la tabla y aquí aparecerán agrupados por tipo.
-            </div>
-          )}
-
-          <div className="px-5 py-3 border-t border-stone-100 flex items-center justify-end gap-2 bg-white flex-shrink-0">
-            <Button variant="outline" onClick={() => setFolderOpen(false)} className="rounded-xl" disabled={savingFolder}>Cancelar</Button>
-            <Button onClick={saveFolder} disabled={savingFolder || folderTypes.length === 0} className="rounded-xl text-white" style={{ backgroundColor: GREEN }}>
-              {savingFolder ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Check className="w-4 h-4 mr-1.5" />} Guardar
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
