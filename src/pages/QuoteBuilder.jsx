@@ -5,7 +5,7 @@ import { useUser } from '@clerk/clerk-react';
 import { parseLocalDate, formatDate } from '@/lib/dateUtils';
 import { es } from 'date-fns/locale';
 import { toast } from 'sonner';
-import { Loader2, ArrowLeft, Eye, CheckCircle2, Calendar, Columns3, Plus, Trash2, Check, GripVertical, Maximize2, Plane, PlaneLanding } from 'lucide-react';
+import { Loader2, ArrowLeft, Eye, CheckCircle2, Calendar, Columns3, Plus, Trash2, Check, GripVertical, Maximize2, Plane, PlaneLanding, ChevronDown, Hotel, Car, Compass, Ship, Train, Briefcase, Package } from 'lucide-react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { Button } from '@/components/ui/button';
 import CityPicker from '@/components/quote/CityPicker';
@@ -30,11 +30,48 @@ const TYPE_LABEL = Object.fromEntries(SERVICE_TYPES.map((t) => [t.value, t.label
 const ALL_TYPES = SERVICE_TYPES.map((t) => t.value);
 const DEFAULT_TYPES = ['hotel', 'vuelo', 'traslado', 'tour'];
 
+// Color e ícono por tipo para las fichas plegables
+const TYPE_META = {
+  hotel: { Icon: Hotel, bar: 'border-l-rose-400', chip: 'bg-rose-50 text-rose-500' },
+  vuelo: { Icon: Plane, bar: 'border-l-sky-400', chip: 'bg-sky-50 text-sky-500' },
+  traslado: { Icon: Car, bar: 'border-l-amber-400', chip: 'bg-amber-50 text-amber-500' },
+  tour: { Icon: Compass, bar: 'border-l-emerald-400', chip: 'bg-emerald-50 text-emerald-500' },
+  tren: { Icon: Train, bar: 'border-l-pink-400', chip: 'bg-pink-50 text-pink-500' },
+  crucero: { Icon: Ship, bar: 'border-l-cyan-400', chip: 'bg-cyan-50 text-cyan-500' },
+  dmc: { Icon: Briefcase, bar: 'border-l-indigo-400', chip: 'bg-indigo-50 text-indigo-500' },
+  otro: { Icon: Package, bar: 'border-l-stone-300', chip: 'bg-stone-100 text-stone-500' },
+};
+
 const money = (n) => `$${Math.round(Number(n) || 0).toLocaleString()}`;
 const flatten = (s) => ({ ...s, metadata: s.metadata || {}, price: s.price ?? s.total_price ?? 0 });
 // Un servicio "con contenido" es el que ya tiene nombre o algún monto. Las filas
 // vacías (creadas con "+ Tipo" pero sin llenar) no cuentan como servicios reales.
 const hasContent = (s) => !!(s.service_name && s.service_name.trim()) || Number(s.price) > 0 || Number(s.commission) > 0;
+
+// Resumen corto de lo principal de un servicio (para la ficha colapsada)
+const serviceSummary = (s) => {
+  const m = s.metadata || {};
+  const dstr = (d) => (d ? formatDate(parseLocalDate(d), 'd MMM', { locale: es }) : '');
+  const join = (arr) => arr.filter(Boolean).join(' · ');
+  switch (s.service_type) {
+    case 'hotel':
+      return join([s.start_date && `${dstr(s.start_date)}${m.check_out ? ` → ${dstr(m.check_out)}` : ''}`, m.nights && `${m.nights} noche${m.nights != 1 ? 's' : ''}`, m.room_type]);
+    case 'vuelo':
+      return join([m.airline, m.route, (m.departure_time || m.arrival_time) && `${m.departure_time || ''}${m.arrival_time ? ` → ${m.arrival_time}` : ''}`]);
+    case 'traslado':
+      return (m.transfer_origin || m.transfer_destination) ? `${m.transfer_origin || '?'} → ${m.transfer_destination || '?'}` : (m.transfer_type || '');
+    case 'tour':
+      return join([m.tour_name || m.tour_city, m.tour_date && dstr(m.tour_date)]);
+    case 'tren':
+      return join([m.train_operator, m.train_route]);
+    case 'crucero':
+      return join([m.cruise_ship, m.cruise_nights && `${m.cruise_nights} noches`]);
+    case 'dmc':
+      return join([m.dmc_name, m.dmc_destination]);
+    default:
+      return m.other_description || '';
+  }
+};
 const toKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const shiftDateStr = (str, delta) => { const d = parseLocalDate(str); if (!d) return str; d.setDate(d.getDate() + delta); return toKey(d); };
 const dayOffsetStr = (a, b) => { const da = parseLocalDate(a), db = parseLocalDate(b); if (!da || !db) return 0; return Math.round((db - da) / 86400000); };
@@ -143,6 +180,8 @@ export default function QuoteBuilder() {
   const [mainTab, setMainTab] = useState('itinerario'); // 'itinerario' | tipo de servicio
   const [draft, setDraft] = useState([]);
   const [savingFolder, setSavingFolder] = useState(false);
+  const [expandedCards, setExpandedCards] = useState(() => new Set());
+  const toggleCard = (id) => setExpandedCards((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const setPanelLocal = (id, field, value, meta) =>
     setSvcLocal(id, (r) => (meta ? { ...r, metadata: { ...r.metadata, [field]: value } } : { ...r, [field]: value }));
   const persistNow = (id, field, value, meta) => {
@@ -603,20 +642,37 @@ export default function QuoteBuilder() {
                   </div>
                 );
               }
+              const meta = TYPE_META[s.service_type] || TYPE_META.otro;
+              const Icon = meta.Icon;
+              const pv = pricingView(s);
+              const open = expandedCards.has(s.id);
+              const summary = serviceSummary(s);
               return (
-                <div key={s.id} className="bg-white rounded-2xl border border-stone-200 p-5">
-                  <div className="flex items-center gap-1.5 mb-4 text-xs">
-                    <span className="font-bold text-emerald-700 uppercase tracking-wide">{TYPE_LABEL[s.service_type]}</span>
-                    {s.start_date && <span className="text-stone-400">· {formatDate(parseLocalDate(s.start_date), 'EEE d MMM', { locale: es })}</span>}
-                    {dayInfo[s.start_date]?.city && <span className="text-stone-400 truncate">· {dayInfo[s.start_date].city}</span>}
-                    {outRange && <span className="text-[10px] font-semibold text-amber-600 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">fuera del itinerario</span>}
-                    <span className="flex-1" />
-                    <button onClick={() => draftToggleDelete(s.id)} title="Eliminar servicio" className="p-1 rounded text-stone-300 hover:text-red-600"><Trash2 className="w-3.5 h-3.5" /></button>
-                  </div>
-                  <ServiceEditor grid service={s}
-                    onSet={(f, v, m) => draftSet(s.id, f, v, m)}
-                    onSetMeta={(obj) => draftSetMeta(s.id, obj)}
-                    onApplyPricing={(patch) => draftApplyPricing(s.id, patch)} />
+                <div key={s.id} className={`bg-white rounded-2xl border border-stone-200 border-l-4 ${meta.bar} overflow-hidden`}>
+                  <button onClick={() => toggleCard(s.id)} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-stone-50/60 transition-colors">
+                    <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${meta.chip}`}><Icon className="w-4 h-4" /></div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-semibold text-stone-800 truncate">{s.service_name || TYPE_LABEL[s.service_type]}</p>
+                        {outRange && <span className="text-[9px] font-semibold text-amber-600 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 flex-shrink-0">fuera del itinerario</span>}
+                      </div>
+                      <p className="text-xs text-stone-400 truncate">{summary || 'Sin detalles — clic para editar'}</p>
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <p className="text-sm font-bold text-stone-800 tabular-nums">{money(pv.total)}</p>
+                      <p className="text-[10px] text-stone-400">{pv.pt === 'neto' ? 'Neto' : 'Bruto'}{pv.commission > 0 ? ` · com ${money(pv.commission)}` : ''}</p>
+                    </div>
+                    <ChevronDown className={`w-4 h-4 text-stone-300 flex-shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+                  </button>
+                  {open && (
+                    <div className="px-4 pb-4 pt-2 border-t border-stone-100">
+                      <ServiceEditor grid service={s}
+                        onSet={(f, v, m) => draftSet(s.id, f, v, m)}
+                        onSetMeta={(obj) => draftSetMeta(s.id, obj)}
+                        onApplyPricing={(patch) => draftApplyPricing(s.id, patch)}
+                        onDelete={() => draftToggleDelete(s.id)} />
+                    </div>
+                  )}
                 </div>
               );
             })}
