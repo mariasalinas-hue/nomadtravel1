@@ -195,20 +195,25 @@ export default function QuoteBuilder() {
       metadata: { ...r.metadata, ...metaPatch },
     } : r)));
   };
+  const draftToggleDelete = (id) => setDraft((ds) => ds.map((r) => (r.id === id ? { ...r, _del: !r._del } : r)));
   const editedFields = (d) => ({ service_name: d.service_name, price: Number(d.price) || 0, commission: Number(d.commission) || 0, metadata: d.metadata || {} });
+  const isEdited = (d) => { const cur = servicesRef.current.find((s) => s.id === d.id); return cur && JSON.stringify(editedFields(cur)) !== JSON.stringify(editedFields(d)); };
   const saveFolder = async () => {
     setSavingFolder(true);
     try {
-      const changed = draft.filter((d) => {
-        const cur = servicesRef.current.find((s) => s.id === d.id);
-        return cur && JSON.stringify(editedFields(cur)) !== JSON.stringify(editedFields(d));
-      });
+      const dels = draft.filter((d) => d._del);
+      const delIds = new Set(dels.map((d) => d.id));
+      const changed = draft.filter((d) => !d._del && isEdited(d));
       // Recién aquí se refleja en la tabla principal
-      const merged = servicesRef.current.map((s) => { const d = draft.find((x) => x.id === s.id); return d ? { ...s, ...editedFields(d) } : s; });
+      const merged = servicesRef.current
+        .filter((s) => !delIds.has(s.id))
+        .map((s) => { const d = draft.find((x) => x.id === s.id); return d ? { ...s, ...editedFields(d) } : s; });
       setServices(merged);
+      for (const d of dels) await supabaseAPI.entities.TripService.delete(d.id).catch(() => {});
       for (const d of changed) await persistSvc(d.id, editedFields(d));
       setDraft(merged.map((s) => ({ ...s, metadata: { ...(s.metadata || {}) } })));
-      toast.success(changed.length ? `Guardado (${changed.length} servicio${changed.length !== 1 ? 's' : ''})` : 'Sin cambios');
+      const n = changed.length + dels.length;
+      toast.success(n ? `Guardado (${n} cambio${n !== 1 ? 's' : ''})` : 'Sin cambios');
     } finally {
       setSavingFolder(false);
     }
@@ -226,8 +231,9 @@ export default function QuoteBuilder() {
   }, [services]);
   const draftDirty = useMemo(() => {
     if (draft.length === 0) return false;
-    return draft.some((d) => { const cur = services.find((s) => s.id === d.id); return cur && JSON.stringify(editedFields(cur)) !== JSON.stringify(editedFields(d)); });
+    return draft.some((d) => d._del || (() => { const cur = services.find((s) => s.id === d.id); return cur && JSON.stringify(editedFields(cur)) !== JSON.stringify(editedFields(d)); })());
   }, [draft, services]);
+  const dayKeySet = useMemo(() => new Set(days.map(toKey)), [days]);
   const activeTab = mainTab !== 'itinerario' && !typeTabs.includes(mainTab) ? 'itinerario' : mainTab;
 
   // Días que cubre cada hotel (para marcar sutilmente las noches en el itinerario)
@@ -493,15 +499,14 @@ export default function QuoteBuilder() {
                                             {(() => {
                                               const pv = pricingView(s);
                                               return (
-                                                <div className="flex items-center justify-between gap-1 px-1 pt-0.5">
+                                                <div className="flex items-center justify-between gap-1 px-1">
                                                   <button type="button" title="Cambiar bruto/neto"
                                                     onClick={() => setPricing(s.id, applyType(s, pv.pt === 'neto' ? 'bruto' : 'neto'))}
-                                                    className={`text-[9px] font-bold px-1 py-0.5 rounded ${pv.pt === 'neto' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
-                                                    {pv.pt === 'neto' ? 'NETO' : 'BRUTO'}
+                                                    className="flex items-center gap-1 text-[9px] font-medium text-stone-400 hover:text-stone-600">
+                                                    <span className={`w-1.5 h-1.5 rounded-full ${pv.pt === 'neto' ? 'bg-emerald-500' : 'bg-orange-400'}`} />
+                                                    {pv.pt === 'neto' ? 'Neto' : 'Bruto'}
                                                   </button>
-                                                  <span className="text-[9px] text-stone-400 tabular-nums truncate" title="Comisión">
-                                                    Com {money(pv.commission)}{pv.auto ? ' · 8%' : ''}
-                                                  </span>
+                                                  {pv.commission > 0 && <span className="text-[9px] text-stone-300 tabular-nums truncate" title="Comisión">{money(pv.commission)}</span>}
                                                 </div>
                                               );
                                             })()}
@@ -571,19 +576,33 @@ export default function QuoteBuilder() {
             </div>
           </div>
           <div className="space-y-3">
-            {(draftByType[activeTab] || []).map((s) => (
-              <div key={s.id} className="bg-white rounded-2xl border border-stone-200 p-5">
-                <div className="flex items-center gap-1.5 mb-4 text-xs">
-                  <span className="font-bold text-emerald-700 uppercase tracking-wide">{TYPE_LABEL[s.service_type]}</span>
-                  {s.start_date && <span className="text-stone-400">· {formatDate(parseLocalDate(s.start_date), 'EEE d MMM', { locale: es })}</span>}
-                  {dayInfo[s.start_date]?.city && <span className="text-stone-400 truncate">· {dayInfo[s.start_date].city}</span>}
+            {(draftByType[activeTab] || []).map((s) => {
+              const outRange = !s.start_date || !dayKeySet.has(s.start_date);
+              if (s._del) {
+                return (
+                  <div key={s.id} className="bg-stone-50 rounded-2xl border border-dashed border-stone-200 px-5 py-3 flex items-center justify-between gap-3">
+                    <span className="text-sm text-stone-400 line-through truncate">{s.service_name || TYPE_LABEL[s.service_type]}{s.start_date ? ` · ${formatDate(parseLocalDate(s.start_date), 'd MMM', { locale: es })}` : ''}</span>
+                    <button onClick={() => draftToggleDelete(s.id)} className="text-xs font-semibold text-stone-500 hover:text-stone-700 flex-shrink-0">Deshacer</button>
+                  </div>
+                );
+              }
+              return (
+                <div key={s.id} className="bg-white rounded-2xl border border-stone-200 p-5">
+                  <div className="flex items-center gap-1.5 mb-4 text-xs">
+                    <span className="font-bold text-emerald-700 uppercase tracking-wide">{TYPE_LABEL[s.service_type]}</span>
+                    {s.start_date && <span className="text-stone-400">· {formatDate(parseLocalDate(s.start_date), 'EEE d MMM', { locale: es })}</span>}
+                    {dayInfo[s.start_date]?.city && <span className="text-stone-400 truncate">· {dayInfo[s.start_date].city}</span>}
+                    {outRange && <span className="text-[10px] font-semibold text-amber-600 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">fuera del itinerario</span>}
+                    <span className="flex-1" />
+                    <button onClick={() => draftToggleDelete(s.id)} title="Eliminar servicio" className="p-1 rounded text-stone-300 hover:text-red-600"><Trash2 className="w-3.5 h-3.5" /></button>
+                  </div>
+                  <ServiceEditor grid service={s}
+                    onSet={(f, v, m) => draftSet(s.id, f, v, m)}
+                    onSetMeta={(obj) => draftSetMeta(s.id, obj)}
+                    onApplyPricing={(patch) => draftApplyPricing(s.id, patch)} />
                 </div>
-                <ServiceEditor grid service={s}
-                  onSet={(f, v, m) => draftSet(s.id, f, v, m)}
-                  onSetMeta={(obj) => draftSetMeta(s.id, obj)}
-                  onApplyPricing={(patch) => draftApplyPricing(s.id, patch)} />
-              </div>
-            ))}
+              );
+            })}
             {(draftByType[activeTab] || []).length === 0 && (
               <p className="text-center text-stone-400 text-sm py-10">Sin servicios de este tipo.</p>
             )}

@@ -16,7 +16,7 @@ export default function PricingBlock({ service, onApply }) {
   useEffect(() => { setCommStr(view.commission ? String(view.commission) : ''); }, [view.commission]);
 
   return (
-    <div className="rounded-xl border border-stone-200 bg-stone-50/50 p-3 space-y-2.5">
+    <div className="rounded-lg border border-stone-100 bg-stone-50/40 p-3 space-y-2.5">
       <div className="grid grid-cols-[1fr_5rem_1fr] gap-2 items-end">
         <div className="space-y-1">
           <label className="text-[11px] font-semibold uppercase tracking-wide text-stone-400">
@@ -50,9 +50,7 @@ export default function PricingBlock({ service, onApply }) {
         <span className="text-base font-bold text-stone-800 tabular-nums">{money(view.total)}</span>
       </div>
       <p className="text-[10px] text-stone-400 leading-tight">
-        {view.pt === 'neto'
-          ? 'Neto + comisión = total que paga el cliente.'
-          : 'El precio bruto pasa tal cual; la comisión es 8% por default (editable).'}
+        {view.pt === 'neto' ? 'Total = neto + comisión.' : 'Comisión 8% por default (editable).'}
       </p>
     </div>
   );
