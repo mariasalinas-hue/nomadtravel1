@@ -5,13 +5,13 @@ import { useUser } from '@clerk/clerk-react';
 import { parseLocalDate, formatDate } from '@/lib/dateUtils';
 import { es } from 'date-fns/locale';
 import { toast } from 'sonner';
-import { Loader2, ArrowLeft, Eye, CheckCircle2, Calendar, Columns3, Plus, Trash2, Check, GripVertical, Maximize2, Plane, PlaneLanding, ChevronDown, Hotel, Car, Compass, Ship, Train, Briefcase, Package } from 'lucide-react';
+import { Loader2, ArrowLeft, Eye, CheckCircle2, Calendar, Columns3, Plus, Trash2, Check, GripVertical, Plane, PlaneLanding, ChevronDown, Hotel, Car, Compass, Ship, Train, Briefcase, Package } from 'lucide-react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { Button } from '@/components/ui/button';
 import CityPicker from '@/components/quote/CityPicker';
 import ServiceDetailPanel from '@/components/quote/ServiceDetailPanel';
 import ServiceEditor from '@/components/quote/ServiceEditor';
-import { pricingView, applyTotal, applyType } from '@/lib/quotePricing';
+import { pricingView } from '@/lib/quotePricing';
 
 const GREEN = '#2E442A';
 
@@ -32,14 +32,14 @@ const DEFAULT_TYPES = ['hotel', 'vuelo', 'traslado', 'tour'];
 
 // Color e ícono por tipo para las fichas plegables
 const TYPE_META = {
-  hotel: { Icon: Hotel, bar: 'border-l-rose-400', chip: 'bg-rose-50 text-rose-500' },
-  vuelo: { Icon: Plane, bar: 'border-l-sky-400', chip: 'bg-sky-50 text-sky-500' },
-  traslado: { Icon: Car, bar: 'border-l-amber-400', chip: 'bg-amber-50 text-amber-500' },
-  tour: { Icon: Compass, bar: 'border-l-emerald-400', chip: 'bg-emerald-50 text-emerald-500' },
-  tren: { Icon: Train, bar: 'border-l-pink-400', chip: 'bg-pink-50 text-pink-500' },
-  crucero: { Icon: Ship, bar: 'border-l-cyan-400', chip: 'bg-cyan-50 text-cyan-500' },
-  dmc: { Icon: Briefcase, bar: 'border-l-indigo-400', chip: 'bg-indigo-50 text-indigo-500' },
-  otro: { Icon: Package, bar: 'border-l-stone-300', chip: 'bg-stone-100 text-stone-500' },
+  hotel: { Icon: Hotel, bar: 'border-l-rose-400', chip: 'bg-rose-50 text-rose-500', dot: 'bg-rose-400' },
+  vuelo: { Icon: Plane, bar: 'border-l-sky-400', chip: 'bg-sky-50 text-sky-500', dot: 'bg-sky-400' },
+  traslado: { Icon: Car, bar: 'border-l-amber-400', chip: 'bg-amber-50 text-amber-500', dot: 'bg-amber-400' },
+  tour: { Icon: Compass, bar: 'border-l-emerald-400', chip: 'bg-emerald-50 text-emerald-500', dot: 'bg-emerald-400' },
+  tren: { Icon: Train, bar: 'border-l-pink-400', chip: 'bg-pink-50 text-pink-500', dot: 'bg-pink-400' },
+  crucero: { Icon: Ship, bar: 'border-l-cyan-400', chip: 'bg-cyan-50 text-cyan-500', dot: 'bg-cyan-400' },
+  dmc: { Icon: Briefcase, bar: 'border-l-indigo-400', chip: 'bg-indigo-50 text-indigo-500', dot: 'bg-indigo-400' },
+  otro: { Icon: Package, bar: 'border-l-stone-300', chip: 'bg-stone-100 text-stone-500', dot: 'bg-stone-300' },
 };
 
 const money = (n) => `$${Math.round(Number(n) || 0).toLocaleString()}`;
@@ -74,7 +74,6 @@ const serviceSummary = (s) => {
 };
 const toKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const shiftDateStr = (str, delta) => { const d = parseLocalDate(str); if (!d) return str; d.setDate(d.getDate() + delta); return toKey(d); };
-const dayOffsetStr = (a, b) => { const da = parseLocalDate(a), db = parseLocalDate(b); if (!da || !db) return 0; return Math.round((db - da) / 86400000); };
 
 const buildDays = (startStr, endStr) => {
   const s = parseLocalDate(startStr); const e = parseLocalDate(endStr);
@@ -395,8 +394,6 @@ export default function QuoteBuilder() {
   if (!trip) return <div className="min-h-screen flex items-center justify-center text-stone-500">Cotización no encontrada.</div>;
 
   const inputCls = 'w-full bg-transparent text-sm text-stone-800 outline-none rounded px-1.5 py-1 focus:bg-blue-50/70 focus:ring-1 focus:ring-blue-300';
-  const cellName = 'w-full bg-transparent text-xs font-medium text-stone-800 outline-none rounded px-1 py-0.5 focus:bg-blue-50/70';
-  const cellPrice = 'w-full bg-transparent text-sm font-bold text-stone-800 text-right tabular-nums outline-none rounded px-1 py-0.5 focus:bg-blue-50/70';
   const nonTypeCols = 5;
 
   return (
@@ -531,41 +528,15 @@ export default function QuoteBuilder() {
                                     {cell.map((s, idx) => (
                                       <Draggable key={s.id} draggableId={s.id} index={idx}>
                                         {(dp) => (
-                                          <div ref={dp.innerRef} {...dp.draggableProps} className="group/svc rounded-lg border border-stone-100 bg-stone-50/60 px-1.5 py-1">
-                                            <div className="flex items-start gap-1">
-                                              <span {...dp.dragHandleProps} className="mt-0.5 text-stone-300 hover:text-stone-500 cursor-grab" title="Arrastrar a otro día">
-                                                <GripVertical className="w-3 h-3" />
-                                              </span>
-                                              <input className={cellName} placeholder="Nombre…" value={s.service_name || ''}
-                                                onChange={(e) => setSvcLocal(s.id, (r) => ({ ...r, service_name: e.target.value }))} onBlur={() => saveSvcField(s.id, 'service_name')} />
-                                              <button onClick={() => setPanelId(s.id)} title="Ver detalle" className="opacity-0 group-hover/svc:opacity-100 p-0.5 rounded text-stone-300 hover:text-stone-700"><Maximize2 className="w-3 h-3" /></button>
-                                              <button onClick={() => deleteService(s.id)} title="Eliminar" className="opacity-0 group-hover/svc:opacity-100 p-0.5 rounded text-stone-300 hover:text-red-600"><Trash2 className="w-3 h-3" /></button>
-                                            </div>
-                                            {s.service_type === 'vuelo' && (s.metadata?.departure_time || s.metadata?.arrival_time) && (
-                                              <div className="text-[10px] text-stone-400 px-1 flex items-center gap-1 tabular-nums whitespace-nowrap" title="Salida → Llegada">
-                                                <Plane className="w-2.5 h-2.5 flex-shrink-0" /> {s.metadata?.departure_time || '—'} → {s.metadata?.arrival_time || '—'}
-                                                {s.metadata?.arrival_date && dayOffsetStr(s.start_date, s.metadata.arrival_date) > 0 && (
-                                                  <span className="text-amber-600 font-semibold">+{dayOffsetStr(s.start_date, s.metadata.arrival_date)}</span>
-                                                )}
-                                              </div>
-                                            )}
-                                            <input type="number" step="0.01" min="0" placeholder="$0" className={cellPrice} value={s.price ?? 0}
-                                              title={pricingView(s).pt === 'neto' ? 'Total final (neto + comisión)' : 'Total (bruto)'}
-                                              onChange={(e) => setSvcLocal(s.id, (r) => ({ ...r, price: e.target.value }))} onBlur={() => setPricing(s.id, applyTotal(s, s.price))} />
-                                            {(() => {
-                                              const pv = pricingView(s);
-                                              return (
-                                                <div className="flex items-center justify-between gap-1 px-1">
-                                                  <button type="button" title="Cambiar bruto/neto"
-                                                    onClick={() => setPricing(s.id, applyType(s, pv.pt === 'neto' ? 'bruto' : 'neto'))}
-                                                    className="flex items-center gap-1 text-[9px] font-medium text-stone-400 hover:text-stone-600">
-                                                    <span className={`w-1.5 h-1.5 rounded-full ${pv.pt === 'neto' ? 'bg-emerald-500' : 'bg-orange-400'}`} />
-                                                    {pv.pt === 'neto' ? 'Neto' : 'Bruto'}
-                                                  </button>
-                                                  {pv.commission > 0 && <span className="text-[9px] text-stone-300 tabular-nums truncate" title="Comisión">{money(pv.commission)}</span>}
-                                                </div>
-                                              );
-                                            })()}
+                                          <div ref={dp.innerRef} {...dp.draggableProps} className="group/svc flex items-center gap-1 rounded-md border border-stone-100 bg-white px-1 h-7">
+                                            <span {...dp.dragHandleProps} className="text-stone-300 hover:text-stone-500 cursor-grab flex-shrink-0" title="Arrastrar a otro día">
+                                              <GripVertical className="w-3 h-3" />
+                                            </span>
+                                            <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${(TYPE_META[s.service_type] || TYPE_META.otro).dot}`} />
+                                            <input className="flex-1 min-w-0 bg-transparent text-xs font-medium text-stone-800 outline-none truncate placeholder:text-stone-300" placeholder="Nombre…" value={s.service_name || ''}
+                                              onChange={(e) => setSvcLocal(s.id, (r) => ({ ...r, service_name: e.target.value }))} onBlur={() => saveSvcField(s.id, 'service_name')} />
+                                            <button onClick={() => setPanelId(s.id)} title="Editar precio y detalle" className="text-[11px] font-bold text-stone-600 tabular-nums flex-shrink-0 hover:text-blue-600">{money(pricingView(s).total)}</button>
+                                            <button onClick={() => deleteService(s.id)} title="Eliminar" className="opacity-0 group-hover/svc:opacity-100 p-0.5 rounded text-stone-300 hover:text-red-600 flex-shrink-0"><Trash2 className="w-3 h-3" /></button>
                                           </div>
                                         )}
                                       </Draggable>
