@@ -5,7 +5,7 @@ import {
   LayoutDashboard, Users, Plane, CheckCircle, Menu, X, MapPin,
   DollarSign, Building2, BarChart3, BookOpen, Key, Wallet,
   Lock, Eye, ShieldCheck, CreditCard, ChevronLeft, ChevronRight,
-  Database, Search, UserCheck, ListChecks, CalendarDays
+  Database, Search, UserCheck, ListChecks, CalendarDays, Sparkles
 } from 'lucide-react';
 import QuickPaymentFAB from '@/components/ui/QuickPaymentFAB';
 import PaymentInfoModal from '@/components/ui/PaymentInfoModal';
@@ -196,6 +196,7 @@ export default function Layout({ children, currentPageName }) {
     { name: 'Todos los Viajes', page: 'AdminTrips', icon: Plane },
     { name: 'Viajes Vendidos', page: 'AdminSoldTrips', icon: CheckCircle },
     { name: 'Calendario', page: 'TripCalendar', icon: CalendarDays },
+    { name: 'Pregúntale a tu CRM', page: 'AskCrm', icon: Sparkles },
     { name: 'Progreso de Agentes', page: 'Statistics', icon: BarChart3 },
     { name: 'Comisiones Internas', page: 'InternalCommissions', icon: Wallet },
     { name: 'Pagos Internos de Proveedores', page: 'InternalPayments', icon: DollarSign },
@@ -220,6 +221,7 @@ export default function Layout({ children, currentPageName }) {
     { name: 'Cotizaciones', page: 'Trips', icon: Plane },
     { name: 'Corsario de Viajes', page: 'SoldTrips', icon: CheckCircle },
     { name: 'Calendario', page: 'TripCalendar', icon: CalendarDays },
+    { name: 'Pregúntale a tu CRM', page: 'AskCrm', icon: Sparkles },
     { name: 'Mis Comisiones', page: 'Commissions', icon: DollarSign },
     { name: 'Mi Progreso', page: 'Statistics', icon: BarChart3 },
     { name: 'Proveedores', page: 'Suppliers', icon: Building2 },

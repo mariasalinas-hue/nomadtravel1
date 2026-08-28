@@ -6,6 +6,7 @@ import AdminSoldTrips from './pages/AdminSoldTrips';
 import AdminServiceOptions from './pages/AdminServiceOptions';
 import AdminSpoof from './pages/AdminSpoof';
 import AdminTrips from './pages/AdminTrips';
+import AskCrm from './pages/AskCrm';
 import Attendance from './pages/Attendance';
 import ClientDetail from './pages/ClientDetail';
 import Clients from './pages/Clients';
@@ -43,6 +44,7 @@ export const PAGES = {
     "AdminSoldTrips": AdminSoldTrips,
     "AdminSpoof": AdminSpoof,
     "AdminTrips": AdminTrips,
+    "AskCrm": AskCrm,
     "Attendance": Attendance,
     "ClientDetail": ClientDetail,
     "Clients": Clients,
