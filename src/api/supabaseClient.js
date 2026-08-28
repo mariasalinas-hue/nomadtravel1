@@ -75,7 +75,16 @@ export const createSupabaseAPI = () => {
           query = query.eq('is_deleted', false);
         }
         Object.entries(filters).forEach(([key, value]) => {
-          query = query.eq(key, value);
+          // Soporta filtros IN para empujar el predicado al servidor:
+          //   filter({ sold_trip_id: [id1, id2, ...] })
+          //   filter({ sold_trip_id: { in: [id1, id2, ...] } })
+          if (Array.isArray(value)) {
+            query = query.in(key, value);
+          } else if (value && typeof value === 'object' && Array.isArray(value.in)) {
+            query = query.in(key, value.in);
+          } else {
+            query = query.eq(key, value);
+          }
         });
         if (options.hasCreatedDate !== false) {
           query = query.order('created_date', { ascending: false });

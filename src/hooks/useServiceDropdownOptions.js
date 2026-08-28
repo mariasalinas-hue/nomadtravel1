@@ -6,6 +6,7 @@ export const DROPDOWN_CATEGORIES = {
   hotel_chain: { label: 'Cadenas Hoteleras', serviceType: 'hotel' },
   hotel_reserved_by: { label: 'Reservado por (Hotel)', serviceType: 'hotel' },
   cruise_line: { label: 'Líneas de Crucero', serviceType: 'crucero' },
+  cruise_ship: { label: 'Barcos / Cruceros', serviceType: 'crucero' },
   cruise_provider: { label: 'Proveedores de Crucero', serviceType: 'crucero' },
   flight_consolidator_nomad: { label: 'Consolidadores de Vuelo (Nomad)', serviceType: 'vuelo' },
   train_provider: { label: 'Proveedores de Tren', serviceType: 'tren' },
