@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, FileText, Plus, Trash2 } from 'lucide-react';
+import { Loader2, FileText } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import { toast } from 'sonner';
 
@@ -33,11 +33,6 @@ export default function AgentInvoiceGenerator({ open, onClose, services, soldTri
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [errors, setErrors] = useState({});
-  // Descontados: dinero que te descuentan (ej. invoice tarde). Concepto + monto.
-  const [deductions, setDeductions] = useState([]);
-  const addDeduction = () => setDeductions(prev => [...prev, { concept: '', amount: '' }]);
-  const removeDeduction = (i) => setDeductions(prev => prev.filter((_, idx) => idx !== i));
-  const updateDeduction = (i, field, val) => setDeductions(prev => prev.map((d, idx) => (idx === i ? { ...d, [field]: val } : d)));
 
   useEffect(() => {
     if (open && currentUser) {
@@ -308,44 +303,6 @@ export default function AgentInvoiceGenerator({ open, onClose, services, soldTri
       doc.text(`$${totalOwed.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, col4X - 3, yPos + 7, { align: 'right' });
       yPos += 18;
 
-      // ── Descontados (deducciones) ──
-      const cleanDeductions = deductions
-        .map(d => ({ concept: (d.concept || '').trim(), amount: parseFloat(d.amount) || 0 }))
-        .filter(d => d.amount > 0);
-      const totalDescontado = cleanDeductions.reduce((s, d) => s + d.amount, 0);
-
-      if (totalDescontado > 0) {
-        ensureSpace(10 + cleanDeductions.length * 6 + 20);
-        doc.setFontSize(10);
-        doc.setFont(undefined, 'bold');
-        doc.setTextColor(...darkText);
-        doc.text('Descontados', margin, yPos);
-        yPos += 7;
-
-        doc.setFontSize(9);
-        doc.setFont(undefined, 'normal');
-        cleanDeductions.forEach((d) => {
-          doc.setTextColor(...grayText);
-          doc.text(d.concept || 'Descuento', col1X + 3, yPos);
-          doc.setTextColor(200, 60, 60);
-          doc.text(`-$${d.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, col4X - 3, yPos, { align: 'right' });
-          yPos += 6;
-        });
-        yPos += 3;
-
-        // Total neto a pagar
-        ensureSpace(14);
-        doc.setFillColor(...brandGreen);
-        doc.roundedRect(margin, yPos, contentWidth, 10, 1, 1, 'F');
-        doc.setTextColor(255, 255, 255);
-        doc.setFontSize(10);
-        doc.setFont(undefined, 'bold');
-        doc.text('TOTAL NETO A PAGAR', col1X + 3, yPos + 7);
-        doc.setFontSize(12);
-        doc.text(`$${(totalOwed - totalDescontado).toLocaleString('en-US', { minimumFractionDigits: 2 })}`, col4X - 3, yPos + 7, { align: 'right' });
-        yPos += 18;
-      }
-
       // ── Payment Instructions ──
       ensureSpace(40);
       doc.setDrawColor(...borderGray);
@@ -535,60 +492,13 @@ export default function AgentInvoiceGenerator({ open, onClose, services, soldTri
                 );
               })}
             </div>
-          </div>
-
-          {/* Descontados */}
-          <div className="border-t pt-4">
-            <div className="flex items-center justify-between mb-2">
-              <div>
-                <h3 className="font-semibold">Descontados</h3>
-                <p className="text-xs text-stone-400">Dinero que te descuentan (ej. invoice subido tarde). Se resta del total.</p>
-              </div>
-              <Button type="button" variant="outline" size="sm" onClick={addDeduction} className="rounded-lg">
-                <Plus className="w-4 h-4 mr-1" /> Agregar
-              </Button>
+            <div className="flex justify-between items-center bg-stone-800 text-white p-3 rounded mt-2">
+              <span className="font-semibold">Total a facturar:</span>
+              <span className="text-lg font-bold">
+                ${(services.reduce((sum, s) => sum + ((s.commission || 0) * 0.5), 0)).toLocaleString()}
+              </span>
             </div>
-            {deductions.length === 0 ? (
-              <p className="text-sm text-stone-400 py-1">Sin descuentos.</p>
-            ) : (
-              <div className="space-y-2">
-                {deductions.map((d, i) => (
-                  <div key={i} className="flex items-center gap-2">
-                    <Input placeholder="Concepto (ej. invoice tarde)" value={d.concept} onChange={(e) => updateDeduction(i, 'concept', e.target.value)} className="flex-1" />
-                    <Input type="number" placeholder="Monto" value={d.amount} onChange={(e) => updateDeduction(i, 'amount', e.target.value)} className="w-32 text-right" />
-                    <button type="button" onClick={() => removeDeduction(i)} title="Quitar" className="p-2 text-stone-300 hover:text-red-500">
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
-
-          {/* Totales */}
-          {(() => {
-            const subtotal = services.reduce((sum, s) => sum + ((s.commission || 0) * 0.5), 0);
-            const totalDescontado = deductions.reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0);
-            const net = subtotal - totalDescontado;
-            return (
-              <div className="space-y-1">
-                <div className="flex justify-between text-sm text-stone-600 px-1">
-                  <span>Subtotal comisiones</span>
-                  <span>${subtotal.toLocaleString()}</span>
-                </div>
-                {totalDescontado > 0 && (
-                  <div className="flex justify-between text-sm text-red-600 px-1">
-                    <span>Descontados</span>
-                    <span>-${totalDescontado.toLocaleString()}</span>
-                  </div>
-                )}
-                <div className="flex justify-between items-center bg-stone-800 text-white p-3 rounded">
-                  <span className="font-semibold">Total a facturar:</span>
-                  <span className="text-lg font-bold">${net.toLocaleString()}</span>
-                </div>
-              </div>
-            );
-          })()}
 
           <div className="flex justify-end gap-3 pt-4">
             <Button variant="outline" onClick={onClose}>
