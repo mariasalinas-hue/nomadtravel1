@@ -1,18 +1,29 @@
-import React from 'react';
+import { useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { formatDate } from '@/lib/dateUtils';
 import { es } from 'date-fns/locale';
-import { Printer, MapPin, CheckCircle } from 'lucide-react';
+import { Printer, MapPin, CheckCircle, Plus, Trash2 } from 'lucide-react';
 
 export default function AgentCommissionInvoice({ open, onClose, commissions, onMarkAsPaid }) {
+  // Descontados: dinero que se le descuenta al agente (ej. invoice tarde).
+  const [deductions, setDeductions] = useState([]);
+  const addDeduction = () => setDeductions(prev => [...prev, { concept: '', amount: '' }]);
+  const removeDeduction = (i) => setDeductions(prev => prev.filter((_, idx) => idx !== i));
+  const updateDeduction = (i, field, val) => setDeductions(prev => prev.map((d, idx) => (idx === i ? { ...d, [field]: val } : d)));
+
   if (!commissions || commissions.length === 0) return null;
+
+  const money = (n) => `$${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
   // Group by agent
   const agentName = commissions[0]?.agent_name || 'Agente';
   const totalAgentCommission = commissions.reduce((sum, c) => sum + (c.agent_commission || 0), 0);
   const totalNomadCommission = commissions.reduce((sum, c) => sum + (c.nomad_commission || 0), 0);
   const totalCommission = commissions.reduce((sum, c) => sum + (c.estimated_amount || 0), 0);
+  const totalDescontado = deductions.reduce((s, d) => s + (parseFloat(d.amount) || 0), 0);
+  const netToPay = totalAgentCommission - totalDescontado;
 
   const handlePrint = () => {
     window.print();
@@ -88,10 +99,10 @@ export default function AgentCommissionInvoice({ open, onClose, commissions, onM
                       </td>
                       <td className="p-3 text-stone-600">{commission.service_provider || '-'}</td>
                       <td className="p-3 text-right text-stone-600">
-                        ${(commission.estimated_amount || 0).toLocaleString()}
+                        {money(commission.estimated_amount)}
                       </td>
                       <td className="p-3 text-right font-semibold" style={{ color: '#2E442A' }}>
-                        ${(commission.agent_commission || 0).toLocaleString()}
+                        {money(commission.agent_commission)}
                       </td>
                     </tr>
                   ))}
@@ -100,17 +111,54 @@ export default function AgentCommissionInvoice({ open, onClose, commissions, onM
             </div>
           </div>
 
+          {/* Descontados (editor en pantalla; no se imprime) */}
+          <div className="mb-6 print:hidden">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h3 className="text-sm font-semibold text-stone-500">Descontados</h3>
+                <p className="text-xs text-stone-400">Dinero descontado al agente (ej. invoice subido tarde). Se resta del total.</p>
+              </div>
+              <Button variant="outline" size="sm" onClick={addDeduction} className="rounded-lg">
+                <Plus className="w-4 h-4 mr-1" /> Agregar
+              </Button>
+            </div>
+            {deductions.length === 0 ? (
+              <p className="text-sm text-stone-400">Sin descuentos.</p>
+            ) : (
+              <div className="space-y-2">
+                {deductions.map((d, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <Input placeholder="Concepto (ej. invoice tarde)" value={d.concept} onChange={(e) => updateDeduction(i, 'concept', e.target.value)} className="flex-1 rounded-lg" />
+                    <Input type="number" placeholder="Monto" value={d.amount} onChange={(e) => updateDeduction(i, 'amount', e.target.value)} className="w-28 rounded-lg text-right" />
+                    <button onClick={() => removeDeduction(i)} title="Quitar" className="p-2 text-stone-300 hover:text-red-500">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* Totals */}
           <div className="flex justify-end mb-8">
-            <div className="w-72 bg-stone-50 rounded-xl p-4">
-              <div 
-                className="flex justify-between"
-                style={{ borderColor: '#2E442A' }}
-              >
+            <div className="w-72 bg-stone-50 rounded-xl p-4 space-y-2">
+              {totalDescontado > 0 && (
+                <>
+                  <div className="flex justify-between text-sm text-stone-600">
+                    <span>Subtotal comisiones</span>
+                    <span>{money(totalAgentCommission)}</span>
+                  </div>
+                  {deductions.filter(d => (parseFloat(d.amount) || 0) > 0).map((d, i) => (
+                    <div key={i} className="flex justify-between text-sm text-red-600">
+                      <span className="truncate mr-2">{d.concept || 'Descuento'}</span>
+                      <span className="whitespace-nowrap">-{money(parseFloat(d.amount) || 0)}</span>
+                    </div>
+                  ))}
+                </>
+              )}
+              <div className="flex justify-between pt-2 border-t" style={{ borderColor: '#2E442A' }}>
                 <span className="font-bold" style={{ color: '#2E442A' }}>Total a Pagar</span>
-                <span className="text-xl font-bold" style={{ color: '#2E442A' }}>
-                  ${totalAgentCommission.toLocaleString()}
-                </span>
+                <span className="text-xl font-bold" style={{ color: '#2E442A' }}>{money(netToPay)}</span>
               </div>
             </div>
           </div>
