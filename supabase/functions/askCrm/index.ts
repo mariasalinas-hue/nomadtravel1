@@ -7,6 +7,9 @@
 import OpenAI from 'npm:openai@4.73.1';
 
 const openaiApiKey = Deno.env.get('OPENAI_API_KEY')!;
+// Modelo configurable por secreto (ASKCRM_MODEL). Así puedes cambiar entre
+// modelos económicos/potentes SIN tocar el código, según lo que te convenga.
+const MODEL = Deno.env.get('ASKCRM_MODEL') || 'gpt-4o-mini';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -50,7 +53,7 @@ Deno.serve(async (req) => {
     const openai = new OpenAI({ apiKey: openaiApiKey });
 
     const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
+      model: MODEL,
       messages: [
         { role: 'system', content: SYSTEM_PROMPT },
         {
