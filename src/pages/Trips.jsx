@@ -34,6 +34,17 @@ const STAGES = [
 
 const STAGE_ORDER = ['nuevo', 'cotizando', 'propuesta_enviada', 'aceptado', 'vendido'];
 
+// El SoldTrip (Corsario) exige estos datos (client_name/destination/start_date/
+// end_date son NOT NULL en la base). Sin ellos, marcar "vendido" falla silenciosamente.
+const missingForSold = (t = {}) => {
+  const missing = [];
+  if (!t.client_name) missing.push('Cliente');
+  if (!t.destination) missing.push('Destino');
+  if (!t.start_date) missing.push('Fecha de inicio');
+  if (!t.end_date) missing.push('Fecha de fin');
+  return missing;
+};
+
 export default function Trips() {
   const { viewMode } = useContext(ViewModeContext);
   const { user: clerkUser } = useSpoofableUser();
@@ -130,6 +141,15 @@ export default function Trips() {
   });
 
   const handleSave = async (data) => {
+    // Al marcar "vendido" se debe crear el SoldTrip; valida los datos obligatorios
+    // ANTES de tocar nada, para no dejar un viaje "vendido" sin su registro en Corsario.
+    if (data.stage === 'vendido') {
+      const missing = missingForSold(data);
+      if (missing.length) {
+        toast.error(`Para marcar como vendido, primero completa: ${missing.join(', ')}.`);
+        return;
+      }
+    }
     if (editingTrip) {
       // Check if moving to "vendido" stage
       if (data.stage === 'vendido' && editingTrip.stage !== 'vendido') {
@@ -210,6 +230,11 @@ export default function Trips() {
         toast.loading('Avanzando etapa...', { id: 'move-stage' });
 
         if (nextStage === 'vendido') {
+          const missing = missingForSold(trip);
+          if (missing.length) {
+            toast.error(`Para marcar como vendido, primero completa: ${missing.join(', ')}.`, { id: 'move-stage' });
+            return;
+          }
           const soldTripData = {
             trip_id: trip.id,
             client_id: trip.client_id || null,
