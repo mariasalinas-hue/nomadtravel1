@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -6,9 +6,20 @@ import { formatDate } from '@/lib/dateUtils';
 import { es } from 'date-fns/locale';
 import { Printer, MapPin, CheckCircle, Plus, Trash2 } from 'lucide-react';
 
-export default function AgentCommissionInvoice({ open, onClose, commissions, onMarkAsPaid }) {
+export default function AgentCommissionInvoice({ open, onClose, commissions, onMarkAsPaid, initialDeductions = [] }) {
   // Descontados: dinero que se le descuenta al agente (ej. invoice tarde).
+  // Se precargan desde los descuentos ya registrados por viaje (fuente de verdad);
+  // se pueden ajustar de forma puntual en esta sesión.
   const [deductions, setDeductions] = useState([]);
+  // Al abrir, sembrar con los descuentos persistidos del/los viaje(s) seleccionados.
+  useEffect(() => {
+    if (!open) return;
+    setDeductions(
+      (initialDeductions || []).map(d => ({ concept: d.concept || '', amount: String(d.amount ?? '') }))
+    );
+    // Solo al abrir: no re-sembrar en cada render para no pisar ediciones puntuales.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
   const addDeduction = () => setDeductions(prev => [...prev, { concept: '', amount: '' }]);
   const removeDeduction = (i) => setDeductions(prev => prev.filter((_, idx) => idx !== i));
   const updateDeduction = (i, field, val) => setDeductions(prev => prev.map((d, idx) => (idx === i ? { ...d, [field]: val } : d)));

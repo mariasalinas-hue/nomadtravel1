@@ -741,6 +741,24 @@ export default function InternalCommissions() {
     nomad_commission: r.split.nomad,
   }));
 
+  // Descontados persistidos por viaje (registrados en el modal "at a glance",
+  // en SoldTrip.metadata.commission_deductions). Se precargan en el invoice
+  // para que la factura refleje una sola fuente de verdad. Se deduplica por viaje.
+  const invoiceDeductions = (() => {
+    const seenTrips = new Set();
+    const out = [];
+    for (const r of selectedRows) {
+      const t = r.trip;
+      if (!t?.id || seenTrips.has(t.id)) continue;
+      seenTrips.add(t.id);
+      (t.metadata?.commission_deductions || []).forEach(d => out.push({
+        concept: d.concept ? `${d.concept} · ${t.client_name || 'Viaje'}` : (t.client_name || 'Descuento'),
+        amount: Number(d.amount) || 0,
+      }));
+    }
+    return out;
+  })();
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-96">
@@ -1162,6 +1180,7 @@ export default function InternalCommissions() {
         open={invoiceOpen}
         onClose={() => setInvoiceOpen(false)}
         commissions={invoiceCommissions}
+        initialDeductions={invoiceDeductions}
         onMarkAsPaid={paySelected}
       />
 

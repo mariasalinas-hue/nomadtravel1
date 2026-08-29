@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { ViewModeContext } from '@/Layout';
 import { useSpoofableUser } from '@/contexts/SpoofContext';
-import { format, getMonth, getYear, parseISO, startOfYear, endOfYear, isWithinInterval } from 'date-fns';
+import { format, getMonth, getYear, startOfYear, endOfYear, isWithinInterval } from 'date-fns';
 import { parseLocalDate } from '@/lib/dateUtils';
 import { es } from 'date-fns/locale';
 import { 
@@ -194,7 +194,10 @@ export default function Statistics() {
     onError: () => toast.error('No se pudieron guardar las metas'),
   });
   const saveGoals = (sGoal, cGoal) => {
-    if (!goalsUserRow?.id) return;
+    if (!goalsUserRow?.id) {
+      toast.error('No se encontró tu usuario para guardar las metas. Refresca la página o contacta al admin.');
+      return;
+    }
     const md = { ...(goalsUserRow.metadata || {}), monthly_sales_goal: sGoal, monthly_commission_goal: cGoal };
     updateUserMutation.mutate({ id: goalsUserRow.id, data: { metadata: md } }, { onSuccess: () => toast.success('Metas actualizadas') });
   };
@@ -206,7 +209,8 @@ export default function Statistics() {
     if (!soldTrips.length) return [new Date().getFullYear()];
     const years = new Set();
     soldTrips.forEach(t => {
-      if (t.created_date) years.add(getYear(parseISO(t.created_date)));
+      const cd = parseLocalDate(t.created_date);
+      if (cd) years.add(getYear(cd));
       const sd = parseLocalDate(t.start_date);
       if (sd) years.add(getYear(sd));
     });
@@ -270,7 +274,8 @@ export default function Statistics() {
     if (filters.year !== 'all') {
       const year = parseInt(filters.year);
       filteredTrips = filteredTrips.filter(t => {
-        const saleYear = t.created_date ? getYear(parseISO(t.created_date)) : null;
+        const cd = parseLocalDate(t.created_date);
+        const saleYear = cd ? getYear(cd) : null;
         const sd = parseLocalDate(t.start_date);
         const travelYear = sd ? getYear(sd) : null;
         return saleYear === year || travelYear === year;
@@ -281,8 +286,8 @@ export default function Statistics() {
     if (filters.saleMonth !== 'all') {
       const month = parseInt(filters.saleMonth);
       filteredTrips = filteredTrips.filter(t => {
-        if (!t.created_date) return false;
-        return getMonth(parseISO(t.created_date)) === month;
+        const cd = parseLocalDate(t.created_date);
+        return cd ? getMonth(cd) === month : false;
       });
     }
 
