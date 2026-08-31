@@ -671,6 +671,8 @@ export default function InternalCommissions() {
   }, [filteredRows]);
 
   const sumAgent = (list) => list.reduce((sum, r) => sum + r.split.agent, 0);
+  const sumNomad = (list) => list.reduce((sum, r) => sum + r.split.nomad, 0);
+  const sumMontecito = (list) => list.reduce((sum, r) => sum + (r.split.montecito || 0), 0);
   const sumTotal = (list) => list.reduce((sum, r) => sum + (r.service.commission || 0), 0);
 
   // Agrupar la pestaña activa por agente
@@ -1024,6 +1026,48 @@ export default function InternalCommissions() {
           );
         })}
       </div>
+
+      {/* Resumen de transferencia (solo "Por pagar"): cuánto mover de la
+          cuenta de operaciones a la de revenue = Agentes + Nomad. Montecito
+          se excluye porque ese 15% lo retiene el tercero y nunca llega. */}
+      {activeTab === 'confirmadas' && buckets.confirmadas.length > 0 && (() => {
+        const rows = buckets.confirmadas;
+        const totalAgentes = sumAgent(rows);
+        const totalNomad = sumNomad(rows);
+        const totalMontecito = sumMontecito(rows);
+        const aTransferir = totalAgentes + totalNomad;
+        return (
+          <div className="rounded-2xl border border-stone-200 bg-gradient-to-br from-stone-50 to-white p-5 shadow-sm">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-sm font-bold text-stone-800">Transferencia a cuenta de revenue</h3>
+                <p className="text-xs text-stone-400">De la cuenta de operaciones · {rows.length} comisión{rows.length !== 1 ? 'es' : ''} por pagar</p>
+              </div>
+              <div className="text-right">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-stone-400">A transferir</p>
+                <p className="text-3xl font-bold" style={{ color: '#2E442A' }}>{money(aTransferir)}</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="rounded-xl border border-blue-100 bg-blue-50/60 px-4 py-3">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-blue-500">A pagar a agentes</p>
+                <p className="text-xl font-bold text-blue-700 mt-0.5">{money(totalAgentes)}</p>
+              </div>
+              <div className="rounded-xl border px-4 py-3" style={{ borderColor: '#2E442A22', backgroundColor: '#2E442A0A' }}>
+                <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: '#2E442A' }}>De Nomad (revenue)</p>
+                <p className="text-xl font-bold mt-0.5" style={{ color: '#2E442A' }}>{money(totalNomad)}</p>
+              </div>
+              <div className="rounded-xl border border-stone-100 bg-stone-50 px-4 py-3">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-stone-400">Montecito · no se transfiere</p>
+                <p className="text-xl font-bold text-stone-400 mt-0.5">{money(totalMontecito)}</p>
+              </div>
+            </div>
+            <p className="text-[11px] text-stone-400 mt-3">
+              De la cuenta de revenue salen los pagos a agentes ({money(totalAgentes)}); el resto ({money(totalNomad)}) queda como ingreso de Nomad. Montecito retiene su 15% y no entra a esta cuenta.
+            </p>
+          </div>
+        );
+      })()}
 
       {/* Barra de selección (solo "Por pagar") */}
       {activeTab === 'confirmadas' && selectedRows.length > 0 && (
