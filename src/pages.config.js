@@ -1,3 +1,4 @@
+import AdminAgents from './pages/AdminAgents';
 import AdminClients from './pages/AdminClients';
 import AdminDashboard from './pages/AdminDashboard';
 import AdminSearch from './pages/AdminSearch';
@@ -36,6 +37,7 @@ import __Layout from './Layout.jsx';
 
 
 export const PAGES = {
+    "AdminAgents": AdminAgents,
     "AdminClients": AdminClients,
     "AdminServiceOptions": AdminServiceOptions,
     "AdminDashboard": AdminDashboard,
