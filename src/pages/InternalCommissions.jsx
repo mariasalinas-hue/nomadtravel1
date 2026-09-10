@@ -1027,30 +1027,34 @@ export default function InternalCommissions() {
         })}
       </div>
 
-      {/* Resumen de transferencia (solo "Por pagar"): cuánto mover de la
-          cuenta de operaciones a la de revenue = Agentes + Nomad. Montecito
-          se excluye porque ese 15% lo retiene el tercero y nunca llega. */}
+      {/* Resumen de transferencia (solo "Por pagar"): cuánto mover de la cuenta
+          de operaciones a la de revenue. SOLO cuenta lo NETO — lo bruto se paga
+          directo en su cuenta correcta. Montecito retiene su 15% y no se transfiere. */}
       {activeTab === 'confirmadas' && buckets.confirmadas.length > 0 && (() => {
-        const rows = buckets.confirmadas;
+        const all = buckets.confirmadas;
+        const rows = all.filter(r => r.service.payment_type === 'neto');
+        const brutoRows = all.filter(r => r.service.payment_type === 'bruto');
+        const sinTipo = all.filter(r => !r.service.payment_type).length;
         const totalAgentes = sumAgent(rows);
         const totalNomad = sumNomad(rows);
         const totalMontecito = sumMontecito(rows);
         const aTransferir = totalAgentes + totalNomad;
+        const brutoComision = sumTotal(brutoRows);
         return (
           <div className="rounded-2xl border border-stone-200 bg-gradient-to-br from-stone-50 to-white p-5 shadow-sm">
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h3 className="text-sm font-bold text-stone-800">Transferencia a cuenta de revenue</h3>
-                <p className="text-xs text-stone-400">De la cuenta de operaciones · {rows.length} comisión{rows.length !== 1 ? 'es' : ''} por pagar</p>
+                <p className="text-xs text-stone-400">De la cuenta de operaciones · solo comisiones NETO ({rows.length} de {all.length})</p>
               </div>
               <div className="text-right">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-stone-400">A transferir</p>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-stone-400">A transferir (neto)</p>
                 <p className="text-3xl font-bold" style={{ color: '#2E442A' }}>{money(aTransferir)}</p>
               </div>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="rounded-xl border border-blue-100 bg-blue-50/60 px-4 py-3">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-blue-500">A pagar a agentes</p>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-blue-500">A pagar a agentes (neto)</p>
                 <p className="text-xl font-bold text-blue-700 mt-0.5">{money(totalAgentes)}</p>
               </div>
               <div className="rounded-xl border px-4 py-3" style={{ borderColor: '#2E442A22', backgroundColor: '#2E442A0A' }}>
@@ -1063,8 +1067,18 @@ export default function InternalCommissions() {
               </div>
             </div>
             <p className="text-[11px] text-stone-400 mt-3">
-              De la cuenta de revenue salen los pagos a agentes ({money(totalAgentes)}); el resto ({money(totalNomad)}) queda como ingreso de Nomad. Montecito retiene su 15% y no entra a esta cuenta.
+              Solo se transfiere lo <strong>NETO</strong>: de esta cuenta salen los pagos a agentes ({money(totalAgentes)}) y el resto ({money(totalNomad)}) queda como ingreso de Nomad. Lo bruto se paga directo en su cuenta y Montecito retiene su 15%.
             </p>
+            {(brutoRows.length > 0 || sinTipo > 0) && (
+              <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-[11px]">
+                {brutoRows.length > 0 && (
+                  <span className="text-stone-400">Bruto (no se transfiere): <strong>{money(brutoComision)}</strong> · {brutoRows.length} servicio{brutoRows.length !== 1 ? 's' : ''}</span>
+                )}
+                {sinTipo > 0 && (
+                  <span className="text-amber-600">⚠️ {sinTipo} sin tipo — no se cuentan. Márcalos NETO o BRUTO en cada renglón.</span>
+                )}
+              </div>
+            )}
           </div>
         );
       })()}
