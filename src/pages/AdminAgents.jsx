@@ -13,6 +13,12 @@ const DEFAULT_RATE = 50;
 const RATE_PRESETS = [50, 55, 60, 100];
 const rateOf = (u) => Number(u?.metadata?.agent_commission_rate) || DEFAULT_RATE;
 const isValidEmail = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((e || '').trim());
+const nameFromEmail = (email) =>
+  (email.split('@')[0] || '')
+    .split(/[._-]+/)
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
 
 export default function AdminAgents() {
   const queryClient = useQueryClient();
@@ -25,6 +31,32 @@ export default function AdminAgents() {
     queryKey: ['users'],
     queryFn: () => supabaseAPI.entities.User.list(),
   });
+
+  // Para detectar "agentes sin ficha": correos que aparecen en viajes/cotizaciones
+  // (created_by) pero no tienen usuario en la tabla.
+  const { data: trips = [] } = useQuery({
+    queryKey: ['trips'],
+    queryFn: () => supabaseAPI.entities.Trip.list(),
+  });
+  const { data: soldTrips = [] } = useQuery({
+    queryKey: ['soldTrips'],
+    queryFn: () => supabaseAPI.entities.SoldTrip.list(),
+  });
+
+  const ghosts = useMemo(() => {
+    const known = new Set(users.map((u) => (u.email || '').toLowerCase()).filter(Boolean));
+    const counts = {};
+    const bump = (raw) => {
+      const e = (raw || '').toLowerCase().trim();
+      if (!e || !e.includes('@') || known.has(e) || isAdminEmail(e)) return;
+      counts[e] = (counts[e] || 0) + 1;
+    };
+    trips.forEach((t) => bump(t.created_by));
+    soldTrips.forEach((t) => bump(t.created_by));
+    return Object.entries(counts)
+      .map(([email, count]) => ({ email, count }))
+      .sort((a, b) => b.count - a.count);
+  }, [users, trips, soldTrips]);
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ['users'] });
@@ -48,6 +80,12 @@ export default function AdminAgents() {
   const openNew = () => {
     setEditing(null);
     setForm({ full_name: '', email: '', rate: DEFAULT_RATE, custom_role: '', is_active: true });
+    setOpen(true);
+  };
+
+  const openForEmail = (email) => {
+    setEditing(null);
+    setForm({ full_name: nameFromEmail(email), email, rate: DEFAULT_RATE, custom_role: '', is_active: true });
     setOpen(true);
   };
 
@@ -152,6 +190,36 @@ export default function AdminAgents() {
         <Users className="w-4 h-4" />
         <span>{filtered.length} agente{filtered.length !== 1 ? 's' : ''}</span>
       </div>
+
+      {/* Agentes sin ficha: correos con viajes pero sin usuario en el CRM */}
+      {ghosts.length > 0 && (
+        <div className="bg-orange-50 border border-orange-200 rounded-2xl p-5">
+          <div className="flex items-start gap-3 mb-3">
+            <AlertCircle className="w-5 h-5 text-orange-600 mt-0.5 flex-shrink-0" />
+            <div>
+              <h3 className="text-sm font-bold text-orange-800">
+                {ghosts.length} agente{ghosts.length !== 1 ? 's' : ''} sin ficha
+              </h3>
+              <p className="text-xs text-orange-700">
+                Tienen viajes en el sistema pero no están dados de alta. Sus comisiones salen bajo su correo y al 50%. Dales de alta para que aparezcan con su nombre y su % correcto.
+              </p>
+            </div>
+          </div>
+          <div className="space-y-2">
+            {ghosts.map((g) => (
+              <div key={g.email} className="flex items-center justify-between gap-3 bg-white rounded-xl border border-orange-100 px-4 py-2.5">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-stone-800 truncate">{nameFromEmail(g.email)}</p>
+                  <p className="text-xs text-stone-400 truncate">{g.email} · {g.count} viaje{g.count !== 1 ? 's' : ''}</p>
+                </div>
+                <Button size="sm" onClick={() => openForEmail(g.email)} className="text-white rounded-lg flex-shrink-0" style={{ backgroundColor: '#2E442A' }}>
+                  <Plus className="w-3.5 h-3.5 mr-1" /> Dar de alta
+                </Button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Lista */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">

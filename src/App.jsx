@@ -15,6 +15,7 @@ import ClientTripForm from '@/pages/ClientTripForm';
 import ClientIntakeForm from '@/pages/ClientIntakeForm';
 import TripRequestForm from '@/pages/TripRequestForm';
 import QuoteBuilder from '@/pages/QuoteBuilder';
+import { useEnsureAgentProfile } from '@/hooks/useEnsureAgentProfile';
 import ErrorBoundary from '@/components/ui/ErrorBoundary';
 import { SpoofProvider } from '@/contexts/SpoofContext';
 
@@ -28,6 +29,9 @@ const LayoutWrapper = ({ children, currentPageName }) => Layout ?
 
 const AuthenticatedApp = () => {
   const { isLoaded, isSignedIn } = useUser();
+
+  // Auto-alta de agente: crea la ficha en el CRM si el usuario no la tiene.
+  useEnsureAgentProfile();
 
   // Show loading spinner while checking auth
   if (!isLoaded) {
