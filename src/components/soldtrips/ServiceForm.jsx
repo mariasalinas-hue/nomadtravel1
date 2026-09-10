@@ -457,6 +457,13 @@ export default function ServiceForm({ open, onClose, service, soldTripId, onSave
       return;
     }
 
+    // El tipo de comisión (NETO/BRUTO) es obligatorio: define qué se transfiere
+    // de la cuenta de operaciones. No se permite guardar "sin tipo".
+    if (formData.payment_type !== 'neto' && formData.payment_type !== 'bruto') {
+      alert('Selecciona el tipo de comisión: NETO o BRUTO');
+      return;
+    }
+
     // El precio que se guarda incluye el fee de YTC (el campo del formulario es el precio base)
     const finalPrice = (parseFloat(formData.total_price) || 0) + ytcFee;
 
@@ -500,6 +507,7 @@ export default function ServiceForm({ open, onClose, service, soldTripId, onSave
       sold_trip_id: soldTripId,
       price: finalPrice,  // Map total_price (+ fee YTC) to price field
       commission: formData.commission || 0,
+      payment_type: formData.payment_type,  // NETO/BRUTO en la columna que lee Comisiones Internas
       notes: formData.notes || '',
       // These fields might also exist in the table
       payment_date: formData.commission_payment_date || null,
@@ -1770,12 +1778,12 @@ export default function ServiceForm({ open, onClose, service, soldTripId, onSave
 
             <div className="grid grid-cols-3 gap-4">
               <div className="space-y-2">
-                <Label>Tipo de Pago</Label>
-                <Select 
-                  value={formData.payment_type || 'bruto'} 
+                <Label>Tipo de Pago <span className="text-red-500">*</span></Label>
+                <Select
+                  value={formData.payment_type || ''}
                   onValueChange={(v) => updateField('payment_type', v)}
                 >
-                  <SelectTrigger className="rounded-xl"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="rounded-xl"><SelectValue placeholder="Elegir tipo…" /></SelectTrigger>
                   <SelectContent>
                     {PAYMENT_TYPE.map(p => <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>)}
                   </SelectContent>
