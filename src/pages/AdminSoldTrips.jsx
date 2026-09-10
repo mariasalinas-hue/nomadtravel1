@@ -100,7 +100,11 @@ export default function AdminSoldTrips() {
 
   const filteredSoldTrips = useMemo(() =>
     allSoldTrips
-      .filter(t => selectedAgent === 'all' || t.created_by === selectedAgent)
+      .filter(t => {
+        if (selectedAgent === 'all') return true;
+        if (selectedAgent === '__unassigned__') return !t.created_by;
+        return t.created_by === selectedAgent;
+      })
       .filter(t => selectedStatus === 'all' || t.status === selectedStatus)
       .filter(t => {
         const searchLower = search.toLowerCase();
@@ -184,6 +188,7 @@ export default function AdminSoldTrips() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todos los agentes</SelectItem>
+              <SelectItem value="__unassigned__">⚠️ Sin asignar</SelectItem>
               {agents.map(agent => (
                 <SelectItem key={agent.email} value={agent.email}>
                   {agent.full_name}
