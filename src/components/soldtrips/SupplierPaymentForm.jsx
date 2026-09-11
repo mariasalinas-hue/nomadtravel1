@@ -122,9 +122,14 @@ export default function SupplierPaymentForm({ open, onClose, soldTripId, service
         const service = services.find(s => s.id === value);
         const derived = deriveSupplierName(service);
         if (derived) next.supplier = derived;
+        // Por default, el tipo (neto/bruto) del pago hereda el del SERVICIO
+        // (la pestaña Servicios es la fuente de verdad). Respaldo en metadata
+        // para servicios viejos. El usuario aún lo puede cambiar a mano.
+        const svcType = service?.payment_type || service?.metadata?.payment_type;
+        if (svcType) next.payment_type = svcType;
         // Al crear un pago nuevo, prellenar con el saldo pendiente del servicio
         if (!payment && service) {
-          const remaining = outstandingFor(service, prev.payment_type);
+          const remaining = outstandingFor(service, next.payment_type);
           if (remaining > 0) next.amount = remaining;
         }
       }
