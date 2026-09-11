@@ -8,12 +8,13 @@ import { updateSoldTripTotalsFromServices } from '@/components/utils/soldTripRec
 import { es } from 'date-fns/locale';
 import { toast } from 'sonner';
 import {
-  Loader2, Search, ChevronDown, ChevronUp, Check, Undo2, FileText, Pencil,
+  Loader2, Search, ChevronDown, ChevronUp, Check, Undo2, FileText, Pencil, Eye, AlertTriangle,
   Hotel, Plane, Car, Compass, Ship, Train, Briefcase, Package, DollarSign
 } from 'lucide-react';
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import AgentInvoiceGenerator from '@/components/commissions/AgentInvoiceGenerator';
+import TripGlanceDialog, { reconStatus } from '@/components/commissions/TripGlanceDialog';
 
 const RESERVED_BY_LABELS = {
   virtuoso: 'Virtuoso',
@@ -46,17 +47,19 @@ const SERVICE_ICON_COLORS = {
   otro: 'bg-stone-100 text-stone-500'
 };
 
-// Reparto: el agente siempre recibe 50%. Nomad recibe 35% si fue bookeado por
-// Montecito (15% para Montecito) y 50% si fue con IATA Nomad.
+// Reparto: el agente recibe su % (configurable por agente, editable solo desde
+// admin). El extra arriba de 50% sale de Nomad; en Montecito, Montecito conserva
+// su 15%. rate es fracción (0.5 = 50%).
 const AGENT_RATE = 0.5;
-const splitFor = (service) => {
+const splitFor = (service, rate = AGENT_RATE) => {
   const bookedBy = service.booked_by || service.metadata?.booked_by;
   const commission = service.commission || 0;
-  const agent = commission * AGENT_RATE;
+  const agent = commission * rate;
   if (bookedBy === 'montecito') {
-    return { agent, nomad: commission * 0.35, montecito: commission * 0.15, bookedBy };
+    const montecito = commission * 0.15;
+    return { agent, nomad: Math.max(0, commission - agent - montecito), montecito, bookedBy };
   }
-  return { agent, nomad: commission * 0.5, montecito: 0, bookedBy };
+  return { agent, nomad: Math.max(0, commission - agent), montecito: 0, bookedBy };
 };
 
 // Niveles del split del agente (informativo)
@@ -161,6 +164,23 @@ export default function Commissions() {
   // Admin real viene del allowlist de emails (ViewModeContext), no de Clerk publicMetadata
   const isAdmin = isActualAdmin && viewMode === 'admin';
 
+  // % real del agente (se lee de su ficha; SOLO editable desde admin). En vista
+  // admin se mantiene 50% base porque muestra a todos los agentes.
+  const { data: currentUserRecord = null } = useQuery({
+    queryKey: ['currentUserRecord', user?.email],
+    queryFn: async () => (await supabaseAPI.entities.User.filter({ email: user.email }))?.[0] || null,
+    enabled: !!user?.email,
+  });
+  const myRatePct = Number(currentUserRecord?.metadata?.agent_commission_rate) || 50;
+  const RATE = isAdmin ? AGENT_RATE : (myRatePct / 100);
+  const glanceRatePct = isAdmin ? 50 : myRatePct;
+
+  const [glanceTripId, setGlanceTripId] = useState(null);
+  const [onlyMismatched, setOnlyMismatched] = useState(false);
+
+  const setPaymentType = (s, value) =>
+    updateServiceMutation.mutate({ id: s.id, data: { payment_type: value === 'sin' ? null : value } });
+
   const { data: allServices = [], isLoading: servicesLoading } = useQuery({
     queryKey: ['allServices', user?.email, isAdmin],
     queryFn: async () => {
@@ -213,13 +233,14 @@ export default function Commissions() {
   // Se EXCLUYE lo pagado con tarjeta del cliente (ese dinero no pasa por la cuenta de Nomad).
   const tripFinancials = useMemo(() => {
     const map = {};
-    const ensure = (id) => (map[id] = map[id] || { gross: 0, net: 0, clientIn: 0, nomadOut: 0 });
+    const ensure = (id) => (map[id] = map[id] || { gross: 0, net: 0, unclassified: 0, clientIn: 0, nomadOut: 0 });
 
     allServices.forEach(s => {
       if (!(s.commission > 0)) return;
       const e = ensure(s.sold_trip_id);
       if (s.payment_type === 'neto') e.net += s.commission;
-      else e.gross += s.commission;
+      else if (s.payment_type === 'bruto') e.gross += s.commission;
+      else e.unclassified += s.commission;
     });
     clientPayments.forEach(p => {
       if (p.method === 'tarjeta_cliente') return; // no pasa por Nomad
@@ -310,9 +331,9 @@ export default function Commissions() {
   // ---- Stats globales (no cambian con búsqueda ni pestaña) ----
   const sumCommission = (list) => list.reduce((sum, s) => sum + (s.commission || 0), 0);
   const totalComisiones = sumCommission(commissionServices);
-  const miParteTotal = totalComisiones * AGENT_RATE;
-  const porCobrarTotal = (sumCommission(buckets.por_cobrar) + sumCommission(buckets.pagadas_agencia) + sumCommission(buckets.confirmadas)) * AGENT_RATE;
-  const cobradasTotal = sumCommission(buckets.cobradas) * AGENT_RATE;
+  const miParteTotal = totalComisiones * RATE;
+  const porCobrarTotal = (sumCommission(buckets.por_cobrar) + sumCommission(buckets.pagadas_agencia) + sumCommission(buckets.confirmadas)) * RATE;
+  const cobradasTotal = sumCommission(buckets.cobradas) * RATE;
 
   // Nivel actual del agente según lo cobrado
   const tierProgress = cobradasTotal;
@@ -337,8 +358,8 @@ export default function Commissions() {
     const label = formatDate(new Date(year, month, 1), 'MMM yyyy', { locale: es });
     return label.charAt(0).toUpperCase() + label.slice(1);
   })();
-  const porCobrarNeto = sumCommission(buckets.por_cobrar.filter(s => s.payment_type === 'neto')) * AGENT_RATE;
-  const porCobrarBruto = sumCommission(buckets.por_cobrar.filter(s => s.payment_type !== 'neto')) * AGENT_RATE;
+  const porCobrarNeto = sumCommission(buckets.por_cobrar.filter(s => s.payment_type === 'neto')) * RATE;
+  const porCobrarBruto = sumCommission(buckets.por_cobrar.filter(s => s.payment_type !== 'neto')) * RATE;
 
   // ---- Búsqueda + agrupación por viaje ----
   const q = search.toLowerCase();
@@ -375,6 +396,37 @@ export default function Commissions() {
     });
   };
 
+  // Conciliación por viaje ("cuadra / no cuadra"): mapea la etapa final del
+  // agente ('cobradas') a la del ojito compartido ('pagadas').
+  const glanceStage = (s) => { const b = bucketOf(s); return b === 'cobradas' ? 'pagadas' : b; };
+  const rowsForTrip = (tripId) =>
+    commissionServices
+      .filter(s => s.sold_trip_id === tripId)
+      .map(s => ({
+        service: s, split: splitFor(s, RATE), stage: glanceStage(s),
+        agentName: (isAdmin ? tripsMap[tripId]?.created_by : user?.full_name) || '', agentRate: glanceRatePct,
+      }));
+  const tripRecon = {};
+  Object.keys(tripFinancials).forEach(tid => { tripRecon[tid] = reconStatus(tripFinancials[tid], rowsForTrip(tid)); });
+  const reconCounts = Object.values(tripRecon).reduce((a, r) => {
+    if (r.key === 'no_cuadra') a.noCuadra++; else if (r.key === 'sin_clasificar') a.sinClasificar++;
+    return a;
+  }, { noCuadra: 0, sinClasificar: 0 });
+  const isProblem = (tid) => ['no_cuadra', 'sin_clasificar'].includes(tripRecon[tid]?.key);
+  // Con el filtro activo mostramos los viajes que no cuadran de TODAS las etapas
+  // (no solo la pestaña activa), con todos sus servicios.
+  const displayGroups = onlyMismatched
+    ? Object.values(
+        commissionServices
+          .filter(s => isProblem(s.sold_trip_id) && matchesSearch(s))
+          .reduce((acc, s) => {
+            if (!acc[s.sold_trip_id]) acc[s.sold_trip_id] = { trip: tripsMap[s.sold_trip_id], services: [] };
+            acc[s.sold_trip_id].services.push(s);
+            return acc;
+          }, {})
+      )
+    : tripGroups;
+
   const TABS = [
     { key: 'proximas', label: 'Próximas' },
     { key: 'por_cobrar', label: 'Por cobrar' },
@@ -404,7 +456,7 @@ export default function Commissions() {
   const renderServiceRow = (service) => {
     const Icon = SERVICE_ICONS[service.service_type] || Package;
     const iconColors = SERVICE_ICON_COLORS[service.service_type] || SERVICE_ICON_COLORS.otro;
-    const split = splitFor(service);
+    const split = splitFor(service, RATE);
     const isNeto = service.payment_type === 'neto';
     const bucket = bucketOf(service);
 
@@ -526,7 +578,7 @@ export default function Commissions() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-baseline gap-3 flex-wrap">
           <h1 className="text-2xl font-bold text-stone-800">Mis comisiones</h1>
-          <p className="text-stone-400 text-sm">Seguimiento por servicio · 50% del total</p>
+          <p className="text-stone-400 text-sm">Seguimiento por servicio · {glanceRatePct}% del total</p>
         </div>
         <div className="relative w-full sm:w-64">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
@@ -608,7 +660,7 @@ export default function Commissions() {
       {activeTab === 'proximas' && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <StatCard label="Estimadas" value={money(proximasTotal)} sub="Total servicios futuros" valueClass="text-violet-600" />
-          <StatCard label="Mi parte estimada" value={money(proximasTotal * AGENT_RATE)} sub="50% del total" />
+          <StatCard label="Mi parte estimada" value={money(proximasTotal * RATE)} sub={`${glanceRatePct}% del total`} />
           <StatCard label="Viajes futuros" value={futureTrips.size} sub="Con comisiones registradas" />
           <StatCard label="Mejor mes" value={bestMonth} sub="Mayor comisión estimada" valueClass="text-amber-600" />
         </div>
@@ -616,7 +668,7 @@ export default function Commissions() {
       {activeTab === 'por_cobrar' && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <StatCard label="Total a cobrar" value={money(sumCommission(buckets.por_cobrar))} sub="Comisión total de servicios" />
-          <StatCard label="Mi parte pendiente" value={money(sumCommission(buckets.por_cobrar) * AGENT_RATE)} sub="50% del total" valueClass="text-orange-500" />
+          <StatCard label="Mi parte pendiente" value={money(sumCommission(buckets.por_cobrar) * RATE)} sub={`${glanceRatePct}% del total`} valueClass="text-orange-500" />
           <StatCard label="Neto (disponible)" value={money(porCobrarNeto)} sub="Ya en poder de la agencia" valueClass="text-green-600" />
           <StatCard label="Bruto (en espera)" value={money(porCobrarBruto)} sub="Pendiente de proveedor" valueClass="text-orange-500" />
         </div>
@@ -625,7 +677,7 @@ export default function Commissions() {
         <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
           <p className="text-sm text-amber-800">
             <strong>{buckets.pagadas_agencia.length}</strong> comisión{buckets.pagadas_agencia.length !== 1 ? 'es' : ''} esperando que administración confirme la recepción del pago
-            · Mi parte: <strong>{money(sumCommission(buckets.pagadas_agencia) * AGENT_RATE)}</strong>
+            · Mi parte: <strong>{money(sumCommission(buckets.pagadas_agencia) * RATE)}</strong>
           </p>
         </div>
       )}
@@ -633,7 +685,7 @@ export default function Commissions() {
         <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-xl px-4 py-3">
           <p className="text-sm text-blue-800">
             <strong>{buckets.confirmadas.length}</strong> comisión{buckets.confirmadas.length !== 1 ? 'es' : ''} confirmada{buckets.confirmadas.length !== 1 ? 's' : ''} por administración, lista{buckets.confirmadas.length !== 1 ? 's' : ''} para cobro
-            · Mi parte: <strong>{money(sumCommission(buckets.confirmadas) * AGENT_RATE)}</strong>
+            · Mi parte: <strong>{money(sumCommission(buckets.confirmadas) * RATE)}</strong>
           </p>
           {visibleServices.length > 0 && (
             <Button
@@ -651,8 +703,25 @@ export default function Commissions() {
         <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3">
           <p className="text-sm text-green-800">
             <strong>{buckets.cobradas.length}</strong> comisión{buckets.cobradas.length !== 1 ? 'es' : ''} cobrada{buckets.cobradas.length !== 1 ? 's' : ''}
-            · Total recibido: <strong>{money(sumCommission(buckets.cobradas) * AGENT_RATE)}</strong>
+            · Total recibido: <strong>{money(sumCommission(buckets.cobradas) * RATE)}</strong>
           </p>
+        </div>
+      )}
+
+      {/* Alerta de conciliación: viajes que no cuadran / sin clasificar */}
+      {(reconCounts.noCuadra > 0 || reconCounts.sinClasificar > 0) && (
+        <div className="bg-orange-50 border border-orange-200 rounded-2xl px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-sm text-orange-800">
+            <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+            <span>
+              {reconCounts.noCuadra > 0 && <strong>{reconCounts.noCuadra} viaje{reconCounts.noCuadra !== 1 ? 's' : ''} no cuadra{reconCounts.noCuadra !== 1 ? 'n' : ''}</strong>}
+              {reconCounts.noCuadra > 0 && reconCounts.sinClasificar > 0 && ' · '}
+              {reconCounts.sinClasificar > 0 && <>{reconCounts.sinClasificar} con servicios sin clasificar</>}
+            </span>
+          </div>
+          <Button size="sm" variant="outline" onClick={() => setOnlyMismatched(v => !v)} className="rounded-lg">
+            {onlyMismatched ? 'Ver todos' : 'Ver solo los que no cuadran'}
+          </Button>
         </div>
       )}
 
@@ -671,40 +740,50 @@ export default function Commissions() {
           <span className="w-36 flex-shrink-0 text-right text-[10px] font-bold uppercase tracking-wider text-stone-400">Acción</span>
         </div>
 
-        {tripGroups.map(({ trip, services: tripServices }) => {
+        {displayGroups.map(({ trip, services: tripServices }) => {
           const tripId = trip?.id || tripServices[0].sold_trip_id;
           const expanded = expandedTrips.has(tripId);
           const total = sumCommission(tripServices);
           const refDate = trip?.end_date || trip?.start_date;
+          const recon = tripRecon[tripId];
+          const problem = ['no_cuadra', 'sin_clasificar'].includes(recon?.key);
 
           return (
             <div key={tripId} className="border-b border-stone-100 last:border-0">
               {/* Fila del viaje (contraída por default) */}
-              <button
-                onClick={() => toggleTrip(tripId)}
-                className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-stone-50 transition-colors text-left"
-              >
-                <span className="w-7 flex justify-center text-stone-300">
-                  {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                </span>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-bold text-stone-800 truncate">
-                    {trip ? `${trip.client_name} ${trip.destination || ''}`.trim() : 'Viaje'}
-                    {trip?.trip_name ? ` — ${trip.trip_name}` : ''}
-                  </p>
-                  <p className="text-xs text-stone-400">
-                    {trip?.client_name}{refDate ? ` · ${formatDate(refDate, 'yyyy-MM-dd')}` : ''}
-                  </p>
-                </div>
+              <div className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-stone-50 transition-colors">
+                <button onClick={() => toggleTrip(tripId)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
+                  <span className="w-7 flex justify-center text-stone-300 flex-shrink-0">
+                    {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-stone-800 truncate">
+                      {trip ? `${trip.client_name} ${trip.destination || ''}`.trim() : 'Viaje'}
+                      {trip?.trip_name ? ` — ${trip.trip_name}` : ''}
+                    </p>
+                    <p className="text-xs text-stone-400">
+                      {trip?.client_name}{refDate ? ` · ${formatDate(refDate, 'yyyy-MM-dd')}` : ''}
+                    </p>
+                  </div>
+                </button>
+                {problem && (
+                  <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-md flex-shrink-0 ${recon.key === 'no_cuadra' ? 'bg-red-50 text-red-600' : 'bg-amber-50 text-amber-600'}`}>
+                    <AlertTriangle className="w-3 h-3" /> {recon.label}
+                  </span>
+                )}
                 <div className="text-right">
                   <p className="text-[10px] font-bold uppercase tracking-wider text-stone-400">Total</p>
                   <p className="text-sm font-bold text-stone-700">{money(total)}</p>
                 </div>
                 <div className="text-right w-24">
                   <p className="text-[10px] font-bold uppercase tracking-wider text-stone-400">Mi parte</p>
-                  <p className="text-sm font-bold" style={{ color: '#2E442A' }}>{money(total * AGENT_RATE)}</p>
+                  <p className="text-sm font-bold" style={{ color: '#2E442A' }}>{money(total * RATE)}</p>
                 </div>
-              </button>
+                <button onClick={() => setGlanceTripId(tripId)} title="Ver resumen del viaje"
+                  className="w-8 h-8 flex items-center justify-center rounded-lg border border-stone-200 text-stone-500 hover:bg-white hover:text-stone-700 transition-colors flex-shrink-0">
+                  <Eye className="w-4 h-4" />
+                </button>
+              </div>
 
               {/* Servicios del viaje */}
               {expanded && tripServices.map(renderServiceRow)}
@@ -751,6 +830,17 @@ export default function Commissions() {
           </div>
         )}
       </div>
+
+      {/* Ojito "de un vistazo" del agente (mismo componente que admin) */}
+      <TripGlanceDialog
+        open={!!glanceTripId}
+        onClose={() => setGlanceTripId(null)}
+        trip={glanceTripId ? tripsMap[glanceTripId] : null}
+        tripRows={glanceTripId ? rowsForTrip(glanceTripId) : []}
+        fin={glanceTripId ? tripFinancials[glanceTripId] : null}
+        onSetType={setPaymentType}
+        saving={updateServiceMutation.isPending}
+      />
 
       {/* Generador de factura (comisiones pagadas a agencia, pendientes de pago al agente) */}
       <AgentInvoiceGenerator
