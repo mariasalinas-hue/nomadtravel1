@@ -1,6 +1,4 @@
 import { useState, useMemo } from 'react';
-import { Link } from 'react-router-dom';
-import { createPageUrl } from '@/utils';
 import { supabaseAPI } from '@/api/supabaseClient';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { formatDate, parseLocalDate } from '@/lib/dateUtils';
@@ -9,16 +7,16 @@ import { updateSoldTripTotalsFromServices } from '@/components/utils/soldTripRec
 import { toast } from 'sonner';
 import {
   Loader2, Search, DollarSign, Users, Calendar, ArrowUpDown, Check, Undo2,
-  ChevronDown, ChevronUp, FileText, Eye, ExternalLink, Trash2, Plus, Percent,
+  ChevronDown, ChevronUp, FileText, Eye, Percent,
   Hotel, Plane, Car, Compass, Ship, Train, Briefcase, Package,
 } from 'lucide-react';
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { isAdminEmail } from '@/config/adminEmails';
 import AgentCommissionInvoice from '@/components/commissions/AgentCommissionInvoice';
+import TripGlanceDialog from '@/components/commissions/TripGlanceDialog';
 
 // ---- Cálculo del reparto de comisión ----
 // El % del agente es configurable por agente (default 50). El extra (>50%)
@@ -262,251 +260,6 @@ const TABS = [
   { key: 'confirmadas', label: 'Por pagar' },
   { key: 'pagadas', label: 'Pagadas' },
 ];
-const STAGE_ORDER = ['proximas', 'por_cobrar', 'pagadas_agencia', 'confirmadas', 'pagadas'];
-
-// Ventana "de un vistazo": el viaje y todas sus comisiones con su etapa
-function TripGlanceDialog({ open, onClose, trip, tripRows = [], fin, onSaveDeductions, onSetType, saving }) {
-  const [newConcept, setNewConcept] = useState('');
-  const [newAmount, setNewAmount] = useState('');
-
-  const totalCommission = tripRows.reduce((s, r) => s + (r.service.commission || 0), 0);
-  const totalAgent = tripRows.reduce((s, r) => s + r.split.agent, 0);
-  const byStage = STAGE_ORDER.map(k => {
-    const list = tripRows.filter(r => r.stage === k);
-    return {
-      key: k, ...STAGE_META[k], count: list.length,
-      agent: list.reduce((s, r) => s + r.split.agent, 0),
-    };
-  });
-  // Pagado al agente = lo que está en etapa "Pagada"; el resto es pendiente.
-  const paidAgent = byStage.find(s => s.key === 'pagadas')?.agent || 0;
-  const pendingAgent = Math.max(0, totalAgent - paidAgent);
-  const paidPct = totalAgent > 0 ? Math.round((paidAgent / totalAgent) * 100) : 0;
-  const f = fin || { gross: 0, net: 0, unclassified: 0, clientIn: 0, nomadOut: 0, saldo: 0 };
-  const matchesNet = Math.abs(f.saldo - f.net) < 1;
-  const refDate = trip?.end_date || trip?.start_date;
-  const agentName = tripRows[0]?.agentName;
-  const agentRate = tripRows[0]?.agentRate ?? DEFAULT_AGENT_RATE;
-
-  const deductions = trip?.metadata?.commission_deductions || [];
-  const totalDeductions = deductions.reduce((s, d) => s + (Number(d.amount) || 0), 0);
-  const netAgent = totalAgent - totalDeductions;
-
-  const addDeduction = () => {
-    const amount = Math.round(parseFloat(newAmount) || 0);
-    if (!trip?.id || amount <= 0) return;
-    const entry = {
-      id: (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now()),
-      concept: newConcept.trim() || 'Deducción',
-      amount,
-      date: new Date().toISOString().split('T')[0],
-    };
-    onSaveDeductions(trip.id, [...deductions, entry]);
-    setNewConcept('');
-    setNewAmount('');
-  };
-  const removeDeduction = (id) => {
-    if (!trip?.id) return;
-    onSaveDeductions(trip.id, deductions.filter(d => d.id !== id));
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="text-xl font-bold" style={{ color: '#2E442A' }}>
-            {trip ? `${trip.client_name || 'Viaje'}${trip.destination ? ' · ' + trip.destination : ''}` : 'Viaje'}
-          </DialogTitle>
-          <p className="text-sm text-stone-400">
-            {trip?.trip_name ? `${trip.trip_name} · ` : ''}
-            {refDate ? formatDate(refDate, "d 'de' MMMM yyyy", { locale: es }) : 'Sin fecha'}
-            {agentName ? ` · ${agentName} (${agentRate}%)` : ''}
-            {trip?.file_number ? ` · Exp. ${trip.file_number}` : ''}
-          </p>
-        </DialogHeader>
-
-        {/* Comisión total del viaje, partida por tipo */}
-        <div className="rounded-xl border border-stone-100 bg-stone-50 p-3">
-          <div className="flex items-baseline justify-between mb-2">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-stone-400">Comisión total <span className="text-stone-300 normal-case">(todo el viaje)</span></p>
-            <p className="text-2xl font-bold text-stone-800">{money(totalCommission)}</p>
-          </div>
-          <div className="grid grid-cols-3 gap-2">
-            <div className="rounded-lg bg-green-50 border border-green-100 px-2.5 py-1.5">
-              <p className="text-[9px] font-bold uppercase tracking-wider text-green-500">Neta</p>
-              <p className="text-sm font-bold text-green-700">{money(f.net)}</p>
-            </div>
-            <div className="rounded-lg bg-orange-50 border border-orange-100 px-2.5 py-1.5">
-              <p className="text-[9px] font-bold uppercase tracking-wider text-orange-400">Bruta</p>
-              <p className="text-sm font-bold text-orange-600">{money(f.gross)}</p>
-            </div>
-            <div className={`rounded-lg border px-2.5 py-1.5 ${f.unclassified > 0 ? 'bg-amber-50 border-amber-200' : 'bg-stone-50 border-stone-100'}`}>
-              <p className={`text-[9px] font-bold uppercase tracking-wider ${f.unclassified > 0 ? 'text-amber-600' : 'text-stone-300'}`}>Sin clasificar</p>
-              <p className={`text-sm font-bold ${f.unclassified > 0 ? 'text-amber-700' : 'text-stone-300'}`}>{money(f.unclassified)}</p>
-            </div>
-          </div>
-          {f.unclassified > 0 && (
-            <p className="text-[10px] text-amber-600 mt-1.5">⚠️ Hay comisión sin marcar neto/bruto — clasifícala en la lista de abajo para que cuente bien.</p>
-          )}
-        </div>
-
-        {/* Pago al agente (todo el viaje): pagado vs pendiente */}
-        <div className="rounded-xl border p-3" style={{ borderColor: '#2E442A22', backgroundColor: '#2E442A08' }}>
-          <div className="flex items-baseline justify-between">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-stone-400">Pago al agente <span className="text-stone-300 normal-case">(todo el viaje)</span></p>
-            <p className="text-lg font-bold" style={{ color: '#2E442A' }}>{money(totalAgent)}</p>
-          </div>
-          <div className="mt-2 h-2 rounded-full bg-stone-200 overflow-hidden">
-            <div className="h-full rounded-full" style={{ width: `${paidPct}%`, backgroundColor: '#2E442A' }} />
-          </div>
-          <div className="flex justify-between mt-1.5 text-[11px]">
-            <span className="text-stone-500">Ya pagado: <strong className="text-stone-700">{money(paidAgent)}</strong></span>
-            <span className="text-stone-500">Pendiente: <strong className="text-stone-700">{money(pendingAgent)}</strong></span>
-          </div>
-          {totalDeductions > 0 && (
-            <p className="text-[10px] text-stone-500 mt-1 pt-1 border-t border-stone-200">
-              − Deducciones {money(totalDeductions)} · <strong>Neto total a pagar {money(netAgent)}</strong>
-            </p>
-          )}
-        </div>
-
-        {/* Pipeline de etapas */}
-        <div>
-          <p className="text-[10px] font-bold uppercase tracking-wider text-stone-400 mb-2">En qué etapa está</p>
-          <div className="grid grid-cols-5 gap-1.5">
-            {byStage.map(s => (
-              <div key={s.key} className={`rounded-lg px-1.5 py-2 text-center ${s.count > 0 ? s.cls : 'bg-stone-50 text-stone-300'}`}>
-                <p className="text-lg font-bold leading-none">{s.count}</p>
-                <p className="text-[9px] font-semibold uppercase tracking-wide mt-1 leading-tight">{s.label}</p>
-                {s.count > 0 && <p className="text-[9px] mt-0.5 opacity-80">{money(s.agent)}</p>}
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Neta que se quedó en la cuenta (antes "Saldo") */}
-        <div className={`rounded-xl border px-3 py-2.5 ${matchesNet ? 'bg-emerald-50 border-emerald-200' : 'bg-stone-50 border-stone-200'}`}>
-          <div className="flex items-center justify-between">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-stone-500">
-              Neta que se quedó en la cuenta <span className="text-stone-300 normal-case">(todo el viaje)</span>
-            </p>
-            {matchesNet
-              ? <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-600"><Check className="w-3.5 h-3.5" /> Cuadra con la neta</span>
-              : <span className="text-[10px] text-stone-400">esperado (neta): {money(f.net)}</span>}
-          </div>
-          <p className={`text-xl font-bold ${f.saldo < 0 ? 'text-red-600' : 'text-stone-800'}`}>{money(f.saldo)}</p>
-          <p className="text-[10px] text-stone-400 leading-tight mt-0.5">
-            Cliente pagó {money(f.clientIn)} − Nomad pagó a proveedores {money(f.nomadOut)}. Es la comisión neta que se queda en la agencia por pagar los servicios en neto.
-          </p>
-        </div>
-
-        {/* Deducciones de la comisión del agente */}
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-stone-400">Deducciones (parte agente)</p>
-            {totalDeductions > 0 && <p className="text-xs font-semibold text-red-600">− {money(totalDeductions)}</p>}
-          </div>
-          <div className="rounded-xl border border-stone-100 divide-y divide-stone-100">
-            {deductions.length === 0 ? (
-              <p className="px-3 py-2 text-sm text-stone-400">Sin deducciones</p>
-            ) : deductions.map(d => (
-              <div key={d.id} className="flex items-center justify-between px-3 py-2">
-                <div className="min-w-0">
-                  <p className="text-sm text-stone-700 truncate">{d.concept || 'Deducción'}</p>
-                  {d.date && <p className="text-[10px] text-stone-400">{formatDate(d.date, 'd MMM yy', { locale: es })}</p>}
-                </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  <span className="text-sm font-semibold text-red-600">− {money(Number(d.amount) || 0)}</span>
-                  <button onClick={() => removeDeduction(d.id)} disabled={saving} title="Quitar"
-                    className="p-1 rounded text-stone-300 hover:text-red-500">
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-          <div className="flex gap-2 mt-2">
-            <Input
-              placeholder="Concepto (ej. anticipo, gasto)"
-              value={newConcept}
-              onChange={(e) => setNewConcept(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') addDeduction(); }}
-              className="flex-1 rounded-lg h-9"
-            />
-            <Input
-              type="number"
-              placeholder="Monto"
-              value={newAmount}
-              onChange={(e) => setNewAmount(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') addDeduction(); }}
-              className="w-28 rounded-lg h-9 text-right"
-            />
-            <Button
-              onClick={addDeduction}
-              disabled={saving || !(parseFloat(newAmount) > 0)}
-              className="rounded-lg h-9 text-white flex-shrink-0"
-              style={{ backgroundColor: '#2E442A' }}
-            >
-              <Plus className="w-4 h-4 mr-1" /> Agregar
-            </Button>
-          </div>
-        </div>
-
-        {/* Lista de comisiones con su etapa */}
-        <div className="rounded-xl border border-stone-100 overflow-hidden">
-          {tripRows.length === 0 ? (
-            <p className="p-4 text-center text-sm text-stone-400">Sin comisiones</p>
-          ) : tripRows.map(r => {
-            const s = r.service;
-            const Icon = SERVICE_ICONS[s.service_type] || Package;
-            const iconColors = SERVICE_ICON_COLORS[s.service_type] || SERVICE_ICON_COLORS.otro;
-            const meta = STAGE_META[r.stage] || { label: r.stage, cls: 'bg-stone-100 text-stone-500' };
-            return (
-              <div key={s.id} className="flex items-center gap-2.5 px-3 py-2 border-t border-stone-100 first:border-t-0">
-                <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${iconColors}`}>
-                  <Icon className="w-3.5 h-3.5" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-stone-800 truncate">{getServiceName(s)}</p>
-                  <select
-                    value={s.payment_type || 'sin'}
-                    onChange={(e) => onSetType?.(s, e.target.value)}
-                    disabled={saving}
-                    className={`mt-0.5 text-[10px] font-bold rounded px-1 py-0.5 border cursor-pointer focus:outline-none ${
-                      s.payment_type === 'neto' ? 'text-green-700 border-green-200 bg-green-50'
-                        : s.payment_type === 'bruto' ? 'text-orange-600 border-orange-200 bg-orange-50'
-                          : 'text-amber-600 border-amber-200 bg-amber-50'
-                    }`}
-                  >
-                    <option value="neto">NETO</option>
-                    <option value="bruto">BRUTO</option>
-                    <option value="sin">SIN TIPO</option>
-                  </select>
-                </div>
-                <div className="text-right w-20 flex-shrink-0">
-                  <p className="text-sm font-semibold text-stone-700">{money(s.commission || 0)}</p>
-                  <p className="text-[10px] text-stone-400">Ag. {money(r.split.agent)}</p>
-                </div>
-                <span className={`text-[9px] font-bold tracking-wide px-2 py-1 rounded-md flex-shrink-0 ${meta.cls}`}>{meta.label}</span>
-              </div>
-            );
-          })}
-        </div>
-
-        {trip?.id && (
-          <div className="flex justify-end">
-            <Link
-              to={createPageUrl(`SoldTripDetail?id=${trip.id}`)}
-              className="inline-flex items-center gap-1.5 text-sm font-medium text-stone-600 hover:text-stone-900"
-            >
-              <ExternalLink className="w-4 h-4" /> Abrir viaje completo
-            </Link>
-          </div>
-        )}
-      </DialogContent>
-    </Dialog>
-  );
-}
 
 export default function InternalCommissions() {
   const [search, setSearch] = useState('');
