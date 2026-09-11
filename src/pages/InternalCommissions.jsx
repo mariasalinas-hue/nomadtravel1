@@ -265,7 +265,7 @@ const TABS = [
 const STAGE_ORDER = ['proximas', 'por_cobrar', 'pagadas_agencia', 'confirmadas', 'pagadas'];
 
 // Ventana "de un vistazo": el viaje y todas sus comisiones con su etapa
-function TripGlanceDialog({ open, onClose, trip, tripRows = [], fin, onSaveDeductions, saving }) {
+function TripGlanceDialog({ open, onClose, trip, tripRows = [], fin, onSaveDeductions, onSetType, saving }) {
   const [newConcept, setNewConcept] = useState('');
   const [newAmount, setNewAmount] = useState('');
 
@@ -278,7 +278,11 @@ function TripGlanceDialog({ open, onClose, trip, tripRows = [], fin, onSaveDeduc
       agent: list.reduce((s, r) => s + r.split.agent, 0),
     };
   });
-  const f = fin || { gross: 0, net: 0, clientIn: 0, nomadOut: 0, saldo: 0 };
+  // Pagado al agente = lo que está en etapa "Pagada"; el resto es pendiente.
+  const paidAgent = byStage.find(s => s.key === 'pagadas')?.agent || 0;
+  const pendingAgent = Math.max(0, totalAgent - paidAgent);
+  const paidPct = totalAgent > 0 ? Math.round((paidAgent / totalAgent) * 100) : 0;
+  const f = fin || { gross: 0, net: 0, unclassified: 0, clientIn: 0, nomadOut: 0, saldo: 0 };
   const matchesNet = Math.abs(f.saldo - f.net) < 1;
   const refDate = trip?.end_date || trip?.start_date;
   const agentName = tripRows[0]?.agentName;
@@ -321,19 +325,49 @@ function TripGlanceDialog({ open, onClose, trip, tripRows = [], fin, onSaveDeduc
           </p>
         </DialogHeader>
 
-        {/* Totales */}
-        <div className="grid grid-cols-2 gap-3">
-          <div className="rounded-xl border border-stone-100 bg-stone-50 p-3">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-stone-400">Comisión total</p>
+        {/* Comisión total del viaje, partida por tipo */}
+        <div className="rounded-xl border border-stone-100 bg-stone-50 p-3">
+          <div className="flex items-baseline justify-between mb-2">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-stone-400">Comisión total <span className="text-stone-300 normal-case">(todo el viaje)</span></p>
             <p className="text-2xl font-bold text-stone-800">{money(totalCommission)}</p>
           </div>
-          <div className="rounded-xl border p-3" style={{ borderColor: '#2E442A22', backgroundColor: '#2E442A08' }}>
-            <p className="text-[10px] font-bold uppercase tracking-wider text-stone-400">Neto a pagar al agente</p>
-            <p className="text-2xl font-bold" style={{ color: '#2E442A' }}>{money(netAgent)}</p>
-            {totalDeductions > 0 && (
-              <p className="text-[11px] text-stone-500 mt-0.5">{money(totalAgent)} − {money(totalDeductions)} deducciones</p>
-            )}
+          <div className="grid grid-cols-3 gap-2">
+            <div className="rounded-lg bg-green-50 border border-green-100 px-2.5 py-1.5">
+              <p className="text-[9px] font-bold uppercase tracking-wider text-green-500">Neta</p>
+              <p className="text-sm font-bold text-green-700">{money(f.net)}</p>
+            </div>
+            <div className="rounded-lg bg-orange-50 border border-orange-100 px-2.5 py-1.5">
+              <p className="text-[9px] font-bold uppercase tracking-wider text-orange-400">Bruta</p>
+              <p className="text-sm font-bold text-orange-600">{money(f.gross)}</p>
+            </div>
+            <div className={`rounded-lg border px-2.5 py-1.5 ${f.unclassified > 0 ? 'bg-amber-50 border-amber-200' : 'bg-stone-50 border-stone-100'}`}>
+              <p className={`text-[9px] font-bold uppercase tracking-wider ${f.unclassified > 0 ? 'text-amber-600' : 'text-stone-300'}`}>Sin clasificar</p>
+              <p className={`text-sm font-bold ${f.unclassified > 0 ? 'text-amber-700' : 'text-stone-300'}`}>{money(f.unclassified)}</p>
+            </div>
           </div>
+          {f.unclassified > 0 && (
+            <p className="text-[10px] text-amber-600 mt-1.5">⚠️ Hay comisión sin marcar neto/bruto — clasifícala en la lista de abajo para que cuente bien.</p>
+          )}
+        </div>
+
+        {/* Pago al agente (todo el viaje): pagado vs pendiente */}
+        <div className="rounded-xl border p-3" style={{ borderColor: '#2E442A22', backgroundColor: '#2E442A08' }}>
+          <div className="flex items-baseline justify-between">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-stone-400">Pago al agente <span className="text-stone-300 normal-case">(todo el viaje)</span></p>
+            <p className="text-lg font-bold" style={{ color: '#2E442A' }}>{money(totalAgent)}</p>
+          </div>
+          <div className="mt-2 h-2 rounded-full bg-stone-200 overflow-hidden">
+            <div className="h-full rounded-full" style={{ width: `${paidPct}%`, backgroundColor: '#2E442A' }} />
+          </div>
+          <div className="flex justify-between mt-1.5 text-[11px]">
+            <span className="text-stone-500">Ya pagado: <strong className="text-stone-700">{money(paidAgent)}</strong></span>
+            <span className="text-stone-500">Pendiente: <strong className="text-stone-700">{money(pendingAgent)}</strong></span>
+          </div>
+          {totalDeductions > 0 && (
+            <p className="text-[10px] text-stone-500 mt-1 pt-1 border-t border-stone-200">
+              − Deducciones {money(totalDeductions)} · <strong>Neto total a pagar {money(netAgent)}</strong>
+            </p>
+          )}
         </div>
 
         {/* Pipeline de etapas */}
@@ -350,23 +384,20 @@ function TripGlanceDialog({ open, onClose, trip, tripRows = [], fin, onSaveDeduc
           </div>
         </div>
 
-        {/* Resumen financiero */}
-        <div className="grid grid-cols-3 gap-2">
-          <div className="rounded-lg bg-orange-50 border border-orange-100 px-3 py-2">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-orange-400">Bruta</p>
-            <p className="text-sm font-bold text-orange-600">{money(f.gross)}</p>
+        {/* Neta que se quedó en la cuenta (antes "Saldo") */}
+        <div className={`rounded-xl border px-3 py-2.5 ${matchesNet ? 'bg-emerald-50 border-emerald-200' : 'bg-stone-50 border-stone-200'}`}>
+          <div className="flex items-center justify-between">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-stone-500">
+              Neta que se quedó en la cuenta <span className="text-stone-300 normal-case">(todo el viaje)</span>
+            </p>
+            {matchesNet
+              ? <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-600"><Check className="w-3.5 h-3.5" /> Cuadra con la neta</span>
+              : <span className="text-[10px] text-stone-400">esperado (neta): {money(f.net)}</span>}
           </div>
-          <div className="rounded-lg bg-green-50 border border-green-100 px-3 py-2">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-green-500">Neta</p>
-            <p className="text-sm font-bold text-green-700">{money(f.net)}</p>
-          </div>
-          <div className={`rounded-lg border px-3 py-2 ${matchesNet ? 'bg-emerald-50 border-emerald-200' : 'bg-stone-50 border-stone-200'}`}>
-            <div className="flex items-center justify-between">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-stone-500">Saldo</p>
-              {matchesNet && <Check className="w-3 h-3 text-emerald-500" />}
-            </div>
-            <p className={`text-sm font-bold ${f.saldo < 0 ? 'text-red-600' : 'text-stone-800'}`}>{money(f.saldo)}</p>
-          </div>
+          <p className={`text-xl font-bold ${f.saldo < 0 ? 'text-red-600' : 'text-stone-800'}`}>{money(f.saldo)}</p>
+          <p className="text-[10px] text-stone-400 leading-tight mt-0.5">
+            Cliente pagó {money(f.clientIn)} − Nomad pagó a proveedores {money(f.nomadOut)}. Es la comisión neta que se queda en la agencia por pagar los servicios en neto.
+          </p>
         </div>
 
         {/* Deducciones de la comisión del agente */}
@@ -437,9 +468,20 @@ function TripGlanceDialog({ open, onClose, trip, tripRows = [], fin, onSaveDeduc
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-stone-800 truncate">{getServiceName(s)}</p>
-                  <p className="text-[10px] text-stone-400">
-                    {s.payment_type ? s.payment_type.toUpperCase() : 'SIN TIPO'}
-                  </p>
+                  <select
+                    value={s.payment_type || 'sin'}
+                    onChange={(e) => onSetType?.(s, e.target.value)}
+                    disabled={saving}
+                    className={`mt-0.5 text-[10px] font-bold rounded px-1 py-0.5 border cursor-pointer focus:outline-none ${
+                      s.payment_type === 'neto' ? 'text-green-700 border-green-200 bg-green-50'
+                        : s.payment_type === 'bruto' ? 'text-orange-600 border-orange-200 bg-orange-50'
+                          : 'text-amber-600 border-amber-200 bg-amber-50'
+                    }`}
+                  >
+                    <option value="neto">NETO</option>
+                    <option value="bruto">BRUTO</option>
+                    <option value="sin">SIN TIPO</option>
+                  </select>
                 </div>
                 <div className="text-right w-20 flex-shrink-0">
                   <p className="text-sm font-semibold text-stone-700">{money(s.commission || 0)}</p>
@@ -523,12 +565,14 @@ export default function InternalCommissions() {
   // Se EXCLUYE lo pagado con tarjeta del cliente (ese dinero no pasa por la cuenta de Nomad).
   const tripFinancials = useMemo(() => {
     const map = {};
-    const ensure = (id) => (map[id] = map[id] || { gross: 0, net: 0, clientIn: 0, nomadOut: 0 });
+    const ensure = (id) => (map[id] = map[id] || { gross: 0, net: 0, unclassified: 0, clientIn: 0, nomadOut: 0 });
     tripServices.forEach(s => {
       if (!(s.commission > 0)) return;
       const e = ensure(s.sold_trip_id);
+      // "sin tipo" ya NO se cuenta como bruta: va a su propio bucket.
       if (s.payment_type === 'neto') e.net += s.commission;
-      else e.gross += s.commission;
+      else if (s.payment_type === 'bruto') e.gross += s.commission;
+      else e.unclassified += s.commission;
     });
     clientPayments.forEach(p => {
       if (p.method === 'tarjeta_cliente') return;
@@ -1174,11 +1218,11 @@ export default function InternalCommissions() {
                         </div>
                       </button>
                       <div className="text-right">
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-stone-400">Total</p>
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-stone-400">Total <span className="text-stone-300 normal-case">(esta etapa)</span></p>
                         <p className="text-sm font-bold text-stone-700">{money(tripTotal)}</p>
                       </div>
                       <div className="text-right w-24">
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-stone-400">Parte agente</p>
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-stone-400">Parte agente <span className="text-stone-300 normal-case">(etapa)</span></p>
                         <p className="text-sm font-bold" style={{ color: '#2E442A' }}>{money(sumAgent(rows))}</p>
                       </div>
                       <button
@@ -1194,15 +1238,22 @@ export default function InternalCommissions() {
 
                     {tripOpen && (
                       <div className="pl-12 pr-4 py-3 border-t border-stone-100 bg-white">
+                        <p className="text-[10px] font-semibold text-stone-400 mb-1.5">Resumen del viaje completo <span className="text-stone-300">· todas las etapas</span></p>
                         <div className="flex flex-wrap items-stretch gap-2">
-                          <div className="flex-1 min-w-[130px] rounded-lg bg-orange-50 border border-orange-100 px-3 py-2">
-                            <p className="text-[10px] font-bold uppercase tracking-wider text-orange-400">Comisión bruta</p>
-                            <p className="text-sm font-bold text-orange-600">{money(fin.gross)}</p>
-                          </div>
-                          <div className="flex-1 min-w-[130px] rounded-lg bg-green-50 border border-green-100 px-3 py-2">
+                          <div className="flex-1 min-w-[110px] rounded-lg bg-green-50 border border-green-100 px-3 py-2">
                             <p className="text-[10px] font-bold uppercase tracking-wider text-green-500">Comisión neta</p>
                             <p className="text-sm font-bold text-green-700">{money(fin.net)}</p>
                           </div>
+                          <div className="flex-1 min-w-[110px] rounded-lg bg-orange-50 border border-orange-100 px-3 py-2">
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-orange-400">Comisión bruta</p>
+                            <p className="text-sm font-bold text-orange-600">{money(fin.gross)}</p>
+                          </div>
+                          {fin.unclassified > 0 && (
+                            <div className="flex-1 min-w-[110px] rounded-lg bg-amber-50 border border-amber-200 px-3 py-2">
+                              <p className="text-[10px] font-bold uppercase tracking-wider text-amber-600">Sin clasificar</p>
+                              <p className="text-sm font-bold text-amber-700">{money(fin.unclassified)}</p>
+                            </div>
+                          )}
                           <div className={`flex-1 min-w-[180px] rounded-lg border px-3 py-2 ${matchesNet ? 'bg-emerald-50 border-emerald-200' : 'bg-stone-50 border-stone-200'}`}>
                             <div className="flex items-center justify-between">
                               <p className="text-[10px] font-bold uppercase tracking-wider text-stone-500">Saldo en cuenta</p>
@@ -1250,6 +1301,7 @@ export default function InternalCommissions() {
         tripRows={glanceRows}
         fin={glanceFin}
         onSaveDeductions={saveDeductions}
+        onSetType={setPaymentType}
         saving={updateTripMutation.isPending}
       />
     </div>
