@@ -27,6 +27,13 @@ export default function QuoteEditor() {
     enabled: !!quoteId,
     refetchOnWindowFocus: false,
   });
+  const { data: client } = useQuery({
+    queryKey: ['client', quote?.client_id],
+    queryFn: () => supabaseAPI.entities.Client.filter({ id: quote.client_id }).then(r => r[0]),
+    enabled: !!quote?.client_id,
+    refetchOnWindowFocus: false,
+  });
+  const clientName = client?.name || [client?.first_name, client?.last_name].filter(Boolean).join(' ').trim() || '';
   const { data: rawDays } = useQuery({
     queryKey: ['quoteDays', quoteId],
     queryFn: () => supabaseAPI.entities.QuoteDay.filter({ quote_id: quoteId }),
@@ -269,16 +276,22 @@ export default function QuoteEditor() {
 
       <div className="max-w-[1180px] mx-auto grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_300px]">
         {/* Días */}
-        <div className="px-5 py-6 min-w-0">
-          <h1 className="text-3xl font-bold mb-1" style={{ color: '#2E442A', fontFamily: 'Playfair Display, serif' }}>{quote.trip_name || 'Cotización'}</h1>
-          <p className="text-sm text-stone-500 mb-6">versión {quote.version} · {days.length} días · {Math.max(0, days.length - 1)} noches</p>
+        <div className="px-6 py-8 min-w-0">
+          <div className="mb-8">
+            <h1 className="text-4xl font-bold mb-1.5" style={{ color: '#2E442A', fontFamily: 'Playfair Display, serif' }}>{quote.trip_name || 'Cotización'}</h1>
+            <p className="text-sm text-stone-500">
+              {clientName && <span className="text-stone-700 font-medium">{clientName}</span>}
+              {clientName && ' · '}{days.length} días · {Math.max(0, days.length - 1)} noches · {pax} pax
+              <span className="text-stone-300"> · v{quote.version}</span>
+            </p>
+          </div>
 
           <DragDropContext onDragEnd={onDragEnd}>
-            <div className="space-y-1">
+            <div>
               {days.map((d, i) => (
-                <div key={d.id} id={`qd-${i}`} className="py-3 border-t border-stone-200 first:border-t-0">
+                <div key={d.id} id={`qd-${i}`}>
                   <DayBlock
-                    day={d} index={i} isLast={i === days.length - 1} pax={pax} rules={rules} cover={cover[i]}
+                    day={d} index={i} pax={pax} rules={rules} cover={cover[i]}
                     onCityChange={(v) => setCity(d.id, v)}
                     onToggleFree={() => toggleFree(d.id)}
                     onMoveDay={(dir) => moveDay(i, dir)}

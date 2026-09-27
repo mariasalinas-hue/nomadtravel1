@@ -35,7 +35,7 @@ export default function ServiceCard({ service, pax, rules, onChange, onDelete, o
   const set = (patch) => onChange(patch);
 
   return (
-    <div className="rounded-xl border border-stone-200 bg-white overflow-hidden" style={{ borderLeft: `3px solid ${ui.accent}` }}>
+    <div className="rounded-xl border border-stone-100 bg-white hover:border-stone-200 transition-colors overflow-hidden" style={{ borderLeft: `3px solid ${ui.accent}` }}>
       {/* Fila resumen */}
       <div className="flex items-center gap-2 px-3 py-2.5">
         <span {...(dragHandleProps || {})} className="text-stone-300 hover:text-stone-500 cursor-grab active:cursor-grabbing flex-shrink-0">
