@@ -15,6 +15,7 @@ import ClientTripForm from '@/pages/ClientTripForm';
 import ClientIntakeForm from '@/pages/ClientIntakeForm';
 import TripRequestForm from '@/pages/TripRequestForm';
 import QuoteBuilder from '@/pages/QuoteBuilder';
+import QuoteEditor from '@/pages/QuoteEditor';
 import { useEnsureAgentProfile } from '@/hooks/useEnsureAgentProfile';
 import ErrorBoundary from '@/components/ui/ErrorBoundary';
 import { SpoofProvider } from '@/contexts/SpoofContext';
@@ -59,6 +60,8 @@ const AuthenticatedApp = () => {
       } />
       {/* Cotizador: pantalla completa (sin el chrome del CRM), ligado a ?trip_id= */}
       <Route path="/QuoteBuilder" element={<QuoteBuilder />} />
+      {/* Cotizador day-by-day (nuevo), pantalla completa, ligado a ?id= */}
+      <Route path="/QuoteEditor" element={<QuoteEditor />} />
       {Object.entries(Pages).map(([path, Page]) => {
         // Verificar si la página es de administrador
         const isAdminPage = path.startsWith('Admin');

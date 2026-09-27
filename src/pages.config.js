@@ -23,6 +23,7 @@ import InternalClientPayments from './pages/InternalClientPayments';
 import InternalCommissions from './pages/InternalCommissions';
 import InternalPayments from './pages/InternalPayments';
 import PersonalCredentials from './pages/PersonalCredentials';
+import Quotes from './pages/Quotes';
 import Reviews from './pages/Reviews';
 import SoldTripDetail from './pages/SoldTripDetail';
 import SoldTrips from './pages/SoldTrips';
@@ -62,6 +63,7 @@ export const PAGES = {
     "InternalCommissions": InternalCommissions,
     "InternalPayments": InternalPayments,
     "PersonalCredentials": PersonalCredentials,
+    "Quotes": Quotes,
     "Reviews": Reviews,
     "SoldTripDetail": SoldTripDetail,
     "SoldTrips": SoldTrips,
