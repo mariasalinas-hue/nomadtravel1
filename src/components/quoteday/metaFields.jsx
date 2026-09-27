@@ -65,7 +65,7 @@ export default function MetaFields({ type, meta, onSet }) {
             <select value={val(f.key)} onChange={(e) => onSet(f.key, e.target.value)}
               className="w-full h-9 rounded-lg border border-stone-200 bg-white px-2 text-sm text-stone-700 focus:outline-none focus:border-[#C9A84C]">
               <option value="">—</option>
-              {f.options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              {(f.options || []).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           ) : (
             <Input type={f.kind === 'number' ? 'number' : 'text'} defaultValue={val(f.key)} placeholder={f.placeholder || ''}
@@ -89,7 +89,7 @@ function CatalogCombo({ category, base = [], value, valueIsLabel, onChange }) {
     const map = new Map();
     base.forEach(o => map.set(String(o.value), { value: valueIsLabel ? o.label : o.value, label: o.label }));
     dbOptions.forEach(o => map.set(String(o.value), { value: o.value, label: o.label || o.value }));
-    return Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label));
+    return Array.from(map.values()).sort((a, b) => (a.label || '').localeCompare(b.label || ''));
   }, [base, dbOptions, valueIsLabel]);
 
   const current = options.find(o => String(o.value) === String(value));

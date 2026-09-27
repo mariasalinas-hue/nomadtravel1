@@ -71,7 +71,7 @@ export default function QuoteEditor() {
 
   // Indicador de guardado.
   const [pending, setPending] = useState(0);
-  const track = (p) => { setPending(n => n + 1); return Promise.resolve(p).catch(() => toast.error('No se pudo guardar')).finally(() => setPending(n => Math.max(0, n - 1))); };
+  const track = (p) => { setPending(n => n + 1); return Promise.resolve(p).catch(() => { toast.error('No se pudo guardar'); return null; }).finally(() => setPending(n => Math.max(0, n - 1))); };
   const persistService = (id, s) => track(supabaseAPI.entities.QuoteService.update(id, pickSvc(s)));
   const persistDay = (id, patch) => track(supabaseAPI.entities.QuoteDay.update(id, patch));
   const persistQuote = (patch) => track(supabaseAPI.entities.Quote.update(quoteId, patch)).then(() => refetchQuote());

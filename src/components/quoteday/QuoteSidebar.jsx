@@ -17,7 +17,7 @@ export default function QuoteSidebar({ totals, pax, missing, onGoToDay }) {
         <div>
           {TYPE_ORDER.filter(k => byType[k]).map(k => (
             <div key={k} className="flex justify-between py-1.5 border-t border-stone-100 text-sm tabular-nums">
-              <span className="text-stone-500">{SERVICE_TYPES[k].label}</span>
+              <span className="text-stone-500">{SERVICE_TYPES[k]?.label || k}</span>
               <span className="font-medium text-stone-700">{money(byType[k])}</span>
             </div>
           ))}

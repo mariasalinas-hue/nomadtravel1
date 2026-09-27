@@ -11,7 +11,7 @@ export default function DayColumn({
   onCityChange, onToggleFree, onMoveDay, onDuplicateDay, onDeleteDay,
   onAddService, updateService, deleteService, duplicateService,
 }) {
-  const services = day.services || [];
+  const services = (day.services || []).filter(s => s && s.id);
   return (
     <div className={`w-[320px] flex-shrink-0 flex flex-col rounded-2xl border border-stone-200 bg-white ${day.is_free ? 'opacity-80' : ''}`}>
       {/* Encabezado de la columna */}

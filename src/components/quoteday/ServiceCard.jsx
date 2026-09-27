@@ -18,8 +18,8 @@ export const TYPE_UI = {
 };
 
 export default function ServiceCard({ service, pax, rules, onChange, onDelete, onDuplicate, dragHandleProps }) {
-  const [open, setOpen] = useState(!service.name);
-  const ui = TYPE_UI[service.type] || TYPE_UI.otro;
+  const [open, setOpen] = useState(!service?.name);
+  const ui = TYPE_UI[service?.type] || TYPE_UI.otro;
   const gross = Number(service.gross) || 0;
   const commission = commissionOf(service);
   const perPax = pax ? gross / pax : 0;
