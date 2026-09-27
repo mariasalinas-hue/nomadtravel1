@@ -1,16 +1,19 @@
 import { useState } from 'react';
-import { Hotel, Plane, Compass, Car, Train, Package, GripVertical, ChevronDown, Trash2, Copy } from 'lucide-react';
+import { Hotel, Plane, Compass, Car, Train, Package, Ship, Briefcase, GripVertical, ChevronDown, Trash2, Copy } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { money, commissionOf } from '@/lib/quoteEngine';
+import MetaFields from './metaFields';
 
 // Ícono + acento por tipo (design system del CRM).
 export const TYPE_UI = {
   hotel:    { label: 'Hospedaje', Icon: Hotel,   accent: '#3f6b58', chip: 'bg-emerald-50 text-emerald-600' },
   vuelo:    { label: 'Vuelo',     Icon: Plane,   accent: '#5d6b8a', chip: 'bg-sky-50 text-sky-600' },
+  crucero:  { label: 'Crucero',   Icon: Ship,    accent: '#4a7a8c', chip: 'bg-cyan-50 text-cyan-600' },
   tour:     { label: 'Tour',      Icon: Compass, accent: '#b8955a', chip: 'bg-amber-50 text-amber-600' },
   traslado: { label: 'Traslado',  Icon: Car,     accent: '#8a6b5d', chip: 'bg-orange-50 text-orange-600' },
   tren:     { label: 'Tren',      Icon: Train,   accent: '#6f6f73', chip: 'bg-stone-100 text-stone-600' },
+  dmc:      { label: 'DMC',       Icon: Briefcase, accent: '#7a6b8a', chip: 'bg-indigo-50 text-indigo-600' },
   otro:     { label: 'Otro',      Icon: Package, accent: '#8f8a7f', chip: 'bg-stone-100 text-stone-500' },
 };
 
@@ -105,6 +108,9 @@ export default function ServiceCard({ service, pax, rules, onChange, onDelete, o
               <MoneyInput value={service.gross} onCommit={(v) => set({ gross: v })} />
             </div>
           </div>
+
+          {/* Campos ricos por tipo (catálogos: aerolínea, cadena, crucero…) */}
+          <MetaFields type={service.type} meta={service.meta} onSet={(k, v) => set({ meta: { ...(service.meta || {}), [k]: v } })} />
 
           {/* Comisión por item */}
           <div className="flex items-center justify-between rounded-lg px-3 py-2" style={{ backgroundColor: '#2E442A0A' }}>

@@ -5,20 +5,24 @@
 export const SERVICE_TYPES = {
   hotel:    { label: 'Hospedaje', key: 'h' },
   vuelo:    { label: 'Vuelo',     key: 'v' },
+  crucero:  { label: 'Crucero',   key: 'c' },
   tour:     { label: 'Tour',      key: 't' },
   traslado: { label: 'Traslado',  key: 'r' },
   tren:     { label: 'Tren',      key: 'n' },
+  dmc:      { label: 'DMC',       key: 'd' },
   otro:     { label: 'Otro',      key: 'o' },
 };
-export const TYPE_ORDER = ['hotel', 'vuelo', 'tour', 'traslado', 'tren', 'otro'];
+export const TYPE_ORDER = ['hotel', 'vuelo', 'crucero', 'tour', 'traslado', 'tren', 'dmc', 'otro'];
 
 // Reglas de markup por default (se pueden sobrescribir por cotización).
 export const DEFAULT_RULES = {
   hotel:    { mode: 'div',     value: 0.90 },
   vuelo:    { mode: 'per_pax', value: 30 },
+  crucero:  { mode: 'div',     value: 0.85 },
   tour:     { mode: 'div',     value: 0.85 },
   traslado: { mode: 'div',     value: 0.85 },
   tren:     { mode: 'div',     value: 0.85 },
+  dmc:      { mode: 'div',     value: 0.85 },
   otro:     { mode: 'div',     value: 0.85 },
 };
 export const COMMISSION_PCT = 0.085;
@@ -69,7 +73,8 @@ export function hotelCover(days) {
 // ---- totales: por tipo, suma del grupo y comisión total (cada servicio cuenta
 // una sola vez, en su día de captura) ----
 export function totals(days) {
-  const byType = { hotel: 0, vuelo: 0, tour: 0, traslado: 0, tren: 0, otro: 0 };
+  const byType = {};
+  TYPE_ORDER.forEach(k => { byType[k] = 0; });
   let commission = 0;
   days.forEach(d => (d.services || []).forEach(s => {
     byType[s.type] = (byType[s.type] || 0) + (Number(s.gross) || 0);

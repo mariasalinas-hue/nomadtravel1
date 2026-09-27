@@ -6,16 +6,15 @@ import { createPageUrl } from '@/utils';
 import { DragDropContext } from '@hello-pangea/dnd';
 import { ArrowLeft, Loader2, Plus, Check } from 'lucide-react';
 import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import {
   rulesFor, totals, missing, hotelCover, grossFromNet, commissionOf,
   daysBetween, dateForIndex,
 } from '@/lib/quoteEngine';
-import DayBlock from '@/components/quoteday/DayBlock';
+import DayColumn from '@/components/quoteday/DayColumn';
 import QuoteSidebar from '@/components/quoteday/QuoteSidebar';
 
-const SVC_COLS = ['type', 'name', 'description', 'supplier', 'price_mode', 'net', 'gross', 'commission', 'nights', 'rooms', 'breakfast', 'sort_order', 'quote_day_id'];
+const SVC_COLS = ['type', 'name', 'description', 'supplier', 'price_mode', 'net', 'gross', 'commission', 'nights', 'rooms', 'breakfast', 'sort_order', 'quote_day_id', 'meta'];
 const pickSvc = (s) => Object.fromEntries(SVC_COLS.map(k => [k, s[k] ?? null]));
 
 export default function QuoteEditor() {
@@ -100,7 +99,7 @@ export default function QuoteEditor() {
   const addService = async (dayId, type) => {
     const day = daysRef.current.find(d => d.id === dayId);
     const sort_order = day?.services?.length ? Math.max(...day.services.map(s => s.sort_order || 0)) + 1 : 0;
-    const base = { quote_day_id: dayId, type, name: '', description: '', supplier: '', price_mode: 'gross', net: null, gross: null, commission: 0, sort_order };
+    const base = { quote_day_id: dayId, type, name: '', description: '', supplier: '', price_mode: 'gross', net: null, gross: null, commission: 0, sort_order, meta: {} };
     if (type === 'hotel') { base.nights = 1; base.rooms = Math.ceil(pax / 2); base.breakfast = false; }
     const created = await track(supabaseAPI.entities.QuoteService.create(base));
     if (created) setDays(prev => prev.map(d => d.id === dayId ? { ...d, services: [...d.services, created] } : d));
@@ -274,10 +273,10 @@ export default function QuoteEditor() {
         </span>
       </div>
 
-      <div className="max-w-[1180px] mx-auto grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_300px]">
-        {/* Días */}
-        <div className="px-6 py-8 min-w-0">
-          <div className="mb-8">
+      <div className="flex">
+        {/* Días (columnas horizontales) */}
+        <div className="flex-1 min-w-0 px-6 py-8">
+          <div className="mb-6">
             <h1 className="text-4xl font-bold mb-1.5" style={{ color: '#2E442A', fontFamily: 'Playfair Display, serif' }}>{quote.trip_name || 'Cotización'}</h1>
             <p className="text-sm text-stone-500">
               {clientName && <span className="text-stone-700 font-medium">{clientName}</span>}
@@ -287,10 +286,10 @@ export default function QuoteEditor() {
           </div>
 
           <DragDropContext onDragEnd={onDragEnd}>
-            <div>
+            <div className="flex gap-4 items-start overflow-x-auto pb-4">
               {days.map((d, i) => (
-                <div key={d.id} id={`qd-${i}`}>
-                  <DayBlock
+                <div key={d.id} id={`qd-${i}`} className="flex-shrink-0">
+                  <DayColumn
                     day={d} index={i} pax={pax} rules={rules} cover={cover[i]}
                     onCityChange={(v) => setCity(d.id, v)}
                     onToggleFree={() => toggleFree(d.id)}
@@ -304,18 +303,16 @@ export default function QuoteEditor() {
                   />
                 </div>
               ))}
+              <button onClick={addDayAtEnd}
+                className="flex-shrink-0 w-[120px] self-stretch min-h-[160px] rounded-2xl border-2 border-dashed border-stone-200 text-stone-400 hover:border-stone-400 hover:text-stone-600 flex flex-col items-center justify-center gap-1 transition-colors">
+                <Plus className="w-5 h-5" /> <span className="text-xs">Agregar día</span>
+              </button>
             </div>
           </DragDropContext>
-
-          <div className="mt-6 pt-4 border-t border-stone-200">
-            <Button variant="outline" onClick={addDayAtEnd} className="rounded-xl text-stone-500">
-              <Plus className="w-4 h-4 mr-1.5" /> Agregar un día al final
-            </Button>
-          </div>
         </div>
 
         {/* Panel lateral */}
-        <aside className="lg:sticky lg:top-[57px] lg:self-start lg:h-[calc(100vh-57px)] lg:overflow-auto border-l border-stone-200 bg-white px-5 py-6">
+        <aside className="w-[300px] flex-shrink-0 sticky top-[57px] self-start h-[calc(100vh-57px)] overflow-auto border-l border-stone-200 bg-white px-5 py-6 hidden lg:block">
           <QuoteSidebar totals={t} pax={pax} missing={miss} onGoToDay={goToDay} />
         </aside>
       </div>
