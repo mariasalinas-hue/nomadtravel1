@@ -15,7 +15,14 @@ import DayColumn from '@/components/quoteday/DayColumn';
 import QuoteSidebar from '@/components/quoteday/QuoteSidebar';
 
 const SVC_COLS = ['type', 'name', 'description', 'supplier', 'price_mode', 'net', 'gross', 'commission', 'nights', 'rooms', 'breakfast', 'sort_order', 'quote_day_id', 'meta'];
-const pickSvc = (s) => Object.fromEntries(SVC_COLS.map(k => [k, s[k] ?? null]));
+const pickSvc = (s) => {
+  const o = {};
+  SVC_COLS.forEach(k => {
+    if (k === 'meta') { if (s.meta && typeof s.meta === 'object' && Object.keys(s.meta).length) o.meta = s.meta; }
+    else o[k] = s[k] ?? null;
+  });
+  return o;
+};
 
 export default function QuoteEditor() {
   const quoteId = new URLSearchParams(window.location.search).get('id');
@@ -71,7 +78,7 @@ export default function QuoteEditor() {
 
   // Indicador de guardado.
   const [pending, setPending] = useState(0);
-  const track = (p) => { setPending(n => n + 1); return Promise.resolve(p).catch(() => { toast.error('No se pudo guardar'); return null; }).finally(() => setPending(n => Math.max(0, n - 1))); };
+  const track = (p) => { setPending(n => n + 1); return Promise.resolve(p).catch((e) => { toast.error(`No se pudo guardar: ${e?.message || e?.hint || 'error'}`); return null; }).finally(() => setPending(n => Math.max(0, n - 1))); };
   const persistService = (id, s) => track(supabaseAPI.entities.QuoteService.update(id, pickSvc(s)));
   const persistDay = (id, patch) => track(supabaseAPI.entities.QuoteDay.update(id, patch));
   const persistQuote = (patch) => track(supabaseAPI.entities.Quote.update(quoteId, patch)).then(() => refetchQuote());
