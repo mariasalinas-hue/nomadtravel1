@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { supabaseAPI } from '@/api/supabaseClient';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
@@ -7,12 +7,16 @@ import { useSpoofableUser } from '@/contexts/SpoofContext';
 import { formatDate } from '@/lib/dateUtils';
 import { es } from 'date-fns/locale';
 import { daysBetween, dateForIndex } from '@/lib/quoteEngine';
-import { Loader2, Plus, Calendar, Users, FileText } from 'lucide-react';
+import { Loader2, Plus, Calendar, Users, FileText, Search, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
+
+// Nombre del cliente: soporta esquema con `name` o con first/last o solo email.
+const clientLabel = (c) =>
+  c?.name || [c?.first_name, c?.last_name].filter(Boolean).join(' ').trim() || c?.email || 'Cliente';
 
 const STATUS_META = {
   draft:    { label: 'Borrador',  cls: 'bg-stone-100 text-stone-600' },
@@ -21,6 +25,8 @@ const STATUS_META = {
   rejected: { label: 'Rechazada', cls: 'bg-red-50 text-red-600' },
 };
 
+const emptyForm = { client_id: '', trip_id: '', trip_name: '', start_date: '', end_date: '', pax: 2 };
+
 export default function Quotes() {
   const { user } = useSpoofableUser();
   const email = user?.primaryEmailAddress?.emailAddress;
@@ -28,7 +34,9 @@ export default function Quotes() {
   const queryClient = useQueryClient();
 
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ client_id: '', trip_name: '', start_date: '', end_date: '', pax: 2 });
+  const [form, setForm] = useState(emptyForm);
+  const [clientSearch, setClientSearch] = useState('');
+  const [showClientDrop, setShowClientDrop] = useState(false);
 
   const { data: quotes = [], isLoading } = useQuery({
     queryKey: ['quotes', email],
@@ -39,12 +47,27 @@ export default function Quotes() {
     queryKey: ['clients'],
     queryFn: () => supabaseAPI.entities.Client.list(),
   });
-  const clientName = (id) => clients.find(c => String(c.id) === String(id))?.name || 'Cliente';
+  const clientById = (id) => clients.find(c => String(c.id) === String(id));
+
+  // Viajes del cliente elegido (para ligar la cotización a un viaje)
+  const { data: clientTrips = [] } = useQuery({
+    queryKey: ['clientTrips', form.client_id],
+    queryFn: () => supabaseAPI.entities.Trip.filter({ client_id: form.client_id }),
+    enabled: !!form.client_id,
+  });
+
+  const filteredClients = useMemo(() => {
+    const q = clientSearch.toLowerCase().trim();
+    const list = [...clients].sort((a, b) => clientLabel(a).localeCompare(clientLabel(b)));
+    if (!q) return list.slice(0, 50);
+    return list.filter(c => clientLabel(c).toLowerCase().includes(q) || (c.email || '').toLowerCase().includes(q)).slice(0, 50);
+  }, [clients, clientSearch]);
 
   const createMutation = useMutation({
     mutationFn: async (data) => {
       const quote = await supabaseAPI.entities.Quote.create({
         client_id: data.client_id,
+        trip_id: data.trip_id || null,
         trip_name: data.trip_name,
         start_date: data.start_date,
         end_date: data.end_date,
@@ -68,6 +91,17 @@ export default function Quotes() {
     onError: (e) => toast.error(`No se pudo crear la cotización: ${e?.message || 'error'}`),
   });
 
+  const openNew = () => { setForm(emptyForm); setClientSearch(''); setOpen(true); };
+  const pickClient = (c) => {
+    setForm(f => ({ ...f, client_id: String(c.id), trip_id: '' }));
+    setClientSearch(clientLabel(c));
+    setShowClientDrop(false);
+  };
+  const pickTrip = (tripId) => {
+    const t = clientTrips.find(x => String(x.id) === String(tripId));
+    setForm(f => ({ ...f, trip_id: tripId, trip_name: f.trip_name || t?.trip_name || t?.destination || '' }));
+  };
+
   const save = () => {
     if (!form.client_id) { toast.error('Elige un cliente'); return; }
     if (!form.trip_name.trim()) { toast.error('Escribe el nombre del viaje'); return; }
@@ -85,12 +119,11 @@ export default function Quotes() {
             <FileText className="w-6 h-6 text-white" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-stone-900" style={{ fontFamily: 'Playfair Display, serif' }}>Cotizaciones</h1>
-            <p className="text-sm text-stone-500">Cotizador day-by-day</p>
+            <h1 className="text-2xl font-bold text-stone-900" style={{ fontFamily: 'Playfair Display, serif' }}>Cotizador</h1>
+            <p className="text-sm text-stone-500">Cotizaciones day-by-day</p>
           </div>
         </div>
-        <Button onClick={() => { setForm({ client_id: '', trip_name: '', start_date: '', end_date: '', pax: 2 }); setOpen(true); }}
-          className="text-white rounded-xl self-start" style={{ backgroundColor: '#2E442A' }}>
+        <Button onClick={openNew} className="text-white rounded-xl self-start" style={{ backgroundColor: '#2E442A' }}>
           <Plus className="w-4 h-4 mr-2" /> Nueva cotización
         </Button>
       </div>
@@ -114,7 +147,7 @@ export default function Quotes() {
                   <span className={`text-[10px] font-bold px-2 py-1 rounded-md flex-shrink-0 ${st.cls}`}>{st.label} · v{q.version}</span>
                 </div>
                 <div className="mt-2 space-y-1 text-sm text-stone-500">
-                  <p className="flex items-center gap-1.5"><Users className="w-3.5 h-3.5" /> {clientName(q.client_id)}</p>
+                  <p className="flex items-center gap-1.5"><Users className="w-3.5 h-3.5" /> {clientLabel(clientById(q.client_id))}</p>
                   <p className="flex items-center gap-1.5"><Calendar className="w-3.5 h-3.5" />
                     {q.start_date ? formatDate(q.start_date, 'd MMM', { locale: es }) : '—'}
                     {q.end_date ? ` – ${formatDate(q.end_date, 'd MMM yyyy', { locale: es })}` : ''}
@@ -134,15 +167,59 @@ export default function Quotes() {
             <DialogTitle style={{ color: '#2E442A' }}>Nueva cotización</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
-            <div>
+            {/* Cliente (buscable) */}
+            <div className="relative">
               <label className="text-xs font-semibold text-stone-500 mb-1 block">Cliente</label>
-              <Select value={form.client_id} onValueChange={(v) => setForm(f => ({ ...f, client_id: v }))}>
-                <SelectTrigger><SelectValue placeholder="Elegir cliente…" /></SelectTrigger>
-                <SelectContent>
-                  {clients.map(c => <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
+                <Input
+                  value={clientSearch}
+                  onChange={(e) => { setClientSearch(e.target.value); setShowClientDrop(true); if (form.client_id) setForm(f => ({ ...f, client_id: '', trip_id: '' })); }}
+                  onFocus={() => setShowClientDrop(true)}
+                  onBlur={() => setTimeout(() => setShowClientDrop(false), 200)}
+                  placeholder="Buscar cliente…"
+                  className="pl-9"
+                />
+                {form.client_id && <Check className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-green-500" />}
+              </div>
+              {showClientDrop && (
+                <div className="absolute z-50 w-full mt-1 bg-white border border-stone-200 rounded-xl shadow-lg max-h-[220px] overflow-y-auto">
+                  {clients.length === 0 ? (
+                    <div className="p-4 text-sm text-stone-500 text-center">No hay clientes. Crea uno primero.</div>
+                  ) : filteredClients.length === 0 ? (
+                    <div className="p-4 text-sm text-stone-500 text-center">Sin coincidencias.</div>
+                  ) : filteredClients.map(c => (
+                    <div key={c.id} onMouseDown={() => pickClient(c)}
+                      className="px-3 py-2 cursor-pointer hover:bg-stone-50 flex items-center gap-2">
+                      <div className="w-7 h-7 rounded-full bg-stone-200 flex items-center justify-center flex-shrink-0 text-xs font-semibold text-stone-600">
+                        {clientLabel(c).slice(0, 1).toUpperCase()}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="font-medium text-sm truncate">{clientLabel(c)}</div>
+                        {c.email && <div className="text-xs text-stone-400 truncate">{c.email}</div>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
+
+            {/* Viaje del cliente (opcional) */}
+            {form.client_id && clientTrips.length > 0 && (
+              <div>
+                <label className="text-xs font-semibold text-stone-500 mb-1 block">Ligar a un viaje (opcional)</label>
+                <Select value={form.trip_id || 'none'} onValueChange={(v) => pickTrip(v === 'none' ? '' : v)}>
+                  <SelectTrigger><SelectValue placeholder="Sin viaje" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Sin viaje</SelectItem>
+                    {clientTrips.map(t => (
+                      <SelectItem key={t.id} value={String(t.id)}>{t.trip_name || t.destination || 'Viaje'}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
             <div>
               <label className="text-xs font-semibold text-stone-500 mb-1 block">Nombre del viaje</label>
               <Input value={form.trip_name} onChange={(e) => setForm(f => ({ ...f, trip_name: e.target.value }))} placeholder="Ej. Canadá en otoño" />

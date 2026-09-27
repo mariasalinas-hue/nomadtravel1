@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import TripForm from '@/components/trips/TripForm';
 import TravelDocumentsList from '@/components/documents/TravelDocumentsList';
+import { FEATURES } from '@/config/featureFlags';
 
 const STAGE_CONFIG = {
   nuevo: { label: 'Nuevo', color: 'bg-blue-100 text-blue-700' },
@@ -118,14 +119,16 @@ export default function TripDetail() {
           </h1>
           <p className="text-stone-500 text-sm">{trip.client_name}</p>
         </div>
-        <Button
-          onClick={() => window.open(`${createPageUrl('QuoteBuilder')}?trip_id=${tripId}`, '_blank')}
-          className="rounded-xl text-white"
-          style={{ backgroundColor: '#2E442A' }}
-        >
-          <Table2 className="w-4 h-4 mr-2" />
-          Abrir Cotizador
-        </Button>
+        {!FEATURES.newCotizador && (
+          <Button
+            onClick={() => window.open(`${createPageUrl('QuoteBuilder')}?trip_id=${tripId}`, '_blank')}
+            className="rounded-xl text-white"
+            style={{ backgroundColor: '#2E442A' }}
+          >
+            <Table2 className="w-4 h-4 mr-2" />
+            Abrir Cotizador
+          </Button>
+        )}
         <Button
           onClick={() => setFormOpen(true)}
           variant="outline"

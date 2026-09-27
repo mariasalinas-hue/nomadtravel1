@@ -8,6 +8,7 @@
 CREATE TABLE IF NOT EXISTS public.quotes (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   client_id TEXT,
+  trip_id TEXT,                           -- viaje (cotización) al que se liga, opcional
   trip_name TEXT,
   start_date DATE,
   end_date DATE,
@@ -24,6 +25,8 @@ CREATE TABLE IF NOT EXISTS public.quotes (
 );
 CREATE INDEX IF NOT EXISTS idx_quotes_client ON public.quotes(client_id);
 CREATE INDEX IF NOT EXISTS idx_quotes_created_by ON public.quotes(created_by);
+-- idempotente: por si la tabla ya existía sin trip_id
+ALTER TABLE public.quotes ADD COLUMN IF NOT EXISTS trip_id TEXT;
 
 CREATE TABLE IF NOT EXISTS public.quote_days (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
