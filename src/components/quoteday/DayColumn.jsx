@@ -38,13 +38,12 @@ export default function DayColumn({
         </div>
       </div>
 
-      {/* Servicios */}
+      {/* Servicios (el hotel multinoche se muestra en la barra superior, no aquí) */}
       <div className="flex-1 px-3 py-3 min-h-[80px]">
         {cover && (
-          <div className="rounded-xl border border-dashed border-emerald-200 bg-emerald-50/40 px-3 py-2 mb-2 flex items-center gap-2 text-xs text-emerald-700">
-            <Hotel className="w-3.5 h-3.5 flex-shrink-0" />
-            <span className="truncate">{cover.service.name || 'Hotel'}</span>
-            <span className="text-[10px] text-emerald-600/70 ml-auto flex-shrink-0">noche {cover.night}/{cover.of}</span>
+          <div className="rounded-xl border border-dashed border-emerald-200/70 bg-emerald-50/30 px-3 py-1.5 mb-2 flex items-center gap-2 text-[11px] text-emerald-600/80">
+            <Hotel className="w-3 h-3 flex-shrink-0" />
+            <span className="truncate">Noche {cover.night} de {cover.of}</span>
           </div>
         )}
 

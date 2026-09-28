@@ -4,16 +4,19 @@ import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { DragDropContext } from '@hello-pangea/dnd';
-import { ArrowLeft, Loader2, Plus, Check, Calendar, Columns3, ChevronRight, PanelRight } from 'lucide-react';
+import { ArrowLeft, Loader2, Plus, Check, Calendar, Columns3, ChevronRight, PanelRight, Share2 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
 import {
-  rulesFor, totals, missing, hotelCover, grossFromNet, commissionOf,
+  rulesFor, totals, missing, hotelCover, hotelStays, grossFromNet, commissionOf,
   daysBetween, dateForIndex,
 } from '@/lib/quoteEngine';
 import DayColumn from '@/components/quoteday/DayColumn';
 import QuoteSidebar from '@/components/quoteday/QuoteSidebar';
 import QuoteCalendarView from '@/components/quoteday/QuoteCalendarView';
+import HotelBand from '@/components/quoteday/HotelBand';
+import QuoteCoverEditor from '@/components/quoteday/QuoteCoverEditor';
+import ShareQuoteDialog from '@/components/quoteday/ShareQuoteDialog';
 
 const SVC_COLS = ['type', 'name', 'description', 'supplier', 'price_mode', 'net', 'gross', 'commission', 'nights', 'rooms', 'breakfast', 'sort_order', 'quote_day_id', 'meta'];
 const pickSvc = (s) => {
@@ -261,9 +264,11 @@ export default function QuoteEditor() {
   };
 
   const cover = useMemo(() => (days ? hotelCover(days) : {}), [days]);
+  const stays = useMemo(() => (days ? hotelStays(days) : []), [days]);
   const t = useMemo(() => (days ? totals(days) : { byType: {}, sum: 0, commission: 0 }), [days]);
   const miss = useMemo(() => (days ? missing(days) : []), [days]);
-  const goToDay = (i) => document.getElementById(`qd-${i}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  const goToDay = (i) => document.getElementById(`qd-${i}`)?.scrollIntoView({ block: 'center', inline: 'start', behavior: 'smooth' });
+  const [shareOpen, setShareOpen] = useState(false);
 
   if (isLoading || days === null) {
     return <div className="flex items-center justify-center h-96"><Loader2 className="w-8 h-8 animate-spin" style={{ color: '#2E442A' }} /></div>;
@@ -296,6 +301,11 @@ export default function QuoteEditor() {
           <ViewBtn active={view === 'calendar'} onClick={() => setView('calendar')}><Calendar className="w-3.5 h-3.5" /> Calendario</ViewBtn>
         </div>
 
+        <button onClick={() => setShareOpen(true)}
+          className="self-center flex items-center gap-1.5 text-xs font-medium text-white px-3 py-2 rounded-lg" style={{ backgroundColor: '#2E442A' }}>
+          <Share2 className="w-3.5 h-3.5" /> Compartir
+        </button>
+
         <span className="text-xs text-stone-400 pb-1.5 flex items-center gap-1 self-center">
           {pending > 0 ? <><Loader2 className="w-3 h-3 animate-spin" /> Guardando…</> : <><Check className="w-3 h-3 text-emerald-500" /> Guardado</>}
         </span>
@@ -321,30 +331,39 @@ export default function QuoteEditor() {
           {view === 'calendar' ? (
             <QuoteCalendarView days={days} onPickDay={(i) => { setView('edit'); setTimeout(() => goToDay(i), 60); }} />
           ) : (
-            <DragDropContext onDragEnd={onDragEnd}>
-              <div ref={scrollRef} className="flex gap-4 items-start overflow-x-auto pb-4">
-                {days.map((d, i) => (
-                  <div key={d.id} id={`qd-${i}`} className="flex-shrink-0">
-                    <DayColumn
-                      day={d} index={i} pax={pax} rules={rules} cover={cover[i]}
-                      onCityChange={(v) => setCity(d.id, v)}
-                      onToggleFree={() => toggleFree(d.id)}
-                      onMoveDay={(dir) => moveDay(i, dir)}
-                      onDuplicateDay={() => duplicateDay(i)}
-                      onDeleteDay={() => deleteDay(i)}
-                      onAddService={(type) => addService(d.id, type)}
-                      updateService={updateService}
-                      deleteService={deleteService}
-                      duplicateService={duplicateService}
-                    />
+            <>
+              <QuoteCoverEditor quote={quote} onSet={persistQuote} />
+              <DragDropContext onDragEnd={onDragEnd}>
+                <div ref={scrollRef} className="overflow-x-auto pb-4">
+                  <div className="inline-flex flex-col">
+                    {/* Barra de hoteles multinoche que cruza los días */}
+                    <HotelBand stays={stays} count={days.length} onPick={goToDay} />
+                    <div className="flex gap-4 items-start">
+                      {days.map((d, i) => (
+                        <div key={d.id} id={`qd-${i}`} className="flex-shrink-0">
+                          <DayColumn
+                            day={d} index={i} pax={pax} rules={rules} cover={cover[i]}
+                            onCityChange={(v) => setCity(d.id, v)}
+                            onToggleFree={() => toggleFree(d.id)}
+                            onMoveDay={(dir) => moveDay(i, dir)}
+                            onDuplicateDay={() => duplicateDay(i)}
+                            onDeleteDay={() => deleteDay(i)}
+                            onAddService={(type) => addService(d.id, type)}
+                            updateService={updateService}
+                            deleteService={deleteService}
+                            duplicateService={duplicateService}
+                          />
+                        </div>
+                      ))}
+                      <button onClick={addDayAtEnd}
+                        className="flex-shrink-0 w-[110px] self-stretch min-h-[160px] rounded-2xl border-2 border-dashed border-stone-200 text-stone-400 hover:border-stone-400 hover:text-stone-600 flex flex-col items-center justify-center gap-1 transition-colors">
+                        <Plus className="w-5 h-5" /> <span className="text-xs">Agregar día</span>
+                      </button>
+                    </div>
                   </div>
-                ))}
-                <button onClick={addDayAtEnd}
-                  className="flex-shrink-0 w-[110px] self-stretch min-h-[160px] rounded-2xl border-2 border-dashed border-stone-200 text-stone-400 hover:border-stone-400 hover:text-stone-600 flex flex-col items-center justify-center gap-1 transition-colors">
-                  <Plus className="w-5 h-5" /> <span className="text-xs">Agregar día</span>
-                </button>
-              </div>
-            </DragDropContext>
+                </div>
+              </DragDropContext>
+            </>
           )}
         </div>
 
@@ -360,6 +379,12 @@ export default function QuoteEditor() {
           </aside>
         )}
       </div>
+
+      <ShareQuoteDialog
+        open={shareOpen} onOpenChange={setShareOpen}
+        quote={quote} clientName={clientName}
+        onSent={refetchQuote}
+      />
     </div>
   );
 }

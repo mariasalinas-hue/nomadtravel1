@@ -70,6 +70,21 @@ export function hotelCover(days) {
   return map;
 }
 
+// ---- hoteles multinoche como "estancias": para dibujar una barra que cruza los
+// días que cubre. Devuelve [{ service, startIndex, span }] con span acotado a los
+// días disponibles. Solo incluye hoteles de más de una noche. ----
+export function hotelStays(days) {
+  const out = [];
+  days.forEach((d, i) => (d.services || []).forEach(s => {
+    if (s.type !== 'hotel') return;
+    const nights = Number(s.nights) || 1;
+    if (nights < 2) return;
+    const span = Math.min(nights, days.length - i);
+    if (span >= 2) out.push({ service: s, startIndex: i, span });
+  }));
+  return out;
+}
+
 // ---- totales: por tipo, suma del grupo y comisión total (cada servicio cuenta
 // una sola vez, en su día de captura) ----
 export function totals(days) {

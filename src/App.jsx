@@ -14,6 +14,7 @@ import AdminRoute from '@/components/AdminRoute';
 import ClientTripForm from '@/pages/ClientTripForm';
 import ClientIntakeForm from '@/pages/ClientIntakeForm';
 import TripRequestForm from '@/pages/TripRequestForm';
+import PublicQuote from '@/pages/PublicQuote';
 import QuoteBuilder from '@/pages/QuoteBuilder';
 import QuoteEditor from '@/pages/QuoteEditor';
 import { useEnsureAgentProfile } from '@/hooks/useEnsureAgentProfile';
@@ -102,6 +103,7 @@ function App() {
         <Routes>
           {/* Public routes - no authentication required */}
           <Route path="/public/trip-form/:token" element={<ClientTripForm />} />
+          <Route path="/public/quote/:token" element={<PublicQuote />} />
           <Route path="/public/client-form/:token" element={<ClientIntakeForm />} />
           <Route path="/c/:token" element={<ClientIntakeForm />} />
           <Route path="/t/:clientId" element={<TripRequestForm />} />

@@ -1,7 +1,9 @@
 import { useState } from 'react';
-import { Hotel, Plane, Compass, Car, Train, Package, Ship, Briefcase, GripVertical, ChevronDown, Trash2, Copy } from 'lucide-react';
+import { Hotel, Plane, Compass, Car, Train, Package, Ship, Briefcase, GripVertical, ChevronDown, Trash2, Copy, ImageIcon, Loader2, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { toast } from 'sonner';
+import { supabaseAPI } from '@/api/supabaseClient';
 import { money, commissionOf } from '@/lib/quoteEngine';
 import MetaFields from './metaFields';
 
@@ -112,6 +114,9 @@ export default function ServiceCard({ service, pax, rules, onChange, onDelete, o
           {/* Campos ricos por tipo (catálogos: aerolínea, cadena, crucero…) */}
           <MetaFields type={service.type} meta={service.meta} onSet={(k, v) => set({ meta: { ...(service.meta || {}), [k]: v } })} />
 
+          {/* Foto para el cliente (se muestra en la cotización compartida) */}
+          <PhotoField url={service.meta?.image_url} onSet={(url) => set({ meta: { ...(service.meta || {}), image_url: url } })} />
+
           {/* Comisión por item */}
           <div className="flex items-center justify-between rounded-lg px-3 py-2" style={{ backgroundColor: '#2E442A0A' }}>
             <span className="text-[11px] text-stone-500">{ruleText} · {money(perPax)} por persona</span>
@@ -134,6 +139,44 @@ export default function ServiceCard({ service, pax, rules, onChange, onDelete, o
 }
 
 function Label({ children }) { return <label className="text-[11px] text-stone-400 mb-0.5 block">{children}</label>; }
+
+// Sube una foto del servicio a Storage y guarda la URL pública en meta.image_url.
+function PhotoField({ url, onSet }) {
+  const [busy, setBusy] = useState(false);
+  const onFile = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    if (!file.type.startsWith('image/')) { toast.error('Elige una imagen'); return; }
+    setBusy(true);
+    try {
+      const { file_url } = await supabaseAPI.storage.uploadFile(file, 'documents', 'quotes');
+      onSet(file_url);
+    } catch (err) {
+      toast.error(`No se pudo subir: ${err?.message || 'error'}`);
+    } finally { setBusy(false); }
+  };
+  return (
+    <div>
+      <Label>Foto para el cliente</Label>
+      {url ? (
+        <div className="relative w-full">
+          <img src={url} alt="" className="w-full h-28 object-cover rounded-lg border border-stone-200" />
+          <button onClick={() => onSet(null)} title="Quitar foto"
+            className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-white/90 border border-stone-200 flex items-center justify-center text-stone-500 hover:text-red-500">
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      ) : (
+        <label className="flex items-center justify-center gap-2 h-11 rounded-lg border border-dashed border-stone-200 text-xs text-stone-400 hover:border-stone-400 hover:text-stone-600 cursor-pointer">
+          {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImageIcon className="w-4 h-4" />}
+          {busy ? 'Subiendo…' : 'Agregar foto'}
+          <input type="file" accept="image/*" className="hidden" onChange={onFile} disabled={busy} />
+        </label>
+      )}
+    </div>
+  );
+}
 function IconBtn({ children, onClick, title, danger }) {
   return <button onClick={onClick} title={title} className={`p-1.5 rounded-lg ${danger ? 'text-stone-400 hover:text-red-500 hover:bg-red-50' : 'text-stone-400 hover:text-stone-700 hover:bg-stone-100'}`}>{children}</button>;
 }
