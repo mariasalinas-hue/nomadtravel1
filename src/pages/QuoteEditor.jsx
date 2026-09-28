@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { DragDropContext } from '@hello-pangea/dnd';
-import { ArrowLeft, Loader2, Plus, Check } from 'lucide-react';
+import { ArrowLeft, Loader2, Plus, Check, Calendar, Columns3, ChevronRight, PanelRight } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
 import {
@@ -13,6 +13,7 @@ import {
 } from '@/lib/quoteEngine';
 import DayColumn from '@/components/quoteday/DayColumn';
 import QuoteSidebar from '@/components/quoteday/QuoteSidebar';
+import QuoteCalendarView from '@/components/quoteday/QuoteCalendarView';
 
 const SVC_COLS = ['type', 'name', 'description', 'supplier', 'price_mode', 'net', 'gross', 'commission', 'nights', 'rooms', 'breakfast', 'sort_order', 'quote_day_id', 'meta'];
 const pickSvc = (s) => {
@@ -78,6 +79,19 @@ export default function QuoteEditor() {
 
   // Indicador de guardado.
   const [pending, setPending] = useState(0);
+  const [view, setView] = useState('edit');          // edit | calendar
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const scrollRef = useRef(null);
+  // El scroll vertical de la rueda mueve las columnas de lado (no hay scroll hacia abajo).
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || view !== 'edit') return;
+    const onWheel = (e) => {
+      if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) { el.scrollLeft += e.deltaY; e.preventDefault(); }
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [view, days]);
   const track = (p) => { setPending(n => n + 1); return Promise.resolve(p).catch((e) => { toast.error(`No se pudo guardar: ${e?.message || e?.hint || 'error'}`); return null; }).finally(() => setPending(n => Math.max(0, n - 1))); };
   const persistService = (id, s) => track(supabaseAPI.entities.QuoteService.update(id, pickSvc(s)));
   const persistDay = (id, patch) => track(supabaseAPI.entities.QuoteDay.update(id, patch));
@@ -275,13 +289,25 @@ export default function QuoteEditor() {
         <TopField label="Pax" className="w-20">
           <Input type="number" min={1} defaultValue={quote.pax || 1} onBlur={(e) => onTripField('pax', Number(e.target.value) || 1)} />
         </TopField>
-        <span className="text-xs text-stone-400 pb-1.5 flex items-center gap-1 ml-auto">
+
+        {/* Toggle vista */}
+        <div className="flex rounded-lg border border-stone-200 overflow-hidden ml-auto self-center">
+          <ViewBtn active={view === 'edit'} onClick={() => setView('edit')}><Columns3 className="w-3.5 h-3.5" /> Editar</ViewBtn>
+          <ViewBtn active={view === 'calendar'} onClick={() => setView('calendar')}><Calendar className="w-3.5 h-3.5" /> Calendario</ViewBtn>
+        </div>
+
+        <span className="text-xs text-stone-400 pb-1.5 flex items-center gap-1 self-center">
           {pending > 0 ? <><Loader2 className="w-3 h-3 animate-spin" /> Guardando…</> : <><Check className="w-3 h-3 text-emerald-500" /> Guardado</>}
         </span>
+        {!sidebarOpen && (
+          <button onClick={() => setSidebarOpen(true)} title="Mostrar resumen" className="self-center p-1.5 rounded-lg border border-stone-200 text-stone-500 hover:text-stone-800">
+            <PanelRight className="w-4 h-4" />
+          </button>
+        )}
       </div>
 
       <div className="flex">
-        {/* Días (columnas horizontales) */}
+        {/* Contenido */}
         <div className="flex-1 min-w-0 px-6 py-8">
           <div className="mb-6">
             <h1 className="text-4xl font-bold mb-1.5" style={{ color: '#2E442A', fontFamily: 'Playfair Display, serif' }}>{quote.trip_name || 'Cotización'}</h1>
@@ -292,38 +318,58 @@ export default function QuoteEditor() {
             </p>
           </div>
 
-          <DragDropContext onDragEnd={onDragEnd}>
-            <div className="flex gap-4 items-start overflow-x-auto pb-4">
-              {days.map((d, i) => (
-                <div key={d.id} id={`qd-${i}`} className="flex-shrink-0">
-                  <DayColumn
-                    day={d} index={i} pax={pax} rules={rules} cover={cover[i]}
-                    onCityChange={(v) => setCity(d.id, v)}
-                    onToggleFree={() => toggleFree(d.id)}
-                    onMoveDay={(dir) => moveDay(i, dir)}
-                    onDuplicateDay={() => duplicateDay(i)}
-                    onDeleteDay={() => deleteDay(i)}
-                    onAddService={(type) => addService(d.id, type)}
-                    updateService={updateService}
-                    deleteService={deleteService}
-                    duplicateService={duplicateService}
-                  />
-                </div>
-              ))}
-              <button onClick={addDayAtEnd}
-                className="flex-shrink-0 w-[120px] self-stretch min-h-[160px] rounded-2xl border-2 border-dashed border-stone-200 text-stone-400 hover:border-stone-400 hover:text-stone-600 flex flex-col items-center justify-center gap-1 transition-colors">
-                <Plus className="w-5 h-5" /> <span className="text-xs">Agregar día</span>
-              </button>
-            </div>
-          </DragDropContext>
+          {view === 'calendar' ? (
+            <QuoteCalendarView days={days} onPickDay={(i) => { setView('edit'); setTimeout(() => goToDay(i), 60); }} />
+          ) : (
+            <DragDropContext onDragEnd={onDragEnd}>
+              <div ref={scrollRef} className="flex gap-4 items-start overflow-x-auto pb-4">
+                {days.map((d, i) => (
+                  <div key={d.id} id={`qd-${i}`} className="flex-shrink-0">
+                    <DayColumn
+                      day={d} index={i} pax={pax} rules={rules} cover={cover[i]}
+                      onCityChange={(v) => setCity(d.id, v)}
+                      onToggleFree={() => toggleFree(d.id)}
+                      onMoveDay={(dir) => moveDay(i, dir)}
+                      onDuplicateDay={() => duplicateDay(i)}
+                      onDeleteDay={() => deleteDay(i)}
+                      onAddService={(type) => addService(d.id, type)}
+                      updateService={updateService}
+                      deleteService={deleteService}
+                      duplicateService={duplicateService}
+                    />
+                  </div>
+                ))}
+                <button onClick={addDayAtEnd}
+                  className="flex-shrink-0 w-[110px] self-stretch min-h-[160px] rounded-2xl border-2 border-dashed border-stone-200 text-stone-400 hover:border-stone-400 hover:text-stone-600 flex flex-col items-center justify-center gap-1 transition-colors">
+                  <Plus className="w-5 h-5" /> <span className="text-xs">Agregar día</span>
+                </button>
+              </div>
+            </DragDropContext>
+          )}
         </div>
 
-        {/* Panel lateral */}
-        <aside className="w-[300px] flex-shrink-0 sticky top-[57px] self-start h-[calc(100vh-57px)] overflow-auto border-l border-stone-200 bg-white px-5 py-6 hidden lg:block">
-          <QuoteSidebar totals={t} pax={pax} missing={miss} onGoToDay={goToDay} />
-        </aside>
+        {/* Panel lateral (abatible) */}
+        {sidebarOpen && (
+          <aside className="w-[300px] flex-shrink-0 sticky top-[57px] self-start h-[calc(100vh-57px)] overflow-auto border-l border-stone-200 bg-white px-5 py-6 hidden lg:block">
+            <div className="flex justify-end mb-1">
+              <button onClick={() => setSidebarOpen(false)} title="Ocultar resumen" className="p-1 rounded-lg text-stone-400 hover:text-stone-700 hover:bg-stone-100">
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+            <QuoteSidebar totals={t} pax={pax} missing={miss} onGoToDay={goToDay} />
+          </aside>
+        )}
       </div>
     </div>
+  );
+}
+
+function ViewBtn({ active, onClick, children }) {
+  return (
+    <button onClick={onClick} className={`px-3 py-1.5 text-xs font-medium flex items-center gap-1.5 ${active ? 'text-white' : 'text-stone-500'}`}
+      style={active ? { backgroundColor: '#2E442A' } : {}}>
+      {children}
+    </button>
   );
 }
 
