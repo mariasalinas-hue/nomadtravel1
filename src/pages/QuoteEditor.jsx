@@ -4,21 +4,24 @@ import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { DragDropContext } from '@hello-pangea/dnd';
-import { ArrowLeft, Loader2, Plus, Check, Calendar, Columns3, ChevronRight, PanelRight, Share2 } from 'lucide-react';
+import { ArrowLeft, Loader2, Plus, Check, Calendar, Columns3, ChevronRight, PanelRight, Share2, Layers } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
 import {
   rulesFor, totals, missing, hotelCover, hotelStays, grossFromNet, commissionOf,
-  daysBetween, dateForIndex,
+  daysBetween, dateForIndex, resolveOptions,
 } from '@/lib/quoteEngine';
 import DayColumn from '@/components/quoteday/DayColumn';
 import QuoteSidebar from '@/components/quoteday/QuoteSidebar';
 import QuoteCalendarView from '@/components/quoteday/QuoteCalendarView';
+import QuoteServicesView from '@/components/quoteday/QuoteServicesView';
+import QuoteTimeline from '@/components/quoteday/QuoteTimeline';
 import HotelBand from '@/components/quoteday/HotelBand';
 import QuoteCoverEditor from '@/components/quoteday/QuoteCoverEditor';
 import ShareQuoteDialog from '@/components/quoteday/ShareQuoteDialog';
+import ServiceEditorModal from '@/components/quoteday/ServiceEditorModal';
 
-const SVC_COLS = ['type', 'name', 'description', 'supplier', 'price_mode', 'net', 'gross', 'commission', 'nights', 'rooms', 'breakfast', 'sort_order', 'quote_day_id', 'meta'];
+const SVC_COLS = ['type', 'name', 'description', 'supplier', 'price_mode', 'net', 'gross', 'commission', 'nights', 'rooms', 'breakfast', 'sort_order', 'quote_day_id', 'meta', 'option_group', 'option_label', 'is_selected'];
 const pickSvc = (s) => {
   const o = {};
   SVC_COLS.forEach(k => {
@@ -123,15 +126,68 @@ export default function QuoteEditor() {
   const addService = async (dayId, type) => {
     const day = daysRef.current.find(d => d.id === dayId);
     const sort_order = day?.services?.length ? Math.max(...day.services.map(s => s.sort_order || 0)) + 1 : 0;
-    const base = { quote_day_id: dayId, type, name: '', description: '', supplier: '', price_mode: 'gross', net: null, gross: null, commission: 0, sort_order, meta: {} };
+    const base = { quote_day_id: dayId, type, name: '', description: '', supplier: '', price_mode: 'gross', net: null, gross: null, commission: 0, sort_order, meta: {}, option_group: null, option_label: null, is_selected: true };
     if (type === 'hotel') { base.nights = 1; base.rooms = Math.ceil(pax / 2); base.breakfast = false; }
     const created = await track(supabaseAPI.entities.QuoteService.create(base));
-    if (created) setDays(prev => prev.map(d => d.id === dayId ? { ...d, services: [...d.services, created] } : d));
+    if (created) { setDays(prev => prev.map(d => d.id === dayId ? { ...d, services: [...d.services, created] } : d)); setEditingId(created.id); }
   };
 
   const deleteService = (serviceId) => {
+    const day = daysRef.current.find(d => d.services.some(s => s.id === serviceId));
+    const svc = day?.services.find(s => s.id === serviceId);
+    const grp = svc?.option_group;
     setDays(prev => prev.map(d => ({ ...d, services: d.services.filter(s => s.id !== serviceId) })));
     track(supabaseAPI.entities.QuoteService.delete(serviceId));
+    setEditingId(id => (id === serviceId ? null : id));
+    // Si el grupo de opciones queda con una sola, la volvemos servicio normal;
+    // si borramos la elegida, elegimos la primera que quede.
+    if (grp && day) {
+      const remaining = day.services.filter(s => s.option_group === grp && s.id !== serviceId);
+      if (remaining.length === 1) {
+        const r = { ...remaining[0], option_group: null, option_label: null, is_selected: true };
+        setDays(prev => prev.map(d => d.id === day.id ? { ...d, services: d.services.map(s => s.id === r.id ? r : s) } : d));
+        persistService(r.id, r);
+      } else if (remaining.length && !remaining.some(s => s.is_selected)) {
+        selectOption(remaining[0].id);
+      }
+    }
+  };
+
+  // Marca una opción como la elegida (la que cuenta al total); apaga las demás del grupo.
+  const selectOption = (serviceId) => {
+    const day = daysRef.current.find(d => d.services.some(s => s.id === serviceId));
+    const target = day?.services.find(s => s.id === serviceId);
+    if (!day || !target?.option_group) return;
+    const grp = target.option_group;
+    setDays(prev => prev.map(d => d.id !== day.id ? d : {
+      ...d, services: d.services.map(s => s.option_group === grp ? { ...s, is_selected: s.id === serviceId } : s),
+    }));
+    day.services.filter(s => s.option_group === grp).forEach(s => persistService(s.id, { ...s, is_selected: s.id === serviceId }));
+  };
+
+  // Agrega otra opción (Opción 2, 3…) al "slot" de un servicio.
+  const addOption = async (serviceId) => {
+    const day = daysRef.current.find(d => d.services.some(s => s.id === serviceId));
+    const base = day?.services.find(s => s.id === serviceId);
+    if (!base) return;
+    let group = base.option_group;
+    let label;
+    if (!group) {
+      group = `opt_${Date.now().toString(36)}`;
+      const patched = { ...base, option_group: group, option_label: 'Opción 1', is_selected: true };
+      setDays(prev => prev.map(d => d.id === day.id ? { ...d, services: d.services.map(s => s.id === base.id ? patched : s) } : d));
+      persistService(base.id, patched);
+      label = 'Opción 2';
+    } else {
+      label = `Opción ${day.services.filter(s => s.option_group === group).length + 1}`;
+    }
+    const created = await track(supabaseAPI.entities.QuoteService.create({
+      quote_day_id: day.id, type: base.type, name: '', description: '', supplier: '',
+      price_mode: 'gross', net: null, gross: null, commission: 0, sort_order: (base.sort_order || 0) + 1,
+      meta: {}, option_group: group, option_label: label, is_selected: false,
+      ...(base.type === 'hotel' ? { nights: base.nights || 1, rooms: base.rooms || Math.ceil(pax / 2), breakfast: false } : {}),
+    }));
+    if (created) { setDays(prev => prev.map(d => d.id === day.id ? { ...d, services: [...d.services, created] } : d)); setEditingId(created.id); }
   };
 
   const duplicateService = async (serviceId) => {
@@ -247,15 +303,22 @@ export default function QuoteEditor() {
     if (source.droppableId === destination.droppableId && source.index === destination.index) return;
     const cur = daysRef.current;
     const srcDay = cur.find(d => d.id === source.droppableId);
-    const moving = srcDay.services[source.index];
-    const srcServices = [...srcDay.services]; srcServices.splice(source.index, 1);
+    const dstDay = cur.find(d => d.id === destination.droppableId);
+    if (!srcDay || !dstDay) return;
     const sameDay = source.droppableId === destination.droppableId;
-    const dstBase = sameDay ? srcServices : [...cur.find(d => d.id === destination.droppableId).services];
-    dstBase.splice(destination.index, 0, { ...moving, quote_day_id: destination.droppableId });
+    // Solo los servicios "sueltos" son arrastrables; las opciones se quedan en su día.
+    const srcSingles = srcDay.services.filter(s => !s.option_group);
+    const moving = srcSingles[source.index];
+    if (!moving) return;
+    const newSrcSingles = [...srcSingles];
+    newSrcSingles.splice(source.index, 1);
+    const dstSingles = sameDay ? newSrcSingles : dstDay.services.filter(s => !s.option_group);
+    dstSingles.splice(destination.index, 0, { ...moving, quote_day_id: destination.droppableId });
+    const recombine = (d, singles) => [...singles, ...d.services.filter(s => s.option_group)];
     const next = cur.map(d => {
-      if (d.id === source.droppableId && sameDay) return { ...d, services: dstBase };
-      if (d.id === source.droppableId) return { ...d, services: srcServices };
-      if (d.id === destination.droppableId) return { ...d, services: dstBase };
+      if (sameDay && d.id === srcDay.id) return { ...d, services: recombine(d, dstSingles) };
+      if (!sameDay && d.id === srcDay.id) return { ...d, services: recombine(d, newSrcSingles) };
+      if (!sameDay && d.id === dstDay.id) return { ...d, services: recombine(d, dstSingles) };
       return d;
     });
     setDays(next);
@@ -263,12 +326,25 @@ export default function QuoteEditor() {
     next.forEach(d => { if (affected.has(d.id)) d.services.forEach((s, i) => persistService(s.id, { ...s, sort_order: i, quote_day_id: d.id })); });
   };
 
-  const cover = useMemo(() => (days ? hotelCover(days) : {}), [days]);
-  const stays = useMemo(() => (days ? hotelStays(days) : []), [days]);
-  const t = useMemo(() => (days ? totals(days) : { byType: {}, sum: 0, commission: 0 }), [days]);
-  const miss = useMemo(() => (days ? missing(days) : []), [days]);
+  // Para cálculos usamos solo la opción elegida de cada grupo (resolveOptions).
+  const calcDays = useMemo(() => (days ? resolveOptions(days) : []), [days]);
+  const cover = useMemo(() => hotelCover(calcDays), [calcDays]);
+  const stays = useMemo(() => hotelStays(calcDays), [calcDays]);
+  const t = useMemo(() => totals(calcDays), [calcDays]);
+  const miss = useMemo(() => missing(calcDays), [calcDays]);
   const goToDay = (i) => document.getElementById(`qd-${i}`)?.scrollIntoView({ block: 'center', inline: 'start', behavior: 'smooth' });
   const [shareOpen, setShareOpen] = useState(false);
+
+  // Servicio en edición (ventana modal) + sus hermanos de opción.
+  const [editingId, setEditingId] = useState(null);
+  const editing = useMemo(() => {
+    if (!editingId || !days) return null;
+    for (const d of days) { const s = d.services.find(x => x.id === editingId); if (s) return { service: s, day: d }; }
+    return null;
+  }, [editingId, days]);
+  const editSiblings = editing?.service?.option_group
+    ? editing.day.services.filter(s => s.option_group === editing.service.option_group)
+    : (editing ? [editing.service] : []);
 
   if (isLoading || days === null) {
     return <div className="flex items-center justify-center h-96"><Loader2 className="w-8 h-8 animate-spin" style={{ color: '#2E442A' }} /></div>;
@@ -298,6 +374,7 @@ export default function QuoteEditor() {
         {/* Toggle vista */}
         <div className="flex rounded-lg border border-stone-200 overflow-hidden ml-auto self-center">
           <ViewBtn active={view === 'edit'} onClick={() => setView('edit')}><Columns3 className="w-3.5 h-3.5" /> Editar</ViewBtn>
+          <ViewBtn active={view === 'services'} onClick={() => setView('services')}><Layers className="w-3.5 h-3.5" /> Servicios</ViewBtn>
           <ViewBtn active={view === 'calendar'} onClick={() => setView('calendar')}><Calendar className="w-3.5 h-3.5" /> Calendario</ViewBtn>
         </div>
 
@@ -329,29 +406,31 @@ export default function QuoteEditor() {
           </div>
 
           {view === 'calendar' ? (
-            <QuoteCalendarView days={days} onPickDay={(i) => { setView('edit'); setTimeout(() => goToDay(i), 60); }} />
+            <QuoteCalendarView days={calcDays} onPickDay={(i) => { setView('edit'); setTimeout(() => goToDay(i), 60); }} />
+          ) : view === 'services' ? (
+            <QuoteServicesView days={days} onOpenService={(s) => setEditingId(s.id)} />
           ) : (
             <>
               <QuoteCoverEditor quote={quote} onSet={persistQuote} />
               <DragDropContext onDragEnd={onDragEnd}>
                 <div ref={scrollRef} className="overflow-x-auto pb-4">
                   <div className="inline-flex flex-col">
+                    {/* Línea del tiempo: ciudades por día (ahí se eligen) */}
+                    <QuoteTimeline days={days} onCityChange={setCity} />
                     {/* Barra de hoteles multinoche que cruza los días */}
                     <HotelBand stays={stays} count={days.length} onPick={goToDay} />
                     <div className="flex gap-4 items-start">
                       {days.map((d, i) => (
                         <div key={d.id} id={`qd-${i}`} className="flex-shrink-0">
                           <DayColumn
-                            day={d} index={i} pax={pax} rules={rules} cover={cover[i]}
-                            onCityChange={(v) => setCity(d.id, v)}
+                            day={d} index={i} cover={cover[i]}
                             onToggleFree={() => toggleFree(d.id)}
                             onMoveDay={(dir) => moveDay(i, dir)}
                             onDuplicateDay={() => duplicateDay(i)}
                             onDeleteDay={() => deleteDay(i)}
                             onAddService={(type) => addService(d.id, type)}
-                            updateService={updateService}
-                            deleteService={deleteService}
-                            duplicateService={duplicateService}
+                            onOpenService={(s) => setEditingId(s.id)}
+                            onSelectOption={selectOption}
                           />
                         </div>
                       ))}
@@ -384,6 +463,20 @@ export default function QuoteEditor() {
         open={shareOpen} onOpenChange={setShareOpen}
         quote={quote} clientName={clientName}
         onSent={refetchQuote}
+      />
+
+      <ServiceEditorModal
+        open={!!editing}
+        onOpenChange={(o) => { if (!o) setEditingId(null); }}
+        service={editing?.service}
+        pax={pax} rules={rules}
+        siblings={editSiblings}
+        onChange={(patch) => updateService(editingId, patch)}
+        onDelete={() => deleteService(editingId)}
+        onDuplicate={() => duplicateService(editingId)}
+        onAddOption={() => addOption(editingId)}
+        onSelectOption={selectOption}
+        onEditSibling={setEditingId}
       />
     </div>
   );

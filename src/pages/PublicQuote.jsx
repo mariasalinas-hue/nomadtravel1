@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom';
 import { supabaseAPI } from '@/api/supabaseClient';
 import { formatDate } from '@/lib/dateUtils';
 import { es } from 'date-fns/locale';
-import { money, totals, hotelCover, SERVICE_TYPES } from '@/lib/quoteEngine';
+import { money, totals, hotelCover, resolveOptions, groupServices, SERVICE_TYPES } from '@/lib/quoteEngine';
 import { Hotel, Plane, Compass, Car, Train, Package, Ship, Briefcase, Loader2, MapPin, Users, Calendar } from 'lucide-react';
 
 const TYPE_ICON = { hotel: Hotel, vuelo: Plane, crucero: Ship, tour: Compass, traslado: Car, tren: Train, dmc: Briefcase, otro: Package };
@@ -21,6 +21,36 @@ function serviceSubtitle(s) {
   if (s.type === 'vuelo') return [m.airline, m.route, m.flight_class].filter(Boolean).join(' · ');
   if (s.type === 'crucero') return [m.cruise_line, m.cruise_ship, m.cruise_cabin_type].filter(Boolean).join(' · ');
   return '';
+}
+
+// Tarjeta de un servicio en la vista del cliente (foto, nombre, descripción, precio).
+function ServiceArticle({ s }) {
+  const Icon = TYPE_ICON[s.type] || Package;
+  const subtitle = serviceSubtitle(s);
+  return (
+    <article className="rounded-2xl border border-stone-200 bg-white overflow-hidden">
+      {s.meta?.image_url && <img src={s.meta.image_url} alt="" className="w-full h-44 object-cover" />}
+      <div className="p-4">
+        <div className="flex items-start gap-3">
+          <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#2E442A0F' }}>
+            <Icon className="w-4 h-4" style={{ color: '#2E442A' }} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-[11px] uppercase tracking-wider text-stone-400">{SERVICE_TYPES[s.type]?.label || s.type}</p>
+            <h3 className="text-base font-semibold text-stone-800">{s.name || SERVICE_TYPES[s.type]?.label}</h3>
+            {subtitle && <p className="text-sm text-stone-500 mt-0.5">{subtitle}</p>}
+          </div>
+          {Number(s.gross) > 0 && (
+            <div className="text-right flex-shrink-0">
+              <p className="text-base font-bold tabular-nums" style={{ color: '#2E442A' }}>{money(s.gross)}</p>
+              <p className="text-[10px] text-stone-400">USD</p>
+            </div>
+          )}
+        </div>
+        {s.description && <p className="text-sm text-stone-600 leading-relaxed mt-3 whitespace-pre-line">{s.description}</p>}
+      </div>
+    </article>
+  );
 }
 
 export default function PublicQuote() {
@@ -80,8 +110,9 @@ export default function PublicQuote() {
     );
   }
 
-  const cover = hotelCover(days);
-  const t = totals(days);
+  const calcDays = resolveOptions(days);
+  const cover = hotelCover(calcDays);
+  const t = totals(calcDays);
   const nights = Math.max(0, days.length - 1);
 
   return (
@@ -147,38 +178,29 @@ export default function PublicQuote() {
                   </p>
                 )}
 
-                <div className="space-y-3">
-                  {d.services.map((s) => {
-                    const Icon = TYPE_ICON[s.type] || Package;
-                    const subtitle = serviceSubtitle(s);
-                    return (
-                      <article key={s.id} className="rounded-2xl border border-stone-200 bg-white overflow-hidden">
-                        {s.meta?.image_url && (
-                          <img src={s.meta.image_url} alt="" className="w-full h-44 object-cover" />
-                        )}
-                        <div className="p-4">
-                          <div className="flex items-start gap-3">
-                            <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#2E442A0F' }}>
-                              <Icon className="w-4 h-4" style={{ color: '#2E442A' }} />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-[11px] uppercase tracking-wider text-stone-400">{SERVICE_TYPES[s.type]?.label || s.type}</p>
-                              <h3 className="text-base font-semibold text-stone-800">{s.name || SERVICE_TYPES[s.type]?.label}</h3>
-                              {subtitle && <p className="text-sm text-stone-500 mt-0.5">{subtitle}</p>}
-                            </div>
-                            {Number(s.gross) > 0 && (
-                              <div className="text-right flex-shrink-0">
-                                <p className="text-base font-bold tabular-nums" style={{ color: '#2E442A' }}>{money(s.gross)}</p>
-                                <p className="text-[10px] text-stone-400">USD</p>
+                {(() => {
+                  const { singles, groups } = groupServices(d.services);
+                  return (
+                    <div className="space-y-3">
+                      {singles.map((s) => <ServiceArticle key={s.id} s={s} />)}
+                      {groups.map((g) => (
+                        <div key={g.option_group} className="rounded-2xl border border-dashed border-stone-300 bg-stone-50/60 p-3">
+                          <p className="text-xs font-semibold uppercase tracking-wider text-stone-400 mb-2 px-1">Elige una opción</p>
+                          <div className="space-y-3">
+                            {g.services.map((s) => (
+                              <div key={s.id} className="relative">
+                                {s.is_selected && (
+                                  <span className="absolute z-10 top-2 left-2 text-[10px] font-semibold px-2 py-0.5 rounded-full text-white" style={{ backgroundColor: '#C9A84C' }}>Recomendada</span>
+                                )}
+                                <ServiceArticle s={s} />
                               </div>
-                            )}
+                            ))}
                           </div>
-                          {s.description && <p className="text-sm text-stone-600 leading-relaxed mt-3 whitespace-pre-line">{s.description}</p>}
                         </div>
-                      </article>
-                    );
-                  })}
-                </div>
+                      ))}
+                    </div>
+                  );
+                })()}
               </section>
             );
           })}

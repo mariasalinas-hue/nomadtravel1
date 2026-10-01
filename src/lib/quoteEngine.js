@@ -70,6 +70,40 @@ export function hotelCover(days) {
   return map;
 }
 
+// ---- opciones (Opción 1 / Opción 2): servicios que comparten option_group son
+// alternativas del mismo "slot". Para totales/faltantes/hoteles usamos solo la
+// opción elegida (is_selected, o la primera). En el link el cliente ve todas. ----
+export function selectedOfGroup(group) {
+  return group.find(s => s.is_selected) || group[0];
+}
+
+// Agrupa los servicios de un día: standalone + grupos de opciones (en orden).
+export function groupServices(services = []) {
+  const singles = [];
+  const groups = [];
+  const byGroup = {};
+  services.forEach(s => {
+    if (!s.option_group) { singles.push(s); return; }
+    if (!byGroup[s.option_group]) {
+      byGroup[s.option_group] = { option_group: s.option_group, services: [] };
+      groups.push(byGroup[s.option_group]);
+    }
+    byGroup[s.option_group].services.push(s);
+  });
+  return { singles, groups };
+}
+
+// Días con cada grupo de opciones colapsado a su opción elegida (para cálculos).
+export function resolveOptions(days) {
+  return days.map(d => {
+    const { singles, groups } = groupServices(d.services || []);
+    const chosen = groups.map(g => selectedOfGroup(g.services));
+    // preservar el orden original aproximado
+    const keepIds = new Set([...singles.map(s => s.id), ...chosen.map(s => s.id)]);
+    return { ...d, services: (d.services || []).filter(s => keepIds.has(s.id)) };
+  });
+}
+
 // ---- hoteles multinoche como "estancias": para dibujar una barra que cruza los
 // días que cubre. Devuelve [{ service, startIndex, span }] con span acotado a los
 // días disponibles. Solo incluye hoteles de más de una noche. ----
