@@ -17,6 +17,7 @@ import QuoteCalendarView from '@/components/quoteday/QuoteCalendarView';
 import QuoteServicesView from '@/components/quoteday/QuoteServicesView';
 import QuoteTimeline from '@/components/quoteday/QuoteTimeline';
 import HotelBand from '@/components/quoteday/HotelBand';
+import DayRail from '@/components/quoteday/DayRail';
 import QuoteCoverEditor from '@/components/quoteday/QuoteCoverEditor';
 import ShareQuoteDialog from '@/components/quoteday/ShareQuoteDialog';
 import ServiceEditorModal from '@/components/quoteday/ServiceEditorModal';
@@ -341,6 +342,11 @@ export default function QuoteEditor() {
   const calcDays = useMemo(() => (days ? resolveOptions(days) : []), [days]);
   const cover = useMemo(() => hotelCover(calcDays), [calcDays]);
   const stays = useMemo(() => hotelStays(calcDays), [calcDays]);
+  const stayByDay = useMemo(() => {
+    const m = {};
+    stays.forEach(st => { for (let k = 0; k < st.span; k++) m[st.startIndex + k] = { service: st.service, isStart: k === 0, isEnd: k === st.span - 1 }; });
+    return m;
+  }, [stays]);
   const t = useMemo(() => totals(calcDays), [calcDays]);
   const miss = useMemo(() => missing(calcDays), [calcDays]);
   const goToDay = (i) => document.getElementById(`qd-${i}`)?.scrollIntoView({ block: 'center', inline: 'start', behavior: 'smooth' });
@@ -464,26 +470,32 @@ export default function QuoteEditor() {
                 </DragDropContext>
               ) : (
                 <DragDropContext onDragEnd={onDragEnd}>
-                  <div className="max-w-3xl mx-auto space-y-3">
+                  <div className="max-w-3xl mx-auto">
                     {days.map((d, i) => (
-                      <div key={d.id} id={`qd-${i}`}>
-                        <DayColumn
-                          vertical day={d} index={i} cover={cover[i]}
-                          onCityChange={(v) => setCity(d.id, v)}
-                          onToggleFree={() => toggleFree(d.id)}
-                          onMoveDay={(dir) => moveDay(i, dir)}
-                          onDuplicateDay={() => duplicateDay(i)}
-                          onDeleteDay={() => deleteDay(i)}
-                          onAddService={(type) => addService(d.id, type)}
-                          onOpenService={(s) => setEditingId(s.id)}
-                          onSelectOption={selectOption}
-                        />
+                      <div key={d.id} className={`grid grid-cols-[36px_minmax(0,1fr)] gap-x-3 ${i < days.length - 1 ? 'mb-3' : ''}`}>
+                        <DayRail index={i} total={days.length} city={d.city} nextCity={days[i + 1]?.city} stay={stayByDay[i]} />
+                        <div id={`qd-${i}`} className="min-w-0">
+                          <DayColumn
+                            vertical day={d} index={i} cover={cover[i]}
+                            onCityChange={(v) => setCity(d.id, v)}
+                            onToggleFree={() => toggleFree(d.id)}
+                            onMoveDay={(dir) => moveDay(i, dir)}
+                            onDuplicateDay={() => duplicateDay(i)}
+                            onDeleteDay={() => deleteDay(i)}
+                            onAddService={(type) => addService(d.id, type)}
+                            onOpenService={(s) => setEditingId(s.id)}
+                            onSelectOption={selectOption}
+                          />
+                        </div>
                       </div>
                     ))}
-                    <button onClick={addDayAtEnd}
-                      className="w-full py-3 rounded-2xl border-2 border-dashed border-stone-200 text-stone-400 hover:border-stone-400 hover:text-stone-600 flex items-center justify-center gap-1.5 transition-colors">
-                      <Plus className="w-5 h-5" /> <span className="text-sm">Agregar día</span>
-                    </button>
+                    <div className="grid grid-cols-[36px_minmax(0,1fr)] gap-x-3 mt-3">
+                      <div />
+                      <button onClick={addDayAtEnd}
+                        className="w-full py-3 rounded-2xl border-2 border-dashed border-stone-200 text-stone-400 hover:border-stone-400 hover:text-stone-600 flex items-center justify-center gap-1.5 transition-colors">
+                        <Plus className="w-5 h-5" /> <span className="text-sm">Agregar día</span>
+                      </button>
+                    </div>
                   </div>
                 </DragDropContext>
               )}
