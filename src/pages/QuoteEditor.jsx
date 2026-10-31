@@ -21,13 +21,20 @@ import QuoteCoverEditor from '@/components/quoteday/QuoteCoverEditor';
 import ShareQuoteDialog from '@/components/quoteday/ShareQuoteDialog';
 import ServiceEditorModal from '@/components/quoteday/ServiceEditorModal';
 
-const SVC_COLS = ['type', 'name', 'description', 'supplier', 'price_mode', 'net', 'gross', 'commission', 'nights', 'rooms', 'breakfast', 'sort_order', 'quote_day_id', 'meta', 'option_group', 'option_label', 'is_selected'];
+const SVC_COLS = ['type', 'name', 'description', 'supplier', 'price_mode', 'net', 'gross', 'commission', 'nights', 'rooms', 'breakfast', 'sort_order', 'quote_day_id', 'meta'];
+// Columnas de opciones: solo se envían cuando el servicio pertenece a un grupo de
+// opciones, para no romper guardados si todavía no corre la migración de opciones.
 const pickSvc = (s) => {
   const o = {};
   SVC_COLS.forEach(k => {
     if (k === 'meta') { if (s.meta && typeof s.meta === 'object' && Object.keys(s.meta).length) o.meta = s.meta; }
     else o[k] = s[k] ?? null;
   });
+  if (s.option_group) {
+    o.option_group = s.option_group;
+    o.option_label = s.option_label ?? null;
+    o.is_selected = s.is_selected ?? true;
+  }
   return o;
 };
 
@@ -126,7 +133,7 @@ export default function QuoteEditor() {
   const addService = async (dayId, type) => {
     const day = daysRef.current.find(d => d.id === dayId);
     const sort_order = day?.services?.length ? Math.max(...day.services.map(s => s.sort_order || 0)) + 1 : 0;
-    const base = { quote_day_id: dayId, type, name: '', description: '', supplier: '', price_mode: 'gross', net: null, gross: null, commission: 0, sort_order, meta: {}, option_group: null, option_label: null, is_selected: true };
+    const base = { quote_day_id: dayId, type, name: '', description: '', supplier: '', price_mode: 'gross', net: null, gross: null, commission: 0, sort_order, meta: {} };
     if (type === 'hotel') { base.nights = 1; base.rooms = Math.ceil(pax / 2); base.breakfast = false; }
     const created = await track(supabaseAPI.entities.QuoteService.create(base));
     if (created) { setDays(prev => prev.map(d => d.id === dayId ? { ...d, services: [...d.services, created] } : d)); setEditingId(created.id); }
