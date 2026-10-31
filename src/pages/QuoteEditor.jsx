@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { DragDropContext } from '@hello-pangea/dnd';
-import { ArrowLeft, Loader2, Plus, Check, Calendar, Columns3, ChevronRight, PanelRight, Share2, Layers } from 'lucide-react';
+import { ArrowLeft, Loader2, Plus, Check, Calendar, Columns3, Rows3, ChevronRight, PanelRight, Share2, Layers } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
 import {
@@ -92,19 +92,23 @@ export default function QuoteEditor() {
 
   // Indicador de guardado.
   const [pending, setPending] = useState(0);
-  const [view, setView] = useState('edit');          // edit | calendar
+  const [view, setView] = useState('edit');          // edit | services | calendar
+  const [layout, setLayout] = useState(() => {        // horizontal | vertical (solo en 'edit')
+    try { return localStorage.getItem('quoteLayout') === 'vertical' ? 'vertical' : 'horizontal'; } catch { return 'horizontal'; }
+  });
+  const setLayoutPersist = (l) => { setLayout(l); try { localStorage.setItem('quoteLayout', l); } catch { /* ignore */ } };
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const scrollRef = useRef(null);
-  // El scroll vertical de la rueda mueve las columnas de lado (no hay scroll hacia abajo).
+  // El scroll vertical de la rueda mueve las columnas de lado (solo horizontal).
   useEffect(() => {
     const el = scrollRef.current;
-    if (!el || view !== 'edit') return;
+    if (!el || view !== 'edit' || layout !== 'horizontal') return;
     const onWheel = (e) => {
       if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) { el.scrollLeft += e.deltaY; e.preventDefault(); }
     };
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
-  }, [view, days]);
+  }, [view, layout, days]);
   const track = (p) => { setPending(n => n + 1); return Promise.resolve(p).catch((e) => { toast.error(`No se pudo guardar: ${e?.message || e?.hint || 'error'}`); return null; }).finally(() => setPending(n => Math.max(0, n - 1))); };
   const persistService = (id, s) => track(supabaseAPI.entities.QuoteService.update(id, pickSvc(s)));
   const persistDay = (id, patch) => track(supabaseAPI.entities.QuoteDay.update(id, patch));
@@ -385,6 +389,14 @@ export default function QuoteEditor() {
           <ViewBtn active={view === 'calendar'} onClick={() => setView('calendar')}><Calendar className="w-3.5 h-3.5" /> Calendario</ViewBtn>
         </div>
 
+        {/* Orientación del planner (solo en Editar) */}
+        {view === 'edit' && (
+          <div className="flex rounded-lg border border-stone-200 overflow-hidden self-center" title="Orientación">
+            <ViewBtn active={layout === 'horizontal'} onClick={() => setLayoutPersist('horizontal')}><Columns3 className="w-3.5 h-3.5" /></ViewBtn>
+            <ViewBtn active={layout === 'vertical'} onClick={() => setLayoutPersist('vertical')}><Rows3 className="w-3.5 h-3.5" /></ViewBtn>
+          </div>
+        )}
+
         <button onClick={() => setShareOpen(true)}
           className="self-center flex items-center gap-1.5 text-xs font-medium text-white px-3 py-2 rounded-lg" style={{ backgroundColor: '#2E442A' }}>
           <Share2 className="w-3.5 h-3.5" /> Compartir
@@ -419,36 +431,62 @@ export default function QuoteEditor() {
           ) : (
             <>
               <QuoteCoverEditor quote={quote} onSet={persistQuote} />
-              <DragDropContext onDragEnd={onDragEnd}>
-                <div ref={scrollRef} className="overflow-x-auto pb-4">
-                  <div className="inline-flex flex-col">
-                    {/* Línea del tiempo: ciudades por día (ahí se eligen) */}
-                    <QuoteTimeline days={days} onCityChange={setCity} colWidth={248} />
-                    {/* Barra de hoteles multinoche que cruza los días */}
-                    <HotelBand stays={stays} count={days.length} onPick={goToDay} colWidth={248} />
-                    <div className="flex gap-4 items-start">
-                      {days.map((d, i) => (
-                        <div key={d.id} id={`qd-${i}`} className="flex-shrink-0">
-                          <DayColumn
-                            day={d} index={i} cover={cover[i]}
-                            onToggleFree={() => toggleFree(d.id)}
-                            onMoveDay={(dir) => moveDay(i, dir)}
-                            onDuplicateDay={() => duplicateDay(i)}
-                            onDeleteDay={() => deleteDay(i)}
-                            onAddService={(type) => addService(d.id, type)}
-                            onOpenService={(s) => setEditingId(s.id)}
-                            onSelectOption={selectOption}
-                          />
-                        </div>
-                      ))}
-                      <button onClick={addDayAtEnd}
-                        className="flex-shrink-0 w-[110px] self-stretch min-h-[160px] rounded-2xl border-2 border-dashed border-stone-200 text-stone-400 hover:border-stone-400 hover:text-stone-600 flex flex-col items-center justify-center gap-1 transition-colors">
-                        <Plus className="w-5 h-5" /> <span className="text-xs">Agregar día</span>
-                      </button>
+              {layout === 'horizontal' ? (
+                <DragDropContext onDragEnd={onDragEnd}>
+                  <div ref={scrollRef} className="overflow-x-auto pb-4">
+                    <div className="inline-flex flex-col">
+                      {/* Línea del tiempo: ciudades por día (ahí se eligen) */}
+                      <QuoteTimeline days={days} onCityChange={setCity} colWidth={248} />
+                      {/* Barra de hoteles multinoche que cruza los días */}
+                      <HotelBand stays={stays} count={days.length} onPick={goToDay} colWidth={248} />
+                      <div className="flex gap-4 items-start">
+                        {days.map((d, i) => (
+                          <div key={d.id} id={`qd-${i}`} className="flex-shrink-0">
+                            <DayColumn
+                              day={d} index={i} cover={cover[i]}
+                              onToggleFree={() => toggleFree(d.id)}
+                              onMoveDay={(dir) => moveDay(i, dir)}
+                              onDuplicateDay={() => duplicateDay(i)}
+                              onDeleteDay={() => deleteDay(i)}
+                              onAddService={(type) => addService(d.id, type)}
+                              onOpenService={(s) => setEditingId(s.id)}
+                              onSelectOption={selectOption}
+                            />
+                          </div>
+                        ))}
+                        <button onClick={addDayAtEnd}
+                          className="flex-shrink-0 w-[110px] self-stretch min-h-[160px] rounded-2xl border-2 border-dashed border-stone-200 text-stone-400 hover:border-stone-400 hover:text-stone-600 flex flex-col items-center justify-center gap-1 transition-colors">
+                          <Plus className="w-5 h-5" /> <span className="text-xs">Agregar día</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              </DragDropContext>
+                </DragDropContext>
+              ) : (
+                <DragDropContext onDragEnd={onDragEnd}>
+                  <div className="max-w-3xl mx-auto space-y-3">
+                    {days.map((d, i) => (
+                      <div key={d.id} id={`qd-${i}`}>
+                        <DayColumn
+                          vertical day={d} index={i} cover={cover[i]}
+                          onCityChange={(v) => setCity(d.id, v)}
+                          onToggleFree={() => toggleFree(d.id)}
+                          onMoveDay={(dir) => moveDay(i, dir)}
+                          onDuplicateDay={() => duplicateDay(i)}
+                          onDeleteDay={() => deleteDay(i)}
+                          onAddService={(type) => addService(d.id, type)}
+                          onOpenService={(s) => setEditingId(s.id)}
+                          onSelectOption={selectOption}
+                        />
+                      </div>
+                    ))}
+                    <button onClick={addDayAtEnd}
+                      className="w-full py-3 rounded-2xl border-2 border-dashed border-stone-200 text-stone-400 hover:border-stone-400 hover:text-stone-600 flex items-center justify-center gap-1.5 transition-colors">
+                      <Plus className="w-5 h-5" /> <span className="text-sm">Agregar día</span>
+                    </button>
+                  </div>
+                </DragDropContext>
+              )}
             </>
           )}
         </div>
