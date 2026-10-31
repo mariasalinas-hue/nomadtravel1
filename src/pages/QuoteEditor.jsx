@@ -423,9 +423,9 @@ export default function QuoteEditor() {
                 <div ref={scrollRef} className="overflow-x-auto pb-4">
                   <div className="inline-flex flex-col">
                     {/* Línea del tiempo: ciudades por día (ahí se eligen) */}
-                    <QuoteTimeline days={days} onCityChange={setCity} />
+                    <QuoteTimeline days={days} onCityChange={setCity} colWidth={248} />
                     {/* Barra de hoteles multinoche que cruza los días */}
-                    <HotelBand stays={stays} count={days.length} onPick={goToDay} />
+                    <HotelBand stays={stays} count={days.length} onPick={goToDay} colWidth={248} />
                     <div className="flex gap-4 items-start">
                       {days.map((d, i) => (
                         <div key={d.id} id={`qd-${i}`} className="flex-shrink-0">
