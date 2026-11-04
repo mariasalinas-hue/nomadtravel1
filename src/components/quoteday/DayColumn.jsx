@@ -2,14 +2,14 @@ import { useState } from 'react';
 import { Droppable, Draggable } from '@hello-pangea/dnd';
 import { formatDate } from '@/lib/dateUtils';
 import { es } from 'date-fns/locale';
-import { ArrowLeft, ArrowRight, Copy, Trash2, Hotel, Plus, Star, MoreVertical, Moon, MapPin } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Copy, Trash2, Hotel, Plus, Star, MoreVertical, Moon } from 'lucide-react';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import CityPicker from '@/components/quote/CityPicker';
 import ServiceCard, { TYPE_UI } from './ServiceCard';
 import { TYPE_ORDER, groupServices } from '@/lib/quoteEngine';
 
 export default function DayColumn({
-  day, index, cover, vertical, grouped, onCityChange, onSplitCity,
+  day, index, cover, vertical, onCityChange,
   onToggleFree, onMoveDay, onDuplicateDay, onDeleteDay,
   onAddService, onOpenService, onSelectOption,
 }) {
@@ -20,13 +20,13 @@ export default function DayColumn({
   const close = (fn) => () => { setMenuOpen(false); fn(); };
 
   return (
-    <div className={`group/col flex-shrink-0 flex flex-col rounded-2xl border bg-white ${grouped ? 'border-stone-100' : 'border-stone-200'} ${vertical ? 'w-full' : 'w-[248px]'} ${day.is_free ? 'bg-amber-50/20' : ''}`}>
+    <div className={`group/col flex-shrink-0 flex flex-col rounded-2xl border border-stone-200 bg-white ${vertical ? 'w-full' : 'w-[248px]'} ${day.is_free ? 'bg-amber-50/20' : ''}`}>
       {/* Encabezado minimal */}
       <div className="flex items-center justify-between px-3 pt-2.5 pb-2">
         <div className="min-w-0 flex items-baseline gap-1.5">
           <span className="text-[11px] font-bold uppercase tracking-wider flex-shrink-0" style={{ color: '#C9A84C' }}>Día {index + 1}</span>
           <span className="text-[11px] text-stone-400 truncate">{day.date ? formatDate(day.date, "EEE d MMM", { locale: es }) : ''}</span>
-          {vertical && !grouped && (
+          {vertical && (
             <span className="min-w-0 max-w-[220px]"><CityPicker value={day.city || ''} onChange={onCityChange} placeholder="＋ ciudad / en ruta" /></span>
           )}
           {day.is_free && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 flex-shrink-0">libre</span>}
@@ -37,10 +37,9 @@ export default function DayColumn({
               <MoreVertical className="w-4 h-4" />
             </button>
           </PopoverTrigger>
-          <PopoverContent className="p-1 w-48" align="end">
-            {grouped && onSplitCity && <MenuItem onClick={close(onSplitCity)} icon={MapPin}>Ciudad distinta desde aquí</MenuItem>}
-            <MenuItem onClick={close(() => onMoveDay(-1))} icon={ArrowLeft}>{vertical ? 'Mover arriba' : 'Mover a la izquierda'}</MenuItem>
-            <MenuItem onClick={close(() => onMoveDay(1))} icon={ArrowRight}>{vertical ? 'Mover abajo' : 'Mover a la derecha'}</MenuItem>
+          <PopoverContent className="p-1 w-44" align="end">
+            <MenuItem onClick={close(() => onMoveDay(-1))} icon={ArrowLeft}>Mover a la izquierda</MenuItem>
+            <MenuItem onClick={close(() => onMoveDay(1))} icon={ArrowRight}>Mover a la derecha</MenuItem>
             <MenuItem onClick={close(onDuplicateDay)} icon={Copy}>Duplicar día</MenuItem>
             <MenuItem onClick={close(onToggleFree)} icon={Moon}>{day.is_free ? 'Quitar día libre' : 'Marcar día libre'}</MenuItem>
             <div className="h-px bg-stone-100 my-1" />
