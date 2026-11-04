@@ -8,13 +8,15 @@ import { ArrowLeft, Loader2, Plus, Check, Calendar, Columns3, Rows3, ChevronRigh
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
 import {
-  rulesFor, totals, missing, hotelCover, grossFromNet, commissionOf,
+  rulesFor, totals, missing, hotelCover, hotelStays, grossFromNet, commissionOf,
   daysBetween, dateForIndex, resolveOptions, groupByCity,
 } from '@/lib/quoteEngine';
 import DayColumn from '@/components/quoteday/DayColumn';
 import QuoteSidebar from '@/components/quoteday/QuoteSidebar';
 import QuoteCalendarView from '@/components/quoteday/QuoteCalendarView';
 import QuoteServicesView from '@/components/quoteday/QuoteServicesView';
+import QuoteTimeline from '@/components/quoteday/QuoteTimeline';
+import HotelBand from '@/components/quoteday/HotelBand';
 import CitySegment from '@/components/quoteday/CitySegment';
 import QuoteCoverEditor from '@/components/quoteday/QuoteCoverEditor';
 import ShareQuoteDialog from '@/components/quoteday/ShareQuoteDialog';
@@ -346,6 +348,7 @@ export default function QuoteEditor() {
   // Para cálculos usamos solo la opción elegida de cada grupo (resolveOptions).
   const calcDays = useMemo(() => (days ? resolveOptions(days) : []), [days]);
   const cover = useMemo(() => hotelCover(calcDays), [calcDays]);
+  const stays = useMemo(() => hotelStays(calcDays), [calcDays]);
   const t = useMemo(() => totals(calcDays), [calcDays]);
   const miss = useMemo(() => missing(calcDays), [calcDays]);
   const goToDay = (i) => document.getElementById(`qd-${i}`)?.scrollIntoView({ block: 'center', inline: 'start', behavior: 'smooth' });
@@ -361,36 +364,6 @@ export default function QuoteEditor() {
   const editSiblings = editing?.service?.option_group
     ? editing.day.services.filter(s => s.option_group === editing.service.option_group)
     : (editing ? [editing.service] : []);
-
-  // Un tramo de ciudad (mismo diseño en horizontal y vertical) con sus días.
-  const renderSegment = (seg, horizontal) => {
-    const hotels = seg.indices.flatMap(i => (calcDays[i]?.services || []).filter(s => s.type === 'hotel'));
-    const first = days[seg.indices[0]];
-    const last = days[seg.indices[seg.indices.length - 1]];
-    return (
-      <CitySegment key={`seg-${seg.indices[0]}`} horizontal={horizontal} city={seg.city} startDate={first?.date} endDate={last?.date}
-        hotels={hotels} onSetCity={(v) => setSegmentCity(seg.indices, v)}>
-        {seg.indices.map((i) => {
-          const d = days[i];
-          return (
-            <div key={d.id} id={`qd-${i}`} className={horizontal ? 'flex-shrink-0' : 'min-w-0'}>
-              <DayColumn
-                vertical={!horizontal} grouped day={d} index={i} cover={cover[i]}
-                onSplitCity={i > 0 ? () => splitCityFrom(i) : undefined}
-                onToggleFree={() => toggleFree(d.id)}
-                onMoveDay={(dir) => moveDay(i, dir)}
-                onDuplicateDay={() => duplicateDay(i)}
-                onDeleteDay={() => deleteDay(i)}
-                onAddService={(type) => addService(d.id, type)}
-                onOpenService={(s) => setEditingId(s.id)}
-                onSelectOption={selectOption}
-              />
-            </div>
-          );
-        })}
-      </CitySegment>
-    );
-  };
 
   if (isLoading || days === null) {
     return <div className="flex items-center justify-center h-96"><Loader2 className="w-8 h-8 animate-spin" style={{ color: '#2E442A' }} /></div>;
@@ -469,19 +442,65 @@ export default function QuoteEditor() {
               {layout === 'horizontal' ? (
                 <DragDropContext onDragEnd={onDragEnd}>
                   <div ref={scrollRef} className="overflow-x-auto pb-4">
-                    <div className="flex gap-5 items-start">
-                      {groupByCity(days).map((seg) => renderSegment(seg, true))}
-                      <button onClick={addDayAtEnd}
-                        className="flex-shrink-0 w-[110px] self-stretch min-h-[160px] rounded-2xl border-2 border-dashed border-stone-200 text-stone-400 hover:border-stone-400 hover:text-stone-600 flex flex-col items-center justify-center gap-1 transition-colors">
-                        <Plus className="w-5 h-5" /> <span className="text-xs">Agregar día</span>
-                      </button>
+                    <div className="inline-flex flex-col">
+                      {/* Línea del tiempo: ciudades por día (ahí se eligen) */}
+                      <QuoteTimeline days={days} onCityChange={setCity} colWidth={248} />
+                      {/* Barra de hoteles multinoche que cruza los días */}
+                      <HotelBand stays={stays} count={days.length} onPick={goToDay} colWidth={248} />
+                      <div className="flex gap-4 items-start">
+                        {days.map((d, i) => (
+                          <div key={d.id} id={`qd-${i}`} className="flex-shrink-0">
+                            <DayColumn
+                              day={d} index={i} cover={cover[i]}
+                              onToggleFree={() => toggleFree(d.id)}
+                              onMoveDay={(dir) => moveDay(i, dir)}
+                              onDuplicateDay={() => duplicateDay(i)}
+                              onDeleteDay={() => deleteDay(i)}
+                              onAddService={(type) => addService(d.id, type)}
+                              onOpenService={(s) => setEditingId(s.id)}
+                              onSelectOption={selectOption}
+                            />
+                          </div>
+                        ))}
+                        <button onClick={addDayAtEnd}
+                          className="flex-shrink-0 w-[110px] self-stretch min-h-[160px] rounded-2xl border-2 border-dashed border-stone-200 text-stone-400 hover:border-stone-400 hover:text-stone-600 flex flex-col items-center justify-center gap-1 transition-colors">
+                          <Plus className="w-5 h-5" /> <span className="text-xs">Agregar día</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </DragDropContext>
               ) : (
                 <DragDropContext onDragEnd={onDragEnd}>
                   <div className="max-w-3xl mx-auto space-y-4">
-                    {groupByCity(days).map((seg) => renderSegment(seg, false))}
+                    {groupByCity(days).map((seg) => {
+                      const hotels = seg.indices.flatMap(i => (calcDays[i]?.services || []).filter(s => s.type === 'hotel'));
+                      const first = days[seg.indices[0]];
+                      const last = days[seg.indices[seg.indices.length - 1]];
+                      return (
+                        <CitySegment key={`seg-${seg.indices[0]}`} city={seg.city} startDate={first?.date} endDate={last?.date}
+                          hotels={hotels} onSetCity={(v) => setSegmentCity(seg.indices, v)}>
+                          {seg.indices.map((i) => {
+                            const d = days[i];
+                            return (
+                              <div key={d.id} id={`qd-${i}`} className="min-w-0">
+                                <DayColumn
+                                  vertical grouped day={d} index={i} cover={cover[i]}
+                                  onSplitCity={i > 0 ? () => splitCityFrom(i) : undefined}
+                                  onToggleFree={() => toggleFree(d.id)}
+                                  onMoveDay={(dir) => moveDay(i, dir)}
+                                  onDuplicateDay={() => duplicateDay(i)}
+                                  onDeleteDay={() => deleteDay(i)}
+                                  onAddService={(type) => addService(d.id, type)}
+                                  onOpenService={(s) => setEditingId(s.id)}
+                                  onSelectOption={selectOption}
+                                />
+                              </div>
+                            );
+                          })}
+                        </CitySegment>
+                      );
+                    })}
                     <button onClick={addDayAtEnd}
                       className="w-full py-3 rounded-2xl border-2 border-dashed border-stone-200 text-stone-400 hover:border-stone-400 hover:text-stone-600 flex items-center justify-center gap-1.5 transition-colors">
                       <Plus className="w-5 h-5" /> <span className="text-sm">Agregar día</span>
