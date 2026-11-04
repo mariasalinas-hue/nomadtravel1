@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
 import {
   rulesFor, totals, missing, hotelCover, hotelStays, grossFromNet, commissionOf,
-  daysBetween, dateForIndex, resolveOptions,
+  daysBetween, dateForIndex, resolveOptions, groupByCity,
 } from '@/lib/quoteEngine';
 import DayColumn from '@/components/quoteday/DayColumn';
 import QuoteSidebar from '@/components/quoteday/QuoteSidebar';
@@ -17,7 +17,7 @@ import QuoteCalendarView from '@/components/quoteday/QuoteCalendarView';
 import QuoteServicesView from '@/components/quoteday/QuoteServicesView';
 import QuoteTimeline from '@/components/quoteday/QuoteTimeline';
 import HotelBand from '@/components/quoteday/HotelBand';
-import DayRail from '@/components/quoteday/DayRail';
+import CitySegment from '@/components/quoteday/CitySegment';
 import QuoteCoverEditor from '@/components/quoteday/QuoteCoverEditor';
 import ShareQuoteDialog from '@/components/quoteday/ShareQuoteDialog';
 import ServiceEditorModal from '@/components/quoteday/ServiceEditorModal';
@@ -214,6 +214,13 @@ export default function QuoteEditor() {
   const persistDayOrder = (arr) => arr.forEach((d, i) => { if (d.day_index !== i) persistDay(d.id, { day_index: i }); });
 
   const setCity = (dayId, city) => { setDays(prev => prev.map(d => d.id === dayId ? { ...d, city } : d)); persistDay(dayId, { city }); };
+  // Vista vertical: fijar la ciudad de todo un tramo, o separar un tramo nuevo desde un día.
+  const setSegmentCity = (indices, city) => indices.forEach(i => { const d = daysRef.current[i]; if (d) setCity(d.id, city); });
+  const splitCityFrom = (index) => {
+    const cur = daysRef.current;
+    const city = cur[index]?.city || '';
+    for (let i = index; i < cur.length && (cur[i].city || '') === city; i++) setCity(cur[i].id, '');
+  };
   const toggleFree = (dayId) => setDays(prev => prev.map(d => { if (d.id !== dayId) return d; persistDay(dayId, { is_free: !d.is_free }); return { ...d, is_free: !d.is_free }; }));
 
   const moveDay = (index, dir) => {
@@ -342,11 +349,6 @@ export default function QuoteEditor() {
   const calcDays = useMemo(() => (days ? resolveOptions(days) : []), [days]);
   const cover = useMemo(() => hotelCover(calcDays), [calcDays]);
   const stays = useMemo(() => hotelStays(calcDays), [calcDays]);
-  const stayByDay = useMemo(() => {
-    const m = {};
-    stays.forEach(st => { for (let k = 0; k < st.span; k++) m[st.startIndex + k] = { service: st.service, isStart: k === 0, isEnd: k === st.span - 1 }; });
-    return m;
-  }, [stays]);
   const t = useMemo(() => totals(calcDays), [calcDays]);
   const miss = useMemo(() => missing(calcDays), [calcDays]);
   const goToDay = (i) => document.getElementById(`qd-${i}`)?.scrollIntoView({ block: 'center', inline: 'start', behavior: 'smooth' });
@@ -470,32 +472,39 @@ export default function QuoteEditor() {
                 </DragDropContext>
               ) : (
                 <DragDropContext onDragEnd={onDragEnd}>
-                  <div className="max-w-3xl mx-auto">
-                    {days.map((d, i) => (
-                      <div key={d.id} className={`grid grid-cols-[36px_minmax(0,1fr)] gap-x-3 ${i < days.length - 1 ? 'mb-3' : ''}`}>
-                        <DayRail index={i} total={days.length} city={d.city} nextCity={days[i + 1]?.city} stay={stayByDay[i]} />
-                        <div id={`qd-${i}`} className="min-w-0">
-                          <DayColumn
-                            vertical day={d} index={i} cover={cover[i]}
-                            onCityChange={(v) => setCity(d.id, v)}
-                            onToggleFree={() => toggleFree(d.id)}
-                            onMoveDay={(dir) => moveDay(i, dir)}
-                            onDuplicateDay={() => duplicateDay(i)}
-                            onDeleteDay={() => deleteDay(i)}
-                            onAddService={(type) => addService(d.id, type)}
-                            onOpenService={(s) => setEditingId(s.id)}
-                            onSelectOption={selectOption}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                    <div className="grid grid-cols-[36px_minmax(0,1fr)] gap-x-3 mt-3">
-                      <div />
-                      <button onClick={addDayAtEnd}
-                        className="w-full py-3 rounded-2xl border-2 border-dashed border-stone-200 text-stone-400 hover:border-stone-400 hover:text-stone-600 flex items-center justify-center gap-1.5 transition-colors">
-                        <Plus className="w-5 h-5" /> <span className="text-sm">Agregar día</span>
-                      </button>
-                    </div>
+                  <div className="max-w-3xl mx-auto space-y-4">
+                    {groupByCity(days).map((seg) => {
+                      const hotels = seg.indices.flatMap(i => (calcDays[i]?.services || []).filter(s => s.type === 'hotel'));
+                      const first = days[seg.indices[0]];
+                      const last = days[seg.indices[seg.indices.length - 1]];
+                      return (
+                        <CitySegment key={`seg-${seg.indices[0]}`} city={seg.city} startDate={first?.date} endDate={last?.date}
+                          hotels={hotels} onSetCity={(v) => setSegmentCity(seg.indices, v)}>
+                          {seg.indices.map((i) => {
+                            const d = days[i];
+                            return (
+                              <div key={d.id} id={`qd-${i}`} className="min-w-0">
+                                <DayColumn
+                                  vertical grouped day={d} index={i} cover={cover[i]}
+                                  onSplitCity={i > 0 ? () => splitCityFrom(i) : undefined}
+                                  onToggleFree={() => toggleFree(d.id)}
+                                  onMoveDay={(dir) => moveDay(i, dir)}
+                                  onDuplicateDay={() => duplicateDay(i)}
+                                  onDeleteDay={() => deleteDay(i)}
+                                  onAddService={(type) => addService(d.id, type)}
+                                  onOpenService={(s) => setEditingId(s.id)}
+                                  onSelectOption={selectOption}
+                                />
+                              </div>
+                            );
+                          })}
+                        </CitySegment>
+                      );
+                    })}
+                    <button onClick={addDayAtEnd}
+                      className="w-full py-3 rounded-2xl border-2 border-dashed border-stone-200 text-stone-400 hover:border-stone-400 hover:text-stone-600 flex items-center justify-center gap-1.5 transition-colors">
+                      <Plus className="w-5 h-5" /> <span className="text-sm">Agregar día</span>
+                    </button>
                   </div>
                 </DragDropContext>
               )}

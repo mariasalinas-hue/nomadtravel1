@@ -104,6 +104,19 @@ export function resolveOptions(days) {
   });
 }
 
+// ---- agrupar días consecutivos por ciudad (para la vista vertical): días
+// seguidos con la misma ciudad forman un "tramo"; los vacíos se agrupan como ruta ----
+export function groupByCity(days) {
+  const segs = [];
+  days.forEach((d, i) => {
+    const city = (d.city || '').trim();
+    const last = segs[segs.length - 1];
+    if (last && last.city === city) last.indices.push(i);
+    else segs.push({ city, indices: [i] });
+  });
+  return segs;
+}
+
 // ---- hoteles multinoche como "estancias": para dibujar una barra que cruza los
 // días que cubre. Devuelve [{ service, startIndex, span }] con span acotado a los
 // días disponibles. Solo incluye hoteles de más de una noche. ----

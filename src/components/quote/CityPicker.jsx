@@ -7,7 +7,7 @@ import { mergeCities, searchCities, norm } from '@/lib/cityCatalog';
 
 // Selector de ciudad con lista curada (crece sola) y búsqueda tolerante a
 // acentos/typos/alias. La ciudad elegida se guarda como texto ("Ciudad, País").
-export default function CityPicker({ value, onChange, placeholder = 'Ciudad…' }) {
+export default function CityPicker({ value, onChange, placeholder = 'Ciudad…', trigger }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const { data: dbOptions = [] } = useServiceDropdownByCategory('city');
@@ -28,6 +28,7 @@ export default function CityPicker({ value, onChange, placeholder = 'Ciudad…' 
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
+        {trigger || (
         <button
           type="button"
           className="w-full flex items-center gap-1.5 text-left text-sm px-1.5 py-1 rounded hover:bg-stone-100/70 focus:bg-blue-50/70 focus:ring-1 focus:ring-blue-300 outline-none"
@@ -36,6 +37,7 @@ export default function CityPicker({ value, onChange, placeholder = 'Ciudad…' 
           <MapPin className="w-3.5 h-3.5 text-stone-300 flex-shrink-0" />
           {value ? <span className="truncate text-stone-800">{value}</span> : <span className="text-stone-400">{placeholder}</span>}
         </button>
+        )}
       </PopoverTrigger>
       <PopoverContent className="p-0 w-64" align="start">
         <Command shouldFilter={false}>
