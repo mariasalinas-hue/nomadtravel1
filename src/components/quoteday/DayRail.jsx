@@ -16,7 +16,8 @@ export default function DayRail({ index, total, city, nextCity, stay, onCityChan
   const stayColor = '#3f6b58';
   const atX = { left: RAIL_X, transform: 'translateX(-50%)' };
   const line = 'absolute w-[2px] bg-stone-200';
-  const ribbon = 'absolute w-[6px] rounded-full';
+  const BAR_W = 10;
+  const barColor = 'rgba(63,107,88,0.55)';
   const nights = stay?.service ? (Number(stay.service.nights) || null) : null;
   const price = stay?.service ? (Number(stay.service.gross) || 0) : 0;
 
@@ -26,9 +27,13 @@ export default function DayRail({ index, total, city, nextCity, stay, onCityChan
       {!isFirst && <div className={line} style={{ ...atX, top: 0, height: NODE_Y }} />}
       {!isLast && <div className={line} style={{ ...atX, top: NODE_Y, bottom: -GAP }} />}
 
-      {/* Cinta del hotel multinoche */}
-      {stay && !stay.isStart && <div className={ribbon} style={{ ...atX, top: 0, height: NODE_Y, background: `${stayColor}44` }} />}
-      {stay && !stay.isEnd && <div className={ribbon} style={{ ...atX, top: NODE_Y, bottom: -GAP, background: `${stayColor}44` }} />}
+      {/* Barra del hotel multinoche: abarca todas las noches que cubre */}
+      {stay && !stay.isStart && (
+        <div className="absolute" style={{ ...atX, width: BAR_W, top: 0, height: NODE_Y, background: barColor, borderBottomLeftRadius: stay.isEnd ? BAR_W : 0, borderBottomRightRadius: stay.isEnd ? BAR_W : 0 }} />
+      )}
+      {stay && !stay.isEnd && (
+        <div className="absolute" style={{ ...atX, width: BAR_W, top: stay.isStart ? NODE_Y : 0, bottom: -GAP, background: barColor, borderTopLeftRadius: stay.isStart ? BAR_W : 0, borderTopRightRadius: stay.isStart ? BAR_W : 0 }} />
+      )}
 
       {/* Nodo */}
       <span className="absolute rounded-full border-2 z-10"
