@@ -472,12 +472,11 @@ export default function QuoteEditor() {
                 <DragDropContext onDragEnd={onDragEnd}>
                   <div className="max-w-3xl mx-auto">
                     {days.map((d, i) => (
-                      <div key={d.id} className={`grid grid-cols-[36px_minmax(0,1fr)] gap-x-3 ${i < days.length - 1 ? 'mb-3' : ''}`}>
-                        <DayRail index={i} total={days.length} city={d.city} nextCity={days[i + 1]?.city} stay={stayByDay[i]} />
+                      <div key={d.id} className={`grid grid-cols-[190px_minmax(0,1fr)] gap-x-3 ${i < days.length - 1 ? 'mb-3' : ''}`}>
+                        <DayRail index={i} total={days.length} city={d.city} nextCity={days[i + 1]?.city} stay={stayByDay[i]} onCityChange={(v) => setCity(d.id, v)} />
                         <div id={`qd-${i}`} className="min-w-0">
                           <DayColumn
                             vertical day={d} index={i} cover={cover[i]}
-                            onCityChange={(v) => setCity(d.id, v)}
                             onToggleFree={() => toggleFree(d.id)}
                             onMoveDay={(dir) => moveDay(i, dir)}
                             onDuplicateDay={() => duplicateDay(i)}
@@ -489,7 +488,7 @@ export default function QuoteEditor() {
                         </div>
                       </div>
                     ))}
-                    <div className="grid grid-cols-[36px_minmax(0,1fr)] gap-x-3 mt-3">
+                    <div className="grid grid-cols-[190px_minmax(0,1fr)] gap-x-3 mt-3">
                       <div />
                       <button onClick={addDayAtEnd}
                         className="w-full py-3 rounded-2xl border-2 border-dashed border-stone-200 text-stone-400 hover:border-stone-400 hover:text-stone-600 flex items-center justify-center gap-1.5 transition-colors">

@@ -4,12 +4,11 @@ import { formatDate } from '@/lib/dateUtils';
 import { es } from 'date-fns/locale';
 import { ArrowLeft, ArrowRight, Copy, Trash2, Hotel, Plus, Star, MoreVertical, Moon } from 'lucide-react';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
-import CityPicker from '@/components/quote/CityPicker';
 import ServiceCard, { TYPE_UI } from './ServiceCard';
 import { TYPE_ORDER, groupServices } from '@/lib/quoteEngine';
 
 export default function DayColumn({
-  day, index, cover, vertical, onCityChange,
+  day, index, cover, vertical,
   onToggleFree, onMoveDay, onDuplicateDay, onDeleteDay,
   onAddService, onOpenService, onSelectOption,
 }) {
@@ -26,9 +25,6 @@ export default function DayColumn({
         <div className="min-w-0 flex items-baseline gap-1.5">
           <span className="text-[11px] font-bold uppercase tracking-wider flex-shrink-0" style={{ color: '#C9A84C' }}>Día {index + 1}</span>
           <span className="text-[11px] text-stone-400 truncate">{day.date ? formatDate(day.date, "EEE d MMM", { locale: es }) : ''}</span>
-          {vertical && (
-            <span className="min-w-0 max-w-[220px]"><CityPicker value={day.city || ''} onChange={onCityChange} placeholder="＋ ciudad / en ruta" /></span>
-          )}
           {day.is_free && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 flex-shrink-0">libre</span>}
         </div>
         <Popover open={menuOpen} onOpenChange={setMenuOpen}>
