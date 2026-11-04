@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, Fragment } from 'react';
 import { supabaseAPI } from '@/api/supabaseClient';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
@@ -18,6 +18,7 @@ import QuoteServicesView from '@/components/quoteday/QuoteServicesView';
 import QuoteTimeline from '@/components/quoteday/QuoteTimeline';
 import HotelBand from '@/components/quoteday/HotelBand';
 import DayRail from '@/components/quoteday/DayRail';
+import StayBar from '@/components/quoteday/StayBar';
 import QuoteCoverEditor from '@/components/quoteday/QuoteCoverEditor';
 import ShareQuoteDialog from '@/components/quoteday/ShareQuoteDialog';
 import ServiceEditorModal from '@/components/quoteday/ServiceEditorModal';
@@ -470,11 +471,18 @@ export default function QuoteEditor() {
                 </DragDropContext>
               ) : (
                 <DragDropContext onDragEnd={onDragEnd}>
-                  <div className="max-w-3xl mx-auto">
+                  <div className="max-w-3xl mx-auto" style={{ display: 'grid', gridTemplateColumns: '190px minmax(0, 1fr)', columnGap: 12, rowGap: 12 }}>
+                    {/* Barras de hotel que abarcan todas sus noches (detrás) */}
+                    {stays.map((st) => (
+                      <StayBar key={st.service.id} service={st.service} startIndex={st.startIndex} span={st.span} />
+                    ))}
+                    {/* Días: riel (col 1) + tarjeta (col 2) */}
                     {days.map((d, i) => (
-                      <div key={d.id} className={`grid grid-cols-[190px_minmax(0,1fr)] gap-x-3 ${i < days.length - 1 ? 'mb-3' : ''}`}>
-                        <DayRail index={i} total={days.length} city={d.city} nextCity={days[i + 1]?.city} stay={stayByDay[i]} onCityChange={(v) => setCity(d.id, v)} />
-                        <div id={`qd-${i}`} className="min-w-0">
+                      <Fragment key={d.id}>
+                        <div style={{ gridColumn: 1, gridRow: i + 1, position: 'relative', zIndex: 2 }}>
+                          <DayRail index={i} total={days.length} city={d.city} nextCity={days[i + 1]?.city} covered={!!stayByDay[i]} onCityChange={(v) => setCity(d.id, v)} />
+                        </div>
+                        <div id={`qd-${i}`} style={{ gridColumn: 2, gridRow: i + 1 }} className="min-w-0">
                           <DayColumn
                             vertical day={d} index={i} cover={cover[i]}
                             onToggleFree={() => toggleFree(d.id)}
@@ -486,10 +494,9 @@ export default function QuoteEditor() {
                             onSelectOption={selectOption}
                           />
                         </div>
-                      </div>
+                      </Fragment>
                     ))}
-                    <div className="grid grid-cols-[190px_minmax(0,1fr)] gap-x-3 mt-3">
-                      <div />
+                    <div style={{ gridColumn: 2, gridRow: days.length + 1 }}>
                       <button onClick={addDayAtEnd}
                         className="w-full py-3 rounded-2xl border-2 border-dashed border-stone-200 text-stone-400 hover:border-stone-400 hover:text-stone-600 flex items-center justify-center gap-1.5 transition-colors">
                         <Plus className="w-5 h-5" /> <span className="text-sm">Agregar día</span>
