@@ -343,11 +343,6 @@ export default function QuoteEditor() {
   const calcDays = useMemo(() => (days ? resolveOptions(days) : []), [days]);
   const cover = useMemo(() => hotelCover(calcDays), [calcDays]);
   const stays = useMemo(() => hotelStays(calcDays), [calcDays]);
-  const stayByDay = useMemo(() => {
-    const m = {};
-    stays.forEach(st => { for (let k = 0; k < st.span; k++) m[st.startIndex + k] = { service: st.service, isStart: k === 0, isEnd: k === st.span - 1 }; });
-    return m;
-  }, [stays]);
   const t = useMemo(() => totals(calcDays), [calcDays]);
   const miss = useMemo(() => missing(calcDays), [calcDays]);
   const goToDay = (i) => document.getElementById(`qd-${i}`)?.scrollIntoView({ block: 'center', inline: 'start', behavior: 'smooth' });
@@ -480,7 +475,7 @@ export default function QuoteEditor() {
                     {days.map((d, i) => (
                       <Fragment key={d.id}>
                         <div style={{ gridColumn: 1, gridRow: i + 1, position: 'relative', zIndex: 2 }}>
-                          <DayRail index={i} total={days.length} city={d.city} nextCity={days[i + 1]?.city} covered={!!stayByDay[i]} onCityChange={(v) => setCity(d.id, v)} />
+                          <DayRail index={i} total={days.length} city={d.city} nextCity={days[i + 1]?.city} onCityChange={(v) => setCity(d.id, v)} />
                         </div>
                         <div id={`qd-${i}`} style={{ gridColumn: 2, gridRow: i + 1 }} className="min-w-0">
                           <DayColumn

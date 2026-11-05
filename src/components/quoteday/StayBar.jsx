@@ -12,9 +12,9 @@ export default function StayBar({ service, startIndex, span }) {
   return (
     <div style={{ gridColumn: 1, gridRow: `${startIndex + 1} / ${startIndex + span + 1}`, position: 'relative', zIndex: 0, pointerEvents: 'none' }}>
       <div className="absolute rounded-full border border-emerald-300 bg-emerald-100 flex items-center justify-center overflow-hidden"
-        style={{ left: 0, width: 22, top: NODE_Y - 4, bottom: 6 }}>
+        style={{ left: 2, width: 14, top: NODE_Y - 4, bottom: 6 }}>
         <span className="text-[10px] font-semibold text-emerald-800 whitespace-nowrap tracking-wide px-0.5"
-          style={{ writingMode: 'vertical-rl' }}>
+          style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}>
           {label}
         </span>
       </div>
