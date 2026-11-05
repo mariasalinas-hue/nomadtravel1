@@ -14,6 +14,8 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import TripForm from '@/components/trips/TripForm';
 import TravelDocumentsList from '@/components/documents/TravelDocumentsList';
+import TripQuoteTab from '@/components/trips/TripQuoteTab';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { FEATURES } from '@/config/featureFlags';
 
 const STAGE_CONFIG = {
@@ -139,7 +141,14 @@ export default function TripDetail() {
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <Tabs defaultValue="resumen" className="w-full">
+        <TabsList>
+          <TabsTrigger value="resumen">Resumen</TabsTrigger>
+          <TabsTrigger value="cotizacion">Cotización</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="resumen" className="mt-6">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Trip Info */}
         <div className="lg:col-span-1 space-y-4">
           <div className="bg-white rounded-2xl p-6 shadow-sm border border-stone-100">
@@ -243,6 +252,12 @@ export default function TripDetail() {
           </div>
         </div>
       </div>
+        </TabsContent>
+
+        <TabsContent value="cotizacion" className="mt-6">
+          <TripQuoteTab trip={trip} />
+        </TabsContent>
+      </Tabs>
 
       {/* Edit Form */}
       <TripForm

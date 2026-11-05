@@ -40,8 +40,8 @@ const pickSvc = (s) => {
   return o;
 };
 
-export default function QuoteEditor() {
-  const quoteId = new URLSearchParams(window.location.search).get('id');
+export default function QuoteEditor({ quoteId: quoteIdProp, embedded = false }) {
+  const quoteId = quoteIdProp || new URLSearchParams(window.location.search).get('id');
 
   const { data: quote, isLoading, refetch: refetchQuote } = useQuery({
     queryKey: ['quote', quoteId],
@@ -366,25 +366,31 @@ export default function QuoteEditor() {
   }
 
   return (
-    <div className="min-h-screen bg-stone-50">
+    <div className={embedded ? '' : 'min-h-screen bg-stone-50'}>
       {/* Barra superior */}
-      <div className="sticky top-0 z-20 bg-white/95 backdrop-blur border-b border-stone-200 px-5 py-3 flex flex-wrap items-end gap-4">
-        <Link to={createPageUrl('Quotes')} className="text-stone-400 hover:text-stone-700 pb-1"><ArrowLeft className="w-5 h-5" /></Link>
-        <TopField label="Viaje" className="flex-1 min-w-[160px]">
-          <Input defaultValue={quote.trip_name || ''} onBlur={(e) => onTripField('trip_name', e.target.value)} className="font-medium" />
-        </TopField>
-        <TopField label="Salida" className="w-40">
-          <Input type="date" defaultValue={quote.start_date || ''} onChange={(e) => onTripField('start_date', e.target.value)} />
-        </TopField>
-        <TopField label="Regreso" className="w-40">
-          <Input type="date" defaultValue={quote.end_date || ''} onChange={(e) => onTripField('end_date', e.target.value)} />
-        </TopField>
-        <TopField label="Pax" className="w-20">
-          <Input type="number" min={1} defaultValue={quote.pax || 1} onBlur={(e) => onTripField('pax', Number(e.target.value) || 1)} />
-        </TopField>
+      <div className={embedded
+        ? 'flex flex-wrap items-center gap-3 mb-4'
+        : 'sticky top-0 z-20 bg-white/95 backdrop-blur border-b border-stone-200 px-5 py-3 flex flex-wrap items-end gap-4'}>
+        {!embedded && (
+          <>
+            <Link to={createPageUrl('Quotes')} className="text-stone-400 hover:text-stone-700 pb-1"><ArrowLeft className="w-5 h-5" /></Link>
+            <TopField label="Viaje" className="flex-1 min-w-[160px]">
+              <Input defaultValue={quote.trip_name || ''} onBlur={(e) => onTripField('trip_name', e.target.value)} className="font-medium" />
+            </TopField>
+            <TopField label="Salida" className="w-40">
+              <Input type="date" defaultValue={quote.start_date || ''} onChange={(e) => onTripField('start_date', e.target.value)} />
+            </TopField>
+            <TopField label="Regreso" className="w-40">
+              <Input type="date" defaultValue={quote.end_date || ''} onChange={(e) => onTripField('end_date', e.target.value)} />
+            </TopField>
+            <TopField label="Pax" className="w-20">
+              <Input type="number" min={1} defaultValue={quote.pax || 1} onBlur={(e) => onTripField('pax', Number(e.target.value) || 1)} />
+            </TopField>
+          </>
+        )}
 
         {/* Toggle vista */}
-        <div className="flex rounded-lg border border-stone-200 overflow-hidden ml-auto self-center">
+        <div className={`flex rounded-lg border border-stone-200 overflow-hidden self-center ${embedded ? '' : 'ml-auto'}`}>
           <ViewBtn active={view === 'edit'} onClick={() => setView('edit')}><Columns3 className="w-3.5 h-3.5" /> Editar</ViewBtn>
           <ViewBtn active={view === 'services'} onClick={() => setView('services')}><Layers className="w-3.5 h-3.5" /> Servicios</ViewBtn>
           <ViewBtn active={view === 'calendar'} onClick={() => setView('calendar')}><Calendar className="w-3.5 h-3.5" /> Calendario</ViewBtn>
@@ -415,16 +421,17 @@ export default function QuoteEditor() {
 
       <div className="flex">
         {/* Contenido */}
-        <div className="flex-1 min-w-0 px-6 py-8">
-          <div className="mb-6">
-            <h1 className="text-4xl font-bold mb-1.5" style={{ color: '#2E442A', fontFamily: 'Playfair Display, serif' }}>{quote.trip_name || 'Cotización'}</h1>
-            <p className="text-sm text-stone-500">
-              {clientName && <span className="text-stone-700 font-medium">{clientName}</span>}
-              {clientName && ' · '}{days.length} días · {Math.max(0, days.length - 1)} noches · {pax} pax
-              <span className="text-stone-300"> · v{quote.version}</span>
-            </p>
-          </div>
-
+        <div className={`flex-1 min-w-0 ${embedded ? '' : 'px-6 py-8'}`}>
+          {!embedded && (
+            <div className="mb-6">
+              <h1 className="text-4xl font-bold mb-1.5" style={{ color: '#2E442A', fontFamily: 'Playfair Display, serif' }}>{quote.trip_name || 'Cotización'}</h1>
+              <p className="text-sm text-stone-500">
+                {clientName && <span className="text-stone-700 font-medium">{clientName}</span>}
+                {clientName && ' · '}{days.length} días · {Math.max(0, days.length - 1)} noches · {pax} pax
+                <span className="text-stone-300"> · v{quote.version}</span>
+              </p>
+            </div>
+          )}
           {view === 'calendar' ? (
             <QuoteCalendarView days={calcDays} onPickDay={(i) => { setView('edit'); setTimeout(() => goToDay(i), 60); }} />
           ) : view === 'services' ? (
@@ -505,7 +512,7 @@ export default function QuoteEditor() {
 
         {/* Panel lateral (abatible) */}
         {sidebarOpen && (
-          <aside className="w-[300px] flex-shrink-0 sticky top-[57px] self-start h-[calc(100vh-57px)] overflow-auto border-l border-stone-200 bg-white px-5 py-6 hidden lg:block">
+          <aside className={`w-[300px] flex-shrink-0 self-start overflow-auto border-l border-stone-200 bg-white px-5 py-6 hidden lg:block ${embedded ? 'rounded-2xl border' : 'sticky top-[57px] h-[calc(100vh-57px)]'}`}>
             <div className="flex justify-end mb-1">
               <button onClick={() => setSidebarOpen(false)} title="Ocultar resumen" className="p-1 rounded-lg text-stone-400 hover:text-stone-700 hover:bg-stone-100">
                 <ChevronRight className="w-4 h-4" />
