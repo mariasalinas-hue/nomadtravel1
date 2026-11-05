@@ -8,6 +8,7 @@ import { Trash2, Copy, Plus, ImageIcon, Loader2, X, Check, Star } from 'lucide-r
 import { money, commissionOf } from '@/lib/quoteEngine';
 import { TYPE_UI } from './ServiceCard';
 import MetaFields from './metaFields';
+import SupplierCombo, { supplierCategoryFor } from './SupplierCombo';
 
 // Ventana (scrolleable) para llenar un servicio. Incluye opciones (Opción 1/2).
 export default function ServiceEditorModal({
@@ -75,7 +76,9 @@ export default function ServiceEditorModal({
             </div>
             <div>
               <Label>Proveedor</Label>
-              <Input defaultValue={service.supplier || ''} onBlur={(e) => set({ supplier: e.target.value })} placeholder="DMC, directo…" />
+              {supplierCategoryFor(service.type)
+                ? <SupplierCombo type={service.type} value={service.supplier || ''} onChange={(v) => set({ supplier: v })} />
+                : <Input defaultValue={service.supplier || ''} onBlur={(e) => set({ supplier: e.target.value })} placeholder="DMC, directo…" />}
             </div>
             <div>
               <Label>Precio</Label>
