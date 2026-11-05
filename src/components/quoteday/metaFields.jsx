@@ -26,7 +26,7 @@ export const QUOTE_META_FIELDS = {
   ],
   crucero: [
     { key: 'cruise_line', label: 'Línea (naviera)', kind: 'catalog', category: 'cruise_line', base: CRUISE_LINES },
-    { key: 'cruise_ship', label: 'Barco', kind: 'catalog', category: 'cruise_ship', base: CRUISE_SHIP_OPTIONS, valueIsLabel: true },
+    { key: 'cruise_ship', label: 'Barco', kind: 'catalog', category: 'cruise_ship', base: CRUISE_SHIP_OPTIONS, valueIsLabel: true, filterBy: 'cruise_line' },
     { key: 'cruise_nights', label: 'Noches', kind: 'number' },
     { key: 'cruise_cabin_type', label: 'Cabina', kind: 'select', options: SELECTS.cabin_type },
   ],
@@ -60,7 +60,8 @@ export default function MetaFields({ type, meta, onSet }) {
         <div key={f.key} className={f.kind === 'catalog' ? 'col-span-2 sm:col-span-1' : ''}>
           <label className="text-[11px] text-stone-400 mb-0.5 block">{f.label}</label>
           {f.kind === 'catalog' ? (
-            <CatalogCombo category={f.category} base={f.base} value={val(f.key)} valueIsLabel={f.valueIsLabel} onChange={(v) => onSet(f.key, v)} />
+            <CatalogCombo category={f.category} base={f.base} value={val(f.key)} valueIsLabel={f.valueIsLabel}
+              filterLine={f.filterBy ? (meta?.[f.filterBy] || '') : ''} onChange={(v) => onSet(f.key, v)} />
           ) : f.kind === 'select' ? (
             <select value={val(f.key)} onChange={(e) => onSet(f.key, e.target.value)}
               className="w-full h-9 rounded-lg border border-stone-200 bg-white px-2 text-sm text-stone-700 focus:outline-none focus:border-[#C9A84C]">
@@ -79,7 +80,7 @@ export default function MetaFields({ type, meta, onSet }) {
 
 // Combobox de catálogo: mezcla la lista base con lo que el admin agregó en el
 // CRM (ServiceDropdownOption), con búsqueda y opción de agregar nuevo.
-function CatalogCombo({ category, base = [], value, valueIsLabel, onChange }) {
+function CatalogCombo({ category, base = [], value, valueIsLabel, filterLine = '', onChange }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const { data: dbOptions = [] } = useServiceDropdownByCategory(category);
@@ -87,10 +88,16 @@ function CatalogCombo({ category, base = [], value, valueIsLabel, onChange }) {
 
   const options = useMemo(() => {
     const map = new Map();
-    base.forEach(o => map.set(String(o.value), { value: valueIsLabel ? o.label : o.value, label: o.label }));
-    dbOptions.forEach(o => map.set(String(o.value), { value: o.value, label: o.label || o.value }));
+    base.forEach(o => {
+      if (filterLine && o.line && o.line !== filterLine) return;   // barcos: filtrar por naviera
+      map.set(String(o.value), { value: valueIsLabel ? o.label : o.value, label: o.label });
+    });
+    dbOptions.forEach(o => {
+      if (filterLine && o.parent && o.parent !== filterLine) return; // db con naviera asignada (parent)
+      map.set(String(o.value), { value: o.value, label: o.label || o.value });
+    });
     return Array.from(map.values()).sort((a, b) => (a.label || '').localeCompare(b.label || ''));
-  }, [base, dbOptions, valueIsLabel]);
+  }, [base, dbOptions, valueIsLabel, filterLine]);
 
   const current = options.find(o => String(o.value) === String(value));
   const filtered = query ? options.filter(o => o.label.toLowerCase().includes(query.toLowerCase())) : options;

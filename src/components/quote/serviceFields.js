@@ -107,40 +107,28 @@ export const CRUISE_LINES = [
   { value: 'ponant', label: 'Ponant' }, { value: 'hurtigruten', label: 'Hurtigruten' },
 ];
 
-// Barcos precargados (lista curada de las principales navieras de lujo/premium).
-// En Corsario el barco es texto libre, así que aquí guardamos el NOMBRE tal cual
-// (value = label). Crece con lo que el admin agregue (categoría 'cruise_ship').
-const SHIP_NAMES = [
-  // Explora Journeys
-  'Explora I', 'Explora II',
-  // Regent Seven Seas
-  'Seven Seas Explorer', 'Seven Seas Splendor', 'Seven Seas Grandeur', 'Seven Seas Mariner', 'Seven Seas Voyager', 'Seven Seas Navigator',
-  // Silversea
-  'Silver Nova', 'Silver Ray', 'Silver Moon', 'Silver Dawn', 'Silver Muse', 'Silver Whisper', 'Silver Shadow',
-  // Seabourn
-  'Seabourn Ovation', 'Seabourn Encore', 'Seabourn Sojourn', 'Seabourn Quest', 'Seabourn Pursuit', 'Seabourn Venture',
-  // Oceania
-  'Vista', 'Allura', 'Marina', 'Riviera', 'Sirena', 'Nautica', 'Insignia', 'Regatta',
-  // Viking Ocean
-  'Viking Star', 'Viking Sky', 'Viking Sea', 'Viking Jupiter', 'Viking Venus', 'Viking Neptune',
-  // Ritz-Carlton Yacht Collection
-  'Evrima', 'Ilma', 'Luminara',
-  // Ponant
-  'Le Commandant Charcot', 'Le Bougainville', 'Le Lapérouse', 'Le Bellot', 'Le Dumont-d’Urville',
-  // Cunard
-  'Queen Mary 2', 'Queen Victoria', 'Queen Elizabeth', 'Queen Anne',
-  // Virgin Voyages
-  'Scarlet Lady', 'Valiant Lady', 'Resilient Lady', 'Brilliant Lady',
-  // Celebrity
-  'Celebrity Beyond', 'Celebrity Apex', 'Celebrity Edge', 'Celebrity Ascent',
-  // Royal Caribbean
-  'Icon of the Seas', 'Utopia of the Seas', 'Wonder of the Seas', 'Symphony of the Seas',
-  // Norwegian
-  'Norwegian Prima', 'Norwegian Viva', 'Norwegian Aqua',
-  // Disney
-  'Disney Wish', 'Disney Treasure', 'Disney Fantasy', 'Disney Dream',
-];
-export const CRUISE_SHIP_OPTIONS = SHIP_NAMES.map((s) => ({ value: s, label: s }));
+// Barcos precargados por naviera (clave = value de CRUISE_LINES). En el cotizador
+// el selector de barco se filtra por la línea elegida. value = label (nombre tal cual);
+// crece con lo que el admin agregue (categoría 'cruise_ship', con parent = línea).
+const SHIPS_BY_LINE = {
+  explora: ['Explora I', 'Explora II'],
+  regent: ['Seven Seas Explorer', 'Seven Seas Splendor', 'Seven Seas Grandeur', 'Seven Seas Mariner', 'Seven Seas Voyager', 'Seven Seas Navigator'],
+  silversea: ['Silver Nova', 'Silver Ray', 'Silver Moon', 'Silver Dawn', 'Silver Muse', 'Silver Whisper', 'Silver Shadow'],
+  seabourn: ['Seabourn Ovation', 'Seabourn Encore', 'Seabourn Sojourn', 'Seabourn Quest', 'Seabourn Pursuit', 'Seabourn Venture'],
+  oceania: ['Vista', 'Allura', 'Marina', 'Riviera', 'Sirena', 'Nautica', 'Insignia', 'Regatta'],
+  viking: ['Viking Star', 'Viking Sky', 'Viking Sea', 'Viking Jupiter', 'Viking Venus', 'Viking Neptune'],
+  ritz_carlton_yacht: ['Evrima', 'Ilma', 'Luminara'],
+  ponant: ['Le Commandant Charcot', 'Le Bougainville', 'Le Lapérouse', 'Le Bellot', 'Le Dumont-d’Urville'],
+  cunard: ['Queen Mary 2', 'Queen Victoria', 'Queen Elizabeth', 'Queen Anne'],
+  virgin_voyages: ['Scarlet Lady', 'Valiant Lady', 'Resilient Lady', 'Brilliant Lady'],
+  celebrity: ['Celebrity Beyond', 'Celebrity Apex', 'Celebrity Edge', 'Celebrity Ascent'],
+  royal_caribbean: ['Icon of the Seas', 'Utopia of the Seas', 'Wonder of the Seas', 'Symphony of the Seas'],
+  norwegian: ['Norwegian Prima', 'Norwegian Viva', 'Norwegian Aqua'],
+  disney: ['Disney Wish', 'Disney Treasure', 'Disney Fantasy', 'Disney Dream'],
+};
+export const CRUISE_SHIP_OPTIONS = Object.entries(SHIPS_BY_LINE).flatMap(
+  ([line, ships]) => ships.map((s) => ({ value: s, label: s, line })),
+);
 
 export const AMENITIES = [
   'Desayuno para 2', 'Upgrade de habitación', 'Crédito de hotel', 'Crédito de spa',
