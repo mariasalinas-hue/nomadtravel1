@@ -12,7 +12,6 @@ import PaymentInfoModal from '@/components/ui/PaymentInfoModal';
 import CommissionInfoModal from '@/components/ui/CommissionInfoModal';
 import CheatSheetBar from '@/components/ui/CheatSheetBar';
 import ErrorReportButton from '@/components/ui/ErrorReportButton';
-import { FEATURES } from '@/config/featureFlags';
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { base44 } from '@/api/base44Client';
@@ -195,7 +194,6 @@ export default function Layout({ children, currentPageName }) {
     { name: 'Dashboard Global', page: 'AdminDashboard', icon: LayoutDashboard },
     { name: 'Todos los Clientes', page: 'AdminClients', icon: Users },
     { name: 'Todos los Viajes', page: 'AdminTrips', icon: Plane },
-    ...(FEATURES.newCotizador ? [{ name: 'Cotizador', page: 'Quotes', icon: MapPin }] : []),
     { name: 'Viajes Vendidos', page: 'AdminSoldTrips', icon: CheckCircle },
     { name: 'Calendario', page: 'TripCalendar', icon: CalendarDays },
     { name: 'Pregúntale a tu CRM', page: 'AskCrm', icon: Sparkles },
@@ -222,7 +220,6 @@ export default function Layout({ children, currentPageName }) {
     { name: 'Dashboard', page: 'Dashboard', icon: LayoutDashboard },
     { name: 'Clientes', page: 'Clients', icon: Users },
     { name: 'Cotizaciones', page: 'Trips', icon: Plane },
-    ...(FEATURES.newCotizador ? [{ name: 'Cotizador', page: 'Quotes', icon: MapPin }] : []),
     { name: 'Corsario de Viajes', page: 'SoldTrips', icon: CheckCircle },
     { name: 'Calendario', page: 'TripCalendar', icon: CalendarDays },
     { name: 'Pregúntale a tu CRM', page: 'AskCrm', icon: Sparkles },

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { supabaseAPI } from '@/api/supabaseClient';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSpoofableUser } from '@/contexts/SpoofContext';
@@ -499,15 +499,15 @@ export default function ClientDetail() {
                 {trips.map(trip => (
                   <div key={trip.id} className="p-4 hover:bg-stone-50 transition-colors">
                     <div className="flex items-center justify-between">
-                      <div className="flex-1">
-                        <h4 className="font-medium text-stone-800">
+                      <Link to={createPageUrl(`TripDetail?id=${trip.id}`)} className="flex-1 min-w-0">
+                        <h4 className="font-medium text-stone-800 hover:text-[#2E442A]">
                           {trip.trip_name || trip.destination}
                         </h4>
                         <p className="text-sm text-stone-500">
                           {trip.start_date && formatDate(trip.start_date, 'd MMM')}
                           {trip.end_date && ` - ${formatDate(trip.end_date, 'd MMM yyyy')}`}
                         </p>
-                      </div>
+                      </Link>
                       <div className="flex items-center gap-2">
                         <Badge
                           variant="outline"
