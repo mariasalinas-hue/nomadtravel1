@@ -8,7 +8,7 @@ import { ArrowLeft, Loader2, Plus, Check, Calendar, Columns3, Rows3, ChevronRigh
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
 import {
-  rulesFor, totals, missing, hotelCover, hotelStays, grossFromNet, commissionOf,
+  rulesFor, totals, hotelCover, hotelStays, grossFromNet, commissionOf,
   daysBetween, dateForIndex, resolveOptions,
 } from '@/lib/quoteEngine';
 import DayColumn from '@/components/quoteday/DayColumn';
@@ -344,7 +344,6 @@ export default function QuoteEditor() {
   const cover = useMemo(() => hotelCover(calcDays), [calcDays]);
   const stays = useMemo(() => hotelStays(calcDays), [calcDays]);
   const t = useMemo(() => totals(calcDays), [calcDays]);
-  const miss = useMemo(() => missing(calcDays), [calcDays]);
   const goToDay = (i) => document.getElementById(`qd-${i}`)?.scrollIntoView({ block: 'center', inline: 'start', behavior: 'smooth' });
   const [shareOpen, setShareOpen] = useState(false);
 
@@ -512,7 +511,7 @@ export default function QuoteEditor() {
                 <ChevronRight className="w-4 h-4" />
               </button>
             </div>
-            <QuoteSidebar totals={t} pax={pax} missing={miss} onGoToDay={goToDay} />
+            <QuoteSidebar totals={t} pax={pax} />
           </aside>
         )}
       </div>

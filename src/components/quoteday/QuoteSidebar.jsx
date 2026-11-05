@@ -1,7 +1,6 @@
 import { money, TYPE_ORDER, SERVICE_TYPES } from '@/lib/quoteEngine';
-import { AlertCircle, Check } from 'lucide-react';
 
-export default function QuoteSidebar({ totals, pax, missing, onGoToDay }) {
+export default function QuoteSidebar({ totals, pax }) {
   const { byType, sum, commission } = totals;
   return (
     <div className="space-y-5">
@@ -34,26 +33,6 @@ export default function QuoteSidebar({ totals, pax, missing, onGoToDay }) {
           {money(commission)}
           {sum > 0 && <span className="text-xs font-normal text-stone-400 ml-2">{(commission / sum * 100).toFixed(1)}% del total</span>}
         </p>
-      </div>
-
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-wider text-stone-400 mb-2">Faltantes</p>
-        {missing.length === 0 ? (
-          <div className="flex items-center gap-2 text-sm text-emerald-600">
-            <Check className="w-4 h-4" /> Todo listo. Hospedaje y precios completos.
-          </div>
-        ) : (
-          <ul className="space-y-1.5">
-            {missing.map((m, i) => (
-              <li key={i}>
-                <button onClick={() => onGoToDay(m.i)} className="flex items-start gap-2 text-left text-sm text-stone-600 hover:text-[#2E442A] w-full">
-                  <AlertCircle className="w-3.5 h-3.5 text-orange-500 mt-0.5 flex-shrink-0" />
-                  <span>{m.msg}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
       </div>
     </div>
   );
