@@ -1,10 +1,10 @@
-import { useState, useEffect, useRef, useMemo, Fragment } from 'react';
+import { useState, useEffect, useRef, useMemo, Fragment, lazy, Suspense } from 'react';
 import { supabaseAPI } from '@/api/supabaseClient';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { DragDropContext } from '@hello-pangea/dnd';
-import { ArrowLeft, Loader2, Plus, Check, Calendar, Columns3, Rows3, ChevronRight, PanelRight, Share2, Layers } from 'lucide-react';
+import { ArrowLeft, Loader2, Plus, Check, Calendar, Columns3, Rows3, ChevronRight, PanelRight, Share2, Layers, Table2 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
 import {
@@ -22,6 +22,9 @@ import StayBar from '@/components/quoteday/StayBar';
 import QuoteCoverEditor from '@/components/quoteday/QuoteCoverEditor';
 import ShareQuoteDialog from '@/components/quoteday/ShareQuoteDialog';
 import ServiceEditorModal from '@/components/quoteday/ServiceEditorModal';
+
+// La hoja (Univer) es pesada: se carga solo cuando se abre la vista "Hoja".
+const QuoteSheet = lazy(() => import('@/components/quoteday/QuoteSheet'));
 
 const SVC_COLS = ['type', 'name', 'description', 'supplier', 'price_mode', 'net', 'gross', 'commission', 'nights', 'rooms', 'breakfast', 'sort_order', 'quote_day_id', 'meta'];
 // Columnas de opciones: solo se envían cuando el servicio pertenece a un grupo de
@@ -392,6 +395,7 @@ export default function QuoteEditor({ quoteId: quoteIdProp, embedded = false }) 
         {/* Toggle vista */}
         <div className={`flex rounded-lg border border-stone-200 overflow-hidden self-center ${embedded ? '' : 'ml-auto'}`}>
           <ViewBtn active={view === 'edit'} onClick={() => setView('edit')}><Columns3 className="w-3.5 h-3.5" /> Editar</ViewBtn>
+          <ViewBtn active={view === 'sheet'} onClick={() => setView('sheet')}><Table2 className="w-3.5 h-3.5" /> Hoja</ViewBtn>
           <ViewBtn active={view === 'services'} onClick={() => setView('services')}><Layers className="w-3.5 h-3.5" /> Servicios</ViewBtn>
           <ViewBtn active={view === 'calendar'} onClick={() => setView('calendar')}><Calendar className="w-3.5 h-3.5" /> Calendario</ViewBtn>
         </div>
@@ -434,6 +438,10 @@ export default function QuoteEditor({ quoteId: quoteIdProp, embedded = false }) 
           )}
           {view === 'calendar' ? (
             <QuoteCalendarView days={calcDays} onPickDay={(i) => { setView('edit'); setTimeout(() => goToDay(i), 60); }} />
+          ) : view === 'sheet' ? (
+            <Suspense fallback={<div className="flex justify-center py-16"><Loader2 className="w-7 h-7 animate-spin" style={{ color: '#2E442A' }} /></div>}>
+              <QuoteSheet quote={quote} />
+            </Suspense>
           ) : view === 'services' ? (
             <QuoteServicesView days={days} onOpenService={(s) => setEditingId(s.id)} />
           ) : (
