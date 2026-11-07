@@ -15,6 +15,7 @@ import DayColumn from '@/components/quoteday/DayColumn';
 import QuoteSidebar from '@/components/quoteday/QuoteSidebar';
 import QuoteCalendarView from '@/components/quoteday/QuoteCalendarView';
 import QuoteServicesView from '@/components/quoteday/QuoteServicesView';
+import QuoteTable from '@/components/quoteday/QuoteTable';
 import QuoteTimeline from '@/components/quoteday/QuoteTimeline';
 import HotelBand from '@/components/quoteday/HotelBand';
 import DayRail from '@/components/quoteday/DayRail';
@@ -98,8 +99,8 @@ export default function QuoteEditor({ quoteId: quoteIdProp, embedded = false }) 
   // Indicador de guardado.
   const [pending, setPending] = useState(0);
   const [view, setView] = useState('edit');          // edit | services | calendar
-  const [layout, setLayout] = useState(() => {        // horizontal | vertical (solo en 'edit')
-    try { return localStorage.getItem('quoteLayout') === 'vertical' ? 'vertical' : 'horizontal'; } catch { return 'horizontal'; }
+  const [layout, setLayout] = useState(() => {        // table | horizontal | vertical (solo en 'edit')
+    try { const l = localStorage.getItem('quoteLayout'); return ['table', 'horizontal', 'vertical'].includes(l) ? l : 'table'; } catch { return 'table'; }
   });
   const setLayoutPersist = (l) => { setLayout(l); try { localStorage.setItem('quoteLayout', l); } catch { /* ignore */ } };
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -218,6 +219,8 @@ export default function QuoteEditor({ quoteId: quoteIdProp, embedded = false }) 
   const persistDayOrder = (arr) => arr.forEach((d, i) => { if (d.day_index !== i) persistDay(d.id, { day_index: i }); });
 
   const setCity = (dayId, city) => { setDays(prev => prev.map(d => d.id === dayId ? { ...d, city } : d)); persistDay(dayId, { city }); };
+  const setCountry = (dayId, country) => { setDays(prev => prev.map(d => d.id === dayId ? { ...d, country } : d)); persistDay(dayId, { country }); };
+  const setActivity = (dayId, activity) => { setDays(prev => prev.map(d => d.id === dayId ? { ...d, activity } : d)); persistDay(dayId, { activity }); };
   const toggleFree = (dayId) => setDays(prev => prev.map(d => { if (d.id !== dayId) return d; persistDay(dayId, { is_free: !d.is_free }); return { ...d, is_free: !d.is_free }; }));
 
   const moveDay = (index, dir) => {
@@ -303,10 +306,22 @@ export default function QuoteEditor({ quoteId: quoteIdProp, embedded = false }) 
         if (nd) arr.push({ ...nd, services: [] });
       }
     } else if (n < arr.length) {
-      // quitar solo los del final que estén vacíos
+      // 1) quitar del final los días vacíos (sin preguntar)
       while (arr.length > n && !arr[arr.length - 1].services.length) {
         const rem = arr.pop();
         track(supabaseAPI.entities.QuoteDay.delete(rem.id));
+      }
+      // 2) si aún sobran días CON servicios, confirmar antes de eliminarlos
+      if (arr.length > n) {
+        const withInfo = arr.length - n;
+        const ok = window.confirm(`El nuevo rango deja fuera ${withInfo} día(s) que ya tienen servicios. ¿Eliminarlos junto con su contenido?`);
+        if (ok) {
+          while (arr.length > n) {
+            const rem = arr.pop();
+            rem.services.forEach(s => track(supabaseAPI.entities.QuoteService.delete(s.id)));
+            track(supabaseAPI.entities.QuoteDay.delete(rem.id));
+          }
+        }
       }
     }
     setDays([...arr]);
@@ -402,7 +417,8 @@ export default function QuoteEditor({ quoteId: quoteIdProp, embedded = false }) 
 
         {/* Orientación del planner (solo en Editar) */}
         {view === 'edit' && (
-          <div className="flex rounded-lg border border-stone-200 overflow-hidden self-center" title="Orientación">
+          <div className="flex rounded-lg border border-stone-200 overflow-hidden self-center" title="Vista">
+            <ViewBtn active={layout === 'table'} onClick={() => setLayoutPersist('table')}><Table2 className="w-3.5 h-3.5" /></ViewBtn>
             <ViewBtn active={layout === 'horizontal'} onClick={() => setLayoutPersist('horizontal')}><Columns3 className="w-3.5 h-3.5" /></ViewBtn>
             <ViewBtn active={layout === 'vertical'} onClick={() => setLayoutPersist('vertical')}><Rows3 className="w-3.5 h-3.5" /></ViewBtn>
           </div>
@@ -447,7 +463,17 @@ export default function QuoteEditor({ quoteId: quoteIdProp, embedded = false }) 
           ) : (
             <>
               <QuoteCoverEditor quote={quote} onSet={persistQuote} />
-              {layout === 'horizontal' ? (
+              {layout === 'table' ? (
+                <QuoteTable
+                  quote={quote} days={days} onTripField={onTripField}
+                  onOpenService={(s) => setEditingId(s.id)}
+                  onAddService={(dayId, type) => addService(dayId, type)}
+                  onCity={setCity} onCountry={setCountry} onActivity={setActivity}
+                  onToggleFree={toggleFree}
+                  onDuplicateDay={duplicateDay} onDeleteDay={deleteDay} onMoveDay={moveDay}
+                  addDayAtEnd={addDayAtEnd}
+                />
+              ) : layout === 'horizontal' ? (
                 <DragDropContext onDragEnd={onDragEnd}>
                   <div ref={scrollRef} className="overflow-x-auto pb-4">
                     <div className="inline-flex flex-col">
